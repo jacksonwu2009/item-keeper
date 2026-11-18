@@ -2,17 +2,20 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, StyleSheet, Text, View } from 'react-native';
 
 import { DEFAULT_SETTINGS, getSettings } from '../db/settings';
-import { listAllPacks, listProducts, type StockProductSummary } from '../db/stock';
+import { deleteProduct, listAllPacks, listProducts, type StockProductSummary } from '../db/stock';
 import { useFocusData } from '../hooks/useFocusData';
+import { usePendingDelete } from '../hooks/usePendingDelete';
 import { useOffice } from '../hooks/useOffice';
 import { todayStr } from '../lib/dates';
 import { formatBreakdown, type PackUnit } from '../lib/packs';
+import { rescheduleReminders } from '../lib/notifications';
 import { expiryStatus, isLowStock } from '../lib/status';
 import { formatQty, KIND_LABEL, type StockKind } from '../lib/stock';
 import { colors, font, radius } from '../theme';
+import { SwipeRow, UndoBar } from './SwipeRow';
 import { Button, Chip, Empty, Field, Segmented } from './ui';
 
 type Filter = 'all' | 'attention' | 'low';
@@ -36,13 +39,20 @@ export function StockList({ kind }: { kind: StockKind }) {
     }
     return { products, settings, packsByProduct };
   }, [db, kind, officeFilter]);
-  const [{ products, settings, packsByProduct }, , loaded] = useFocusData(loader, {
+  const [{ products, settings, packsByProduct }, reload, loaded] = useFocusData(loader, {
     products: [] as StockProductSummary[],
     settings: DEFAULT_SETTINGS,
     packsByProduct: new Map<number, PackUnit[]>(),
   });
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
+  const deletion = usePendingDelete<number>(
+    (id) => deleteProduct(db, id),
+    () => {
+      reload().catch(() => undefined);
+      rescheduleReminders(db).catch(() => undefined);
+    },
+  );
   const today = todayStr();
   const label = KIND_LABEL[kind];
 
@@ -56,6 +66,7 @@ export function StockList({ kind }: { kind: StockKind }) {
         breakdown: formatBreakdown(product.totalQty, product.unit, packsByProduct.get(product.id) ?? []),
       }))
       .filter(({ product, expiry, low }) => {
+        if (product.id === deletion.pending?.key) return false;
         if (keyword) {
           const haystack = [product.name, product.brand, product.spec, product.location, product.barcode]
             .filter(Boolean)
@@ -73,7 +84,7 @@ export function StockList({ kind }: { kind: StockKind }) {
           row.expiry?.level === 'expired' ? 0 : row.expiry?.level === 'soon' ? 1 : row.low ? 2 : 3;
         return rank(a) - rank(b) || a.product.name.localeCompare(b.product.name, 'zh');
       });
-  }, [products, query, filter, today, settings.expiryLeadDays, packsByProduct]);
+  }, [products, query, filter, today, settings.expiryLeadDays, packsByProduct, deletion.pending]);
 
   const scan = () => router.push({ pathname: '/scan', params: { kind } });
   const addManually = () => router.push({ pathname: '/stock/new', params: { kind } });
@@ -102,80 +113,89 @@ export function StockList({ kind }: { kind: StockKind }) {
             value={filter}
             onChange={setFilter}
           />
+          <Text style={listStyles.gestureHint}>点开看详情，长按编辑，向左滑删除</Text>
         </>
       ) : null}
     </View>
   );
 
   return (
-    <FlatList
-      style={listStyles.list}
-      contentContainerStyle={listStyles.content}
-      data={rows}
-      keyExtractor={(row) => String(row.product.id)}
-      ListHeaderComponent={header}
-      keyboardShouldPersistTaps="handled"
-      ItemSeparatorComponent={() => <View style={listStyles.separator} />}
-      ListEmptyComponent={
-        !loaded ? undefined : products.length === 0 ? (
-          <Empty
-            icon={kind === 'food' ? 'nutrition-outline' : 'basket-outline'}
-            title={`还没有${label}`}
-            text={
-              kind === 'food'
-                ? '扫一下包装上的条码就能录入，再填上过期日期和数量。快到期或库存不足时会按设置提醒你。'
-                : '纸巾、洗衣液、电池这类日用品，扫码或手动添加后记下数量，快用完时提醒你补货。'
-            }
-          />
-        ) : (
-          <Empty icon="search-outline" title="没有符合条件的" text="换个关键词或筛选条件试试。" />
-        )
-      }
-      renderItem={({ item: { product, expiry, low, breakdown } }) => (
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => router.push({ pathname: '/stock/[id]', params: { id: String(product.id) } })}
-          style={({ pressed }) => [listStyles.row, pressed && listStyles.rowPressed]}
-        >
-          <View style={listStyles.rowMain}>
-            <Text style={listStyles.name} numberOfLines={1}>
-              {product.name}
-            </Text>
-            {showOffice || product.brand || product.spec || product.location ? (
-              <Text style={listStyles.meta} numberOfLines={1}>
-                {[
-                  showOffice && office.officeName(product.officeId),
-                  product.brand,
-                  product.spec,
-                  product.location && `放在 ${product.location}`,
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
+    <View style={listStyles.screen}>
+      <FlatList
+        style={listStyles.list}
+        contentContainerStyle={listStyles.content}
+        data={rows}
+        keyExtractor={(row) => String(row.product.id)}
+        ListHeaderComponent={header}
+        keyboardShouldPersistTaps="handled"
+        ItemSeparatorComponent={() => <View style={listStyles.separator} />}
+        ListEmptyComponent={
+          !loaded ? undefined : products.length === 0 ? (
+            <Empty
+              icon={kind === 'food' ? 'nutrition-outline' : 'basket-outline'}
+              title={`还没有${label}`}
+              text={
+                kind === 'food'
+                  ? '扫一下包装上的条码就能录入，再填上过期日期和数量。快到期或库存不足时会按设置提醒你。'
+                  : '纸巾、洗衣液、电池这类日用品，扫码或手动添加后记下数量，快用完时提醒你补货。'
+              }
+            />
+          ) : (
+            <Empty icon="search-outline" title="没有符合条件的" text="换个关键词或筛选条件试试。" />
+          )
+        }
+        renderItem={({ item: { product, expiry, low, breakdown } }) => (
+          <SwipeRow
+            accessibilityLabel={`${product.name}，${formatQty(product.totalQty)} ${product.unit}`}
+            onPress={() => router.push({ pathname: '/stock/[id]', params: { id: String(product.id) } })}
+            onLongPress={() => router.push({ pathname: '/stock/edit/[id]', params: { id: String(product.id) } })}
+            onDelete={() => deletion.remove(product.id, product.name)}
+            style={listStyles.row}
+            pressedStyle={listStyles.rowPressed}
+          >
+            <View style={listStyles.rowMain}>
+              <Text style={listStyles.name} numberOfLines={1}>
+                {product.name}
               </Text>
-            ) : null}
-            {expiry || low ? (
-              <View style={listStyles.chips}>
-                {expiry && expiry.level !== 'fine' ? <Chip text={expiry.text} tone={expiry.tone} /> : null}
-                {expiry && expiry.level === 'fine' ? <Chip text={expiry.text} tone="neutral" /> : null}
-                {low ? <Chip text="库存不足" tone="warn" icon="alert-circle-outline" /> : null}
-              </View>
-            ) : null}
-          </View>
-          <View style={listStyles.qtyBox}>
-            <Text style={[listStyles.qty, product.totalQty <= 0 && { color: colors.danger }]}>
-              {formatQty(product.totalQty)}
-            </Text>
-            <Text style={listStyles.unit}>{product.unit}</Text>
-            {breakdown ? <Text style={listStyles.breakdown}>{breakdown}</Text> : null}
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.faint} />
-        </Pressable>
-      )}
-    />
+              {showOffice || product.brand || product.spec || product.location ? (
+                <Text style={listStyles.meta} numberOfLines={1}>
+                  {[
+                    showOffice && office.officeName(product.officeId),
+                    product.brand,
+                    product.spec,
+                    product.location && `放在 ${product.location}`,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </Text>
+              ) : null}
+              {expiry || low ? (
+                <View style={listStyles.chips}>
+                  {expiry && expiry.level !== 'fine' ? <Chip text={expiry.text} tone={expiry.tone} /> : null}
+                  {expiry && expiry.level === 'fine' ? <Chip text={expiry.text} tone="neutral" /> : null}
+                  {low ? <Chip text="库存不足" tone="warn" icon="alert-circle-outline" /> : null}
+                </View>
+              ) : null}
+            </View>
+            <View style={listStyles.qtyBox}>
+              <Text style={[listStyles.qty, product.totalQty <= 0 && { color: colors.danger }]}>
+                {formatQty(product.totalQty)}
+              </Text>
+              <Text style={listStyles.unit}>{product.unit}</Text>
+              {breakdown ? <Text style={listStyles.breakdown}>{breakdown}</Text> : null}
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.faint} />
+          </SwipeRow>
+        )}
+      />
+      {deletion.pending ? <UndoBar text={`已删除「${deletion.pending.label}」`} onUndo={deletion.undo} /> : null}
+    </View>
   );
 }
 
 const listStyles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.bg },
+  gestureHint: { fontSize: font.small, color: colors.faint, textAlign: 'center' },
   list: { flex: 1, backgroundColor: colors.bg },
   content: { padding: 16, paddingBottom: 40 },
   header: { gap: 12, marginBottom: 12 },

@@ -2,7 +2,8 @@ import { Stack } from 'expo-router';
 import { SQLiteProvider, useSQLiteContext } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { AppState } from 'react-native';
+import { AppState, StyleSheet } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { DATABASE_NAME, migrateDbIfNeeded } from '../db/schema';
 import { OfficeProvider } from '../hooks/useOffice';
@@ -26,30 +27,32 @@ function ReminderKeeper() {
 
 export default function RootLayout() {
   return (
-    <SQLiteProvider databaseName={DATABASE_NAME} onInit={migrateDbIfNeeded}>
-      <OfficeProvider>
-        <ReminderKeeper />
-        <StatusBar style="dark" />
-        <Stack
-          screenOptions={{
-            headerStyle: { backgroundColor: colors.bg },
-            headerTintColor: colors.accent,
-            headerTitleStyle: { color: colors.ink, fontWeight: '700' },
-            headerShadowVisible: false,
-            headerBackTitle: '返回',
-            contentStyle: { backgroundColor: colors.bg },
-          }}
-        >
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="scan" options={{ presentation: 'fullScreenModal', headerShown: false }} />
-          <Stack.Screen name="stock/new" options={{ title: '新增物品' }} />
-          <Stack.Screen name="stock/[id]" options={{ title: '' }} />
-          <Stack.Screen name="stock/edit/[id]" options={{ title: '编辑物品' }} />
-          <Stack.Screen name="device/new" options={{ title: '新增设备' }} />
-          <Stack.Screen name="device/[id]" options={{ title: '' }} />
-          <Stack.Screen name="device/edit/[id]" options={{ title: '编辑设备' }} />
-        </Stack>
-      </OfficeProvider>
-    </SQLiteProvider>
+    <GestureHandlerRootView style={StyleSheet.absoluteFill}>
+      <SQLiteProvider databaseName={DATABASE_NAME} onInit={migrateDbIfNeeded}>
+        <OfficeProvider>
+          <ReminderKeeper />
+          <StatusBar style="dark" />
+          <Stack
+            screenOptions={{
+              headerStyle: { backgroundColor: colors.bg },
+              headerTintColor: colors.accent,
+              headerTitleStyle: { color: colors.ink, fontWeight: '700' },
+              headerShadowVisible: false,
+              headerBackTitle: '返回',
+              contentStyle: { backgroundColor: colors.bg },
+            }}
+          >
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="scan" options={{ presentation: 'fullScreenModal', headerShown: false }} />
+            <Stack.Screen name="stock/new" options={{ title: '新增物品' }} />
+            <Stack.Screen name="stock/[id]" options={{ title: '' }} />
+            <Stack.Screen name="stock/edit/[id]" options={{ title: '编辑物品' }} />
+            <Stack.Screen name="device/new" options={{ title: '新增设备' }} />
+            <Stack.Screen name="device/[id]" options={{ title: '' }} />
+            <Stack.Screen name="device/edit/[id]" options={{ title: '编辑设备' }} />
+          </Stack>
+        </OfficeProvider>
+      </SQLiteProvider>
+    </GestureHandlerRootView>
   );
 }

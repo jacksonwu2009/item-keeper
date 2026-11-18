@@ -1,12 +1,24 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 
 import { DateField } from '../../components/DateField';
 import { ExpiryInput, type ExpiryValue } from '../../components/ExpiryInput';
-import { Button, Card, Chip, ChoiceChips, Empty, InfoRow, Label, Screen, SectionTitle, Sheet } from '../../components/ui';
+import {
+  Button,
+  Card,
+  Chip,
+  ChoiceChips,
+  Empty,
+  InfoRow,
+  Label,
+  Screen,
+  SectionTitle,
+  Sheet,
+} from '../../components/ui';
 import { NumberField } from '../../components/NumberField';
+import { SwipeRow, UndoBar } from '../../components/SwipeRow';
 import { UnitQtyField } from '../../components/UnitQtyField';
 import { DEFAULT_SETTINGS, getSettings } from '../../db/settings';
 import {
@@ -26,6 +38,7 @@ import {
 } from '../../db/stock';
 import { useFocusData } from '../../hooks/useFocusData';
 import { useOffice } from '../../hooks/useOffice';
+import { usePendingDelete } from '../../hooks/usePendingDelete';
 import { formatDate, formatDateTime, todayStr } from '../../lib/dates';
 import { rescheduleReminders } from '../../lib/notifications';
 import { describePacks, formatBreakdown, toBaseQty, type PackUnit } from '../../lib/packs';
@@ -63,8 +76,17 @@ export default function StockDetailScreen() {
     packs: [] as PackUnit[],
     settings: DEFAULT_SETTINGS,
   });
-  const { product, batches, movements, packs, settings } = data;
+  const { product, movements, packs, settings } = data;
   const [showAllMovements, setShowAllMovements] = useState(false);
+  const batchDeletion = usePendingDelete<number>(
+    (batchId) => deleteBatch(db, batchId),
+    () => {
+      reload().catch(() => undefined);
+      rescheduleReminders(db).catch(() => undefined);
+    },
+  );
+  // 等撤销的那一批先从界面上拿掉，库存数字也跟着变
+  const batches = data.batches.filter((batch) => batch.id !== batchDeletion.pending?.key);
 
   async function afterChange(note?: string) {
     setSheet(null);
@@ -90,7 +112,7 @@ export default function StockDetailScreen() {
   const low = isLowStock(totalQty, product.lowStockThreshold);
   const nearest = expiryStatus(batches.find((batch) => batch.expiryDate)?.expiryDate ?? null, today, leadDays);
   const breakdown = formatBreakdown(totalQty, product.unit, packs);
-  const scannedPack = scannedUnit ? packs.find((pack) => pack.unit === scannedUnit) ?? null : null;
+  const scannedPack = scannedUnit ? (packs.find((pack) => pack.unit === scannedUnit) ?? null) : null;
 
   function confirmDelete() {
     if (!product) return;
@@ -109,193 +131,220 @@ export default function StockDetailScreen() {
   }
 
   return (
-    <Screen>
-      <Stack.Screen options={{ title: product.name }} />
+    <View style={detailStyles.screen}>
+      <Screen>
+        <Stack.Screen options={{ title: product.name }} />
 
-      {showScanBanner ? (
-        <View style={detailStyles.banner}>
-          <Text style={detailStyles.bannerText}>
-            已认出：{product.name}
-            {scannedPack ? `（${scannedPack.unit}的条码，1 ${scannedPack.unit} = ${formatQty(scannedPack.size)} ${product.unit}）` : ''}
-            。这次是买回来，还是用掉？
-          </Text>
-        </View>
-      ) : null}
-
-      <Card style={detailStyles.summary}>
-        <View style={detailStyles.summaryTop}>
-          <View style={detailStyles.flex}>
-            <Text style={detailStyles.kind}>{KIND_LABEL[product.kind]}</Text>
-            <Text style={detailStyles.title}>{product.name}</Text>
-            {product.brand || product.spec ? (
-              <Text style={detailStyles.sub}>{[product.brand, product.spec].filter(Boolean).join(' · ')}</Text>
-            ) : null}
-          </View>
-          <View style={detailStyles.qtyBox}>
-            <Text style={[detailStyles.qty, totalQty <= 0 && { color: colors.danger }]}>{formatQty(totalQty)}</Text>
-            <Text style={detailStyles.unit}>{product.unit}</Text>
-            {breakdown ? <Text style={detailStyles.breakdown}>{breakdown}</Text> : null}
-          </View>
-        </View>
-        {nearest || low ? (
-          <View style={detailStyles.chips}>
-            {nearest ? (
-              <Chip text={`最早一批${nearest.text}`} tone={nearest.level === 'fine' ? 'neutral' : nearest.tone} />
-            ) : null}
-            {low ? <Chip text={`库存不足（下限 ${formatQty(product.lowStockThreshold ?? 0)}）`} tone="warn" /> : null}
+        {showScanBanner ? (
+          <View style={detailStyles.banner}>
+            <Text style={detailStyles.bannerText}>
+              已认出：{product.name}
+              {scannedPack
+                ? `（${scannedPack.unit}的条码，1 ${scannedPack.unit} = ${formatQty(scannedPack.size)} ${product.unit}）`
+                : ''}
+              。这次是买回来，还是用掉？
+            </Text>
           </View>
         ) : null}
+
+        <Card style={detailStyles.summary}>
+          <View style={detailStyles.summaryTop}>
+            <View style={detailStyles.flex}>
+              <Text style={detailStyles.kind}>{KIND_LABEL[product.kind]}</Text>
+              <Text style={detailStyles.title}>{product.name}</Text>
+              {product.brand || product.spec ? (
+                <Text style={detailStyles.sub}>{[product.brand, product.spec].filter(Boolean).join(' · ')}</Text>
+              ) : null}
+            </View>
+            <View style={detailStyles.qtyBox}>
+              <Text style={[detailStyles.qty, totalQty <= 0 && { color: colors.danger }]}>{formatQty(totalQty)}</Text>
+              <Text style={detailStyles.unit}>{product.unit}</Text>
+              {breakdown ? <Text style={detailStyles.breakdown}>{breakdown}</Text> : null}
+            </View>
+          </View>
+          {nearest || low ? (
+            <View style={detailStyles.chips}>
+              {nearest ? (
+                <Chip text={`最早一批${nearest.text}`} tone={nearest.level === 'fine' ? 'neutral' : nearest.tone} />
+              ) : null}
+              {low ? <Chip text={`库存不足（下限 ${formatQty(product.lowStockThreshold ?? 0)}）`} tone="warn" /> : null}
+            </View>
+          ) : null}
+          <View style={detailStyles.actions}>
+            <Button
+              title="入库"
+              icon="add-circle-outline"
+              onPress={() => setSheet({ type: 'in' })}
+              style={detailStyles.flex}
+            />
+            <Button
+              title="出库 / 用掉"
+              icon="remove-circle-outline"
+              variant="secondary"
+              onPress={() => setSheet({ type: 'out' })}
+              disabled={totalQty <= 0}
+              style={detailStyles.flex}
+            />
+          </View>
+          {message ? <Text style={detailStyles.message}>{message}</Text> : null}
+        </Card>
+
+        <SectionTitle title={`批次（${batches.length}）`} />
+        {batches.length === 0 ? (
+          <Card>
+            <Text style={detailStyles.sub}>没有库存了。买回来后点「入库」记一下。</Text>
+          </Card>
+        ) : (
+          <Card style={detailStyles.batchCard}>
+            {batches.map((batch, index) => {
+              const status = expiryStatus(batch.expiryDate, today, leadDays);
+              return (
+                <SwipeRow
+                  key={batch.id}
+                  rounded={false}
+                  accessibilityLabel={`${batch.expiryDate ? `${formatDate(batch.expiryDate)} 到期` : '没记过期日期'}，${formatQty(batch.quantity)} ${product.unit}`}
+                  onPress={() => setSheet({ type: 'batch', batch })}
+                  onLongPress={() => setSheet({ type: 'batch', batch })}
+                  onDelete={() =>
+                    batchDeletion.remove(
+                      batch.id,
+                      `${batch.expiryDate ? `${formatDate(batch.expiryDate)} 到期的` : ''}一批（${formatQty(batch.quantity)} ${product.unit}）`,
+                    )
+                  }
+                  style={[detailStyles.batchRow, index > 0 && detailStyles.batchDivider]}
+                  pressedStyle={{ backgroundColor: colors.surfaceSunken }}
+                >
+                  <View style={detailStyles.flex}>
+                    <Text style={detailStyles.batchDate}>
+                      {batch.expiryDate ? `${formatDate(batch.expiryDate)} 到期` : '没记过期日期'}
+                    </Text>
+                    <Text style={detailStyles.batchMeta}>{formatDate(batch.addedOn)} 入库</Text>
+                  </View>
+                  {status ? <Chip text={status.text} tone={status.level === 'fine' ? 'neutral' : status.tone} /> : null}
+                  <Text style={detailStyles.batchQty}>
+                    {formatQty(batch.quantity)} {product.unit}
+                  </Text>
+                </SwipeRow>
+              );
+            })}
+          </Card>
+        )}
+
+        <SectionTitle title="出入库记录" />
+        {movements.length === 0 ? (
+          <Card>
+            <Text style={detailStyles.sub}>还没有记录。</Text>
+          </Card>
+        ) : (
+          <Card style={detailStyles.batchCard}>
+            {(showAllMovements ? movements : movements.slice(0, 8)).map((movement, index) => (
+              <MovementRow key={movement.id} movement={movement} unit={product.unit} first={index === 0} />
+            ))}
+            {movements.length > 8 ? (
+              <Button
+                title={showAllMovements ? '收起' : `查看全部 ${movements.length} 条`}
+                variant="ghost"
+                compact
+                onPress={() => setShowAllMovements((value) => !value)}
+              />
+            ) : null}
+          </Card>
+        )}
+
+        <SectionTitle title="信息" />
+        <Card>
+          {office.multiple ? <InfoRow label="办公点" value={office.officeName(product.officeId)} /> : null}
+          <InfoRow label="条码" value={product.barcode ?? '—'} />
+          <InfoRow label="包装规格" value={packs.length ? describePacks(product.unit, packs) : '—'} />
+          {packs
+            .filter((pack) => pack.barcode)
+            .map((pack) => (
+              <InfoRow key={pack.unit} label={`${pack.unit}的条码`} value={pack.barcode ?? ''} />
+            ))}
+          <InfoRow label="存放位置" value={product.location ?? '—'} />
+          <InfoRow
+            label="库存提醒"
+            value={
+              product.lowStockThreshold === null
+                ? '不提醒'
+                : `≤ ${formatQty(product.lowStockThreshold)} ${product.unit} 时`
+            }
+          />
+          <InfoRow
+            label="到期提醒"
+            value={`到期前 ${leadDays} 天起${product.expiryLeadDays === null ? '（默认）' : ''}`}
+          />
+          {product.note ? <InfoRow label="备注" value={product.note} /> : null}
+        </Card>
+
         <View style={detailStyles.actions}>
-          <Button title="入库" icon="add-circle-outline" onPress={() => setSheet({ type: 'in' })} style={detailStyles.flex} />
           <Button
-            title="出库 / 用掉"
-            icon="remove-circle-outline"
+            title="编辑"
+            icon="create-outline"
             variant="secondary"
-            onPress={() => setSheet({ type: 'out' })}
-            disabled={totalQty <= 0}
+            onPress={() => router.push({ pathname: '/stock/edit/[id]', params: { id: String(product.id) } })}
+            style={detailStyles.flex}
+          />
+          <Button
+            title="删除"
+            icon="trash-outline"
+            variant="danger"
+            onPress={confirmDelete}
             style={detailStyles.flex}
           />
         </View>
-        {message ? <Text style={detailStyles.message}>{message}</Text> : null}
-      </Card>
 
-      <SectionTitle title={`批次（${batches.length}）`} />
-      {batches.length === 0 ? (
-        <Card>
-          <Text style={detailStyles.sub}>没有库存了。买回来后点「入库」记一下。</Text>
-        </Card>
-      ) : (
-        <Card style={detailStyles.batchCard}>
-          {batches.map((batch, index) => {
-            const status = expiryStatus(batch.expiryDate, today, leadDays);
-            return (
-              <Pressable
-                key={batch.id}
-                accessibilityRole="button"
-                onPress={() => setSheet({ type: 'batch', batch })}
-                style={({ pressed }) => [
-                  detailStyles.batchRow,
-                  index > 0 && detailStyles.batchDivider,
-                  pressed && { backgroundColor: colors.surfaceSunken },
-                ]}
-              >
-                <View style={detailStyles.flex}>
-                  <Text style={detailStyles.batchDate}>
-                    {batch.expiryDate ? `${formatDate(batch.expiryDate)} 到期` : '没记过期日期'}
-                  </Text>
-                  <Text style={detailStyles.batchMeta}>{formatDate(batch.addedOn)} 入库</Text>
-                </View>
-                {status ? <Chip text={status.text} tone={status.level === 'fine' ? 'neutral' : status.tone} /> : null}
-                <Text style={detailStyles.batchQty}>
-                  {formatQty(batch.quantity)} {product.unit}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </Card>
-      )}
-
-      <SectionTitle title="出入库记录" />
-      {movements.length === 0 ? (
-        <Card>
-          <Text style={detailStyles.sub}>还没有记录。</Text>
-        </Card>
-      ) : (
-        <Card style={detailStyles.batchCard}>
-          {(showAllMovements ? movements : movements.slice(0, 8)).map((movement, index) => (
-            <MovementRow key={movement.id} movement={movement} unit={product.unit} first={index === 0} />
-          ))}
-          {movements.length > 8 ? (
-            <Button
-              title={showAllMovements ? '收起' : `查看全部 ${movements.length} 条`}
-              variant="ghost"
-              compact
-              onPress={() => setShowAllMovements((value) => !value)}
-            />
-          ) : null}
-        </Card>
-      )}
-
-      <SectionTitle title="信息" />
-      <Card>
-        {office.multiple ? <InfoRow label="办公点" value={office.officeName(product.officeId)} /> : null}
-        <InfoRow label="条码" value={product.barcode ?? '—'} />
-        <InfoRow label="包装规格" value={packs.length ? describePacks(product.unit, packs) : '—'} />
-        {packs
-          .filter((pack) => pack.barcode)
-          .map((pack) => (
-            <InfoRow key={pack.unit} label={`${pack.unit}的条码`} value={pack.barcode ?? ''} />
-          ))}
-        <InfoRow label="存放位置" value={product.location ?? '—'} />
-        <InfoRow
-          label="库存提醒"
-          value={product.lowStockThreshold === null ? '不提醒' : `≤ ${formatQty(product.lowStockThreshold)} ${product.unit} 时`}
-        />
-        <InfoRow
-          label="到期提醒"
-          value={`到期前 ${leadDays} 天起${product.expiryLeadDays === null ? '（默认）' : ''}`}
-        />
-        {product.note ? <InfoRow label="备注" value={product.note} /> : null}
-      </Card>
-
-      <View style={detailStyles.actions}>
-        <Button
-          title="编辑"
-          icon="create-outline"
-          variant="secondary"
-          onPress={() => router.push({ pathname: '/stock/edit/[id]', params: { id: String(product.id) } })}
-          style={detailStyles.flex}
-        />
-        <Button title="删除" icon="trash-outline" variant="danger" onPress={confirmDelete} style={detailStyles.flex} />
-      </View>
-
-      {sheet?.type === 'in' ? (
-        <StockInSheet
-          unit={product.unit}
-          packs={packs}
-          defaultUnit={scannedPack?.unit ?? product.unit}
-          isFood={product.kind === 'food'}
-          onClose={() => setSheet(null)}
-          onSubmit={async (quantity, expiryDate, entry) => {
-            await stockIn(db, product.id, { quantity, expiryDate, entry });
-            const asEntered = entry.unit !== product.unit ? `${formatQty(entry.qty)} ${entry.unit}，` : '';
-            await afterChange(`已入库 ${asEntered}${formatQty(quantity)} ${product.unit}`);
-          }}
-        />
+        {sheet?.type === 'in' ? (
+          <StockInSheet
+            unit={product.unit}
+            packs={packs}
+            defaultUnit={scannedPack?.unit ?? product.unit}
+            isFood={product.kind === 'food'}
+            onClose={() => setSheet(null)}
+            onSubmit={async (quantity, expiryDate, entry) => {
+              await stockIn(db, product.id, { quantity, expiryDate, entry });
+              const asEntered = entry.unit !== product.unit ? `${formatQty(entry.qty)} ${entry.unit}，` : '';
+              await afterChange(`已入库 ${asEntered}${formatQty(quantity)} ${product.unit}`);
+            }}
+          />
+        ) : null}
+        {sheet?.type === 'out' ? (
+          <StockOutSheet
+            unit={product.unit}
+            packs={packs}
+            total={totalQty}
+            firstBatch={batches[0] ?? null}
+            onClose={() => setSheet(null)}
+            onSubmit={async (quantity, reason, entry) => {
+              const result = await stockOut(db, product.id, quantity, reason, entry);
+              await afterChange(
+                result.shortfall > 0
+                  ? `只有 ${formatQty(result.consumed)} ${product.unit}，已全部出库`
+                  : `已出库 ${formatQty(result.consumed)} ${product.unit}`,
+              );
+            }}
+          />
+        ) : null}
+        {sheet?.type === 'batch' ? (
+          <BatchSheet
+            batch={sheet.batch}
+            unit={product.unit}
+            onClose={() => setSheet(null)}
+            onSave={async (quantity, expiryDate) => {
+              await updateBatch(db, sheet.batch.id, { quantity, expiryDate });
+              await afterChange('批次已更新');
+            }}
+            onDelete={async () => {
+              await deleteBatch(db, sheet.batch.id);
+              await afterChange('批次已删除');
+            }}
+          />
+        ) : null}
+      </Screen>
+      {batchDeletion.pending ? (
+        <UndoBar text={`已删除${batchDeletion.pending.label}`} onUndo={batchDeletion.undo} />
       ) : null}
-      {sheet?.type === 'out' ? (
-        <StockOutSheet
-          unit={product.unit}
-          packs={packs}
-          total={totalQty}
-          firstBatch={batches[0] ?? null}
-          onClose={() => setSheet(null)}
-          onSubmit={async (quantity, reason, entry) => {
-            const result = await stockOut(db, product.id, quantity, reason, entry);
-            await afterChange(
-              result.shortfall > 0
-                ? `只有 ${formatQty(result.consumed)} ${product.unit}，已全部出库`
-                : `已出库 ${formatQty(result.consumed)} ${product.unit}`,
-            );
-          }}
-        />
-      ) : null}
-      {sheet?.type === 'batch' ? (
-        <BatchSheet
-          batch={sheet.batch}
-          unit={product.unit}
-          onClose={() => setSheet(null)}
-          onSave={async (quantity, expiryDate) => {
-            await updateBatch(db, sheet.batch.id, { quantity, expiryDate });
-            await afterChange('批次已更新');
-          }}
-          onDelete={async () => {
-            await deleteBatch(db, sheet.batch.id);
-            await afterChange('批次已删除');
-          }}
-        />
-      ) : null}
-    </Screen>
+    </View>
   );
 }
 
@@ -321,11 +370,16 @@ function MovementRow({ movement, unit, first }: { movement: StockMovement; unit:
       <View style={detailStyles.flex}>
         <Text style={detailStyles.batchDate}>
           {MOVEMENT_LABEL[movement.type]}
-          {detail ? <Text style={detailStyles.batchMeta}>  {detail}</Text> : null}
+          {detail ? <Text style={detailStyles.batchMeta}> {detail}</Text> : null}
         </Text>
         <Text style={detailStyles.batchMeta}>{formatDateTime(movement.happenedAt)}</Text>
       </View>
-      <Text style={[detailStyles.batchQty, { color: positive ? colors.ok : movement.delta < 0 ? colors.danger : colors.muted }]}>
+      <Text
+        style={[
+          detailStyles.batchQty,
+          { color: positive ? colors.ok : movement.delta < 0 ? colors.danger : colors.muted },
+        ]}
+      >
         {positive ? '+' : ''}
         {formatQty(movement.delta)} {unit}
       </Text>
@@ -534,7 +588,14 @@ const detailStyles = StyleSheet.create({
   actions: { flexDirection: 'row', gap: 10 },
   message: { fontSize: font.small, color: colors.ok, fontWeight: '600' },
   batchCard: { paddingVertical: 4, gap: 0 },
-  batchRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
+  screen: { flex: 1, backgroundColor: colors.bg },
+  batchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    backgroundColor: colors.surface,
+  },
   batchDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line },
   batchDate: { fontSize: font.body, color: colors.ink, fontWeight: '500' },
   batchMeta: { fontSize: font.small, color: colors.faint, marginTop: 2 },

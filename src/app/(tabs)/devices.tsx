@@ -4,9 +4,17 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 
+import { SwipeRow, UndoBar } from '../../components/SwipeRow';
 import { Button, Chip, Empty, Field, Segmented } from '../../components/ui';
-import { listActiveAssignments, listDevices, type ActiveAssignment, type DeviceSummary } from '../../db/devices';
+import {
+  deleteDevice,
+  listActiveAssignments,
+  listDevices,
+  type ActiveAssignment,
+  type DeviceSummary,
+} from '../../db/devices';
 import { useFocusData } from '../../hooks/useFocusData';
+import { usePendingDelete } from '../../hooks/usePendingDelete';
 import { useOffice } from '../../hooks/useOffice';
 import { diffDays, formatDate, todayStr } from '../../lib/dates';
 import { warrantyStatus } from '../../lib/warranty';
@@ -27,7 +35,7 @@ export default function DevicesScreen() {
     ]);
     return { devices, active };
   }, [db, officeFilter]);
-  const [{ devices, active }, , loaded] = useFocusData(loader, {
+  const [{ devices, active }, reload, loaded] = useFocusData(loader, {
     devices: [] as DeviceSummary[],
     active: [] as ActiveAssignment[],
   });
@@ -37,8 +45,16 @@ export default function DevicesScreen() {
   const keyword = query.trim().toLowerCase();
   const today = todayStr();
 
+  const deletion = usePendingDelete<number>(
+    (id) => deleteDevice(db, id),
+    () => {
+      reload().catch(() => undefined);
+    },
+  );
+
   const deviceSections = useMemo(() => {
     const matched = devices.filter((device) => {
+      if (device.id === deletion.pending?.key) return false;
       if (filter === 'out' && device.outQty <= 0) return false;
       if (filter === 'in' && device.quantity - device.outQty <= 0) return false;
       if (!keyword) return true;
@@ -55,7 +71,7 @@ export default function DevicesScreen() {
       groups.set(device.category, list);
     }
     return Array.from(groups, ([title, data]) => ({ title, data }));
-  }, [devices, filter, keyword]);
+  }, [devices, filter, keyword, deletion.pending]);
 
   const personSections = useMemo(() => {
     const groups = new Map<string, ActiveAssignment[]>();
@@ -73,15 +89,12 @@ export default function DevicesScreen() {
 
   const header = (
     <View style={deviceStyles.header}>
-      <Button
-        title="新增设备"
-        icon="add"
-        onPress={() => router.push('/device/new')}
-      />
+      <Button title="新增设备" icon="add" onPress={() => router.push('/device/new')} />
       {devices.length > 0 ? (
         <>
           <Text style={deviceStyles.summary}>
-            共 {devices.length} 种设备，{devices.reduce((sum, device) => sum + device.quantity, 0)} 件；借出 {totalOut} 件
+            共 {devices.length} 种设备，{devices.reduce((sum, device) => sum + device.quantity, 0)} 件；借出 {totalOut}{' '}
+            件
           </Text>
           <Segmented
             options={[
@@ -97,6 +110,7 @@ export default function DevicesScreen() {
             onChangeText={setQuery}
             clearButtonMode="while-editing"
           />
+          {mode === 'device' ? <Text style={deviceStyles.gestureHint}>点开看详情，长按编辑，向左滑删除</Text> : null}
           {mode === 'device' ? (
             <Segmented
               options={[
@@ -171,59 +185,74 @@ export default function DevicesScreen() {
   }
 
   return (
-    <SectionList
-      style={deviceStyles.list}
-      contentContainerStyle={deviceStyles.content}
-      sections={deviceSections}
-      keyExtractor={(item) => String(item.id)}
-      ListHeaderComponent={header}
-      ListEmptyComponent={empty}
-      keyboardShouldPersistTaps="handled"
-      stickySectionHeadersEnabled={false}
-      renderSectionHeader={({ section }) => <Text style={deviceStyles.sectionTitle}>{section.title}</Text>}
-      renderItem={({ item }) => {
-        const available = item.quantity - item.outQty;
-        const warranty = warrantyStatus(item.warrantyUntil, today);
-        return (
-          <Pressable
-            onPress={() => router.push({ pathname: '/device/[id]', params: { id: String(item.id) } })}
-            style={({ pressed }) => [deviceStyles.row, pressed && deviceStyles.rowPressed]}
-          >
-            <View style={deviceStyles.rowMain}>
-              <Text style={deviceStyles.name} numberOfLines={1}>
-                {item.name}
-              </Text>
-              {showOffice || item.model || item.serialNo ? (
-                <Text style={deviceStyles.meta} numberOfLines={1}>
-                  {[showOffice && office.officeName(item.officeId), item.model, item.serialNo && `SN ${item.serialNo}`]
-                    .filter(Boolean)
-                    .join(' · ')}
+    <View style={deviceStyles.screen}>
+      <SectionList
+        style={deviceStyles.list}
+        contentContainerStyle={deviceStyles.content}
+        sections={deviceSections}
+        keyExtractor={(item) => String(item.id)}
+        ListHeaderComponent={header}
+        ListEmptyComponent={empty}
+        keyboardShouldPersistTaps="handled"
+        stickySectionHeadersEnabled={false}
+        renderSectionHeader={({ section }) => <Text style={deviceStyles.sectionTitle}>{section.title}</Text>}
+        renderItem={({ item }) => {
+          const available = item.quantity - item.outQty;
+          const warranty = warrantyStatus(item.warrantyUntil, today);
+          return (
+            <SwipeRow
+              accessibilityLabel={`${item.name}，在库 ${available} 件，共 ${item.quantity} 件`}
+              onPress={() => router.push({ pathname: '/device/[id]', params: { id: String(item.id) } })}
+              onLongPress={() => router.push({ pathname: '/device/edit/[id]', params: { id: String(item.id) } })}
+              onDelete={() => deletion.remove(item.id, item.name)}
+              style={deviceStyles.row}
+              pressedStyle={deviceStyles.rowPressed}
+            >
+              <View style={deviceStyles.rowMain}>
+                <Text style={deviceStyles.name} numberOfLines={1}>
+                  {item.name}
                 </Text>
-              ) : null}
-              {item.holders ? (
-                <Text style={deviceStyles.holders} numberOfLines={1}>
-                  使用人：{item.holders}
-                </Text>
-              ) : null}
-              {warranty && warranty.level !== 'ok' ? (
-                <Chip text={warranty.text} tone={warranty.level === 'expired' ? 'neutral' : 'warn'} />
-              ) : null}
-            </View>
-            <View style={deviceStyles.countBox}>
-              <Chip text={`在库 ${available}`} tone={available > 0 ? 'ok' : 'neutral'} />
-              <Text style={deviceStyles.meta}>共 {item.quantity}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.faint} />
-          </Pressable>
-        );
-      }}
-      SectionSeparatorComponent={() => <View style={deviceStyles.sectionGap} />}
-      ItemSeparatorComponent={() => <View style={deviceStyles.separator} />}
-    />
+                {showOffice || item.model || item.serialNo ? (
+                  <Text style={deviceStyles.meta} numberOfLines={1}>
+                    {[
+                      showOffice && office.officeName(item.officeId),
+                      item.model,
+                      item.serialNo && `SN ${item.serialNo}`,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </Text>
+                ) : null}
+                {item.holders ? (
+                  <Text style={deviceStyles.holders} numberOfLines={1}>
+                    使用人：{item.holders}
+                  </Text>
+                ) : null}
+                {warranty && warranty.level !== 'ok' ? (
+                  <Chip text={warranty.text} tone={warranty.level === 'expired' ? 'neutral' : 'warn'} />
+                ) : null}
+              </View>
+              <View style={deviceStyles.countBox}>
+                <Chip text={`在库 ${available}`} tone={available > 0 ? 'ok' : 'neutral'} />
+                <Text style={deviceStyles.meta}>共 {item.quantity}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.faint} />
+            </SwipeRow>
+          );
+        }}
+        SectionSeparatorComponent={() => <View style={deviceStyles.sectionGap} />}
+        ItemSeparatorComponent={() => <View style={deviceStyles.separator} />}
+      />
+      {deletion.pending ? (
+        <UndoBar text={`已删除「${deletion.pending.label}」和它的领用记录`} onUndo={deletion.undo} />
+      ) : null}
+    </View>
   );
 }
 
 const deviceStyles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.bg },
+  gestureHint: { fontSize: font.small, color: colors.faint, textAlign: 'center' },
   list: { flex: 1, backgroundColor: colors.bg },
   content: { padding: 16, paddingBottom: 40 },
   header: { gap: 12, marginBottom: 4 },
