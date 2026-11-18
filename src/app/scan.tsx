@@ -127,7 +127,13 @@ export default function ScanScreen() {
       />
       <View style={scanStyles.overlay} pointerEvents="none">
         <View style={scanStyles.frame} />
-        <Text style={scanStyles.tip}>{target ? '对准序列号条码或二维码' : '把商品条码放进框里'}</Text>
+        <Text style={scanStyles.tip}>
+          {target?.startsWith('stocktake')
+            ? '扫物品或包装上的条码，设备扫序列号'
+            : target
+              ? '对准序列号条码或二维码'
+              : '把商品条码放进框里'}
+        </Text>
       </View>
       {closeButton}
       <Pressable

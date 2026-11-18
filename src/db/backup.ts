@@ -14,6 +14,7 @@ import {
 import { ensureOfficeByName } from './offices';
 import { DEFAULT_SETTINGS, getSettings } from './settings';
 import type { MovementType } from './stock';
+import { dropOpenStocktakesFor } from './stocktake';
 
 /**
  * 把手机上的数据读出来，按所选分类和办公点组装成备份。
@@ -299,6 +300,8 @@ export async function replaceData(db: SQLiteDatabase, data: BackupData, choice: 
     if (hasData) {
       for (const name of officeNames) {
         const officeId = await ensureOfficeByName(db, name);
+        // 物品、设备要重建（id 会变），这个办公点进行中的盘点对不上了，删掉；已结束的盘点是快照，保留
+        await dropOpenStocktakesFor(db, officeId, withDevices ? [...kinds, 'devices'] : kinds);
         for (const kind of kinds) await deleteProductsOf(db, officeId, kind);
         if (withDevices) await deleteDevicesOf(db, officeId);
         for (const product of data.products) {
@@ -318,10 +321,23 @@ export async function replaceData(db: SQLiteDatabase, data: BackupData, choice: 
 /**
  * 撤销导入用：把本机全部数据（含办公点）换成留底的那一份。
  * 办公点会重建，id 会变，所以把「当前办公点」重置为全部。
+ * 盘点记录不在备份里：进行中的全部删掉（物品 id 都变了），已结束的按办公点名称挂到重建的办公点上，
+ * 名称对不上的删掉。
  */
 export async function restoreAll(db: SQLiteDatabase, data: BackupData): Promise<void> {
   await db.withTransactionAsync(async () => {
+    const previousOffices = new Map(
+      (await db.getAllAsync<{ id: number; name: string }>('SELECT id, name FROM office')).map((office) => [
+        office.id,
+        office.name,
+      ]),
+    );
+    const finishedStocktakes = await db.getAllAsync<{ id: number; officeId: number }>(
+      "SELECT id, office_id AS officeId FROM stocktake WHERE status != 'open'",
+    );
     await db.execAsync(`
+      DELETE FROM stocktake_item WHERE stocktake_id IN (SELECT id FROM stocktake WHERE status = 'open');
+      DELETE FROM stocktake WHERE status = 'open';
       DELETE FROM stock_movement;
       DELETE FROM stock_pack;
       DELETE FROM stock_batch;
@@ -346,6 +362,16 @@ export async function restoreAll(db: SQLiteDatabase, data: BackupData): Promise<
     const fallback = ids.get(names[0]) ?? 1;
     for (const product of data.products) await insertProduct(db, ids.get(product.office) ?? fallback, product);
     for (const device of data.devices) await insertDevice(db, ids.get(device.office) ?? fallback, device);
+    for (const stocktake of finishedStocktakes) {
+      const officeName = previousOffices.get(stocktake.officeId);
+      const newOfficeId = officeName === undefined ? undefined : ids.get(officeName);
+      if (newOfficeId === undefined) {
+        await db.runAsync('DELETE FROM stocktake_item WHERE stocktake_id = ?', [stocktake.id]);
+        await db.runAsync('DELETE FROM stocktake WHERE id = ?', [stocktake.id]);
+      } else {
+        await db.runAsync('UPDATE stocktake SET office_id = ? WHERE id = ?', [newOfficeId, stocktake.id]);
+      }
+    }
     await writeSettings(db, data.settings);
   });
 }

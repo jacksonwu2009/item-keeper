@@ -80,6 +80,25 @@ export default function RemindersScreen() {
         </Text>
       </View>
 
+      <View style={dash.shortcuts}>
+        <Button
+          title="盘点"
+          icon="clipboard-outline"
+          variant="secondary"
+          compact
+          onPress={() => router.push('/stocktake')}
+          style={dash.shortcut}
+        />
+        <Button
+          title="报表"
+          icon="bar-chart-outline"
+          variant="secondary"
+          compact
+          onPress={() => router.push('/report')}
+          style={dash.shortcut}
+        />
+      </View>
+
       {loaded && permission !== 'granted' ? (
         <Card style={dash.permission}>
           <View style={dash.permissionRow}>
@@ -248,6 +267,8 @@ const dash = StyleSheet.create({
   permission: { backgroundColor: colors.warnSoft, borderColor: colors.warnSoft, gap: 10 },
   permissionRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
   permissionText: { flex: 1, fontSize: font.small, color: colors.ink, lineHeight: 20 },
+  shortcuts: { flexDirection: 'row', gap: 8 },
+  shortcut: { flex: 1 },
   tiles: { flexDirection: 'row', gap: 8 },
   tile: {
     flex: 1,

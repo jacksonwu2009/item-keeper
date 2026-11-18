@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { openDb, plain } from './helpers/memoryDb';
+import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { collectBackup, replaceData, restoreAll } from '../src/db/backup';
 import { createDevice, issueDevice, listActiveAssignments, listDevices, returnDevice } from '../src/db/devices';
@@ -21,6 +21,7 @@ import {
   stockOut,
   type StockProductInput,
 } from '../src/db/stock';
+import { openDb, plain } from './helpers/memoryDb';
 
 
 function product(overrides: Partial<StockProductInput>): StockProductInput {

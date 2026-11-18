@@ -1,5 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
+import { deleteStocktakesOfOffice } from './stocktake';
+
 export type Office = {
   id: number;
   name: string;
@@ -61,7 +63,11 @@ export async function deleteOffice(db: SQLiteDatabase, id: number): Promise<void
   if (office.productCount > 0 || office.deviceCount > 0) {
     throw new Error(`「${office.name}」里还有 ${office.productCount} 样物品、${office.deviceCount} 种设备，先移走或删掉再删办公点`);
   }
-  await db.runAsync('DELETE FROM office WHERE id = ?', [id]);
+  await db.withTransactionAsync(async () => {
+    // 盘点记录跟着办公点走，办公点没了就一起删
+    await deleteStocktakesOfOffice(db, id);
+    await db.runAsync('DELETE FROM office WHERE id = ?', [id]);
+  });
 }
 
 /** 按名字找办公点，没有就新建；导入别的手机的数据时用。 */

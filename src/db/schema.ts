@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 export const DATABASE_NAME = 'item-keeper.db';
-const DATABASE_VERSION = 6;
+const DATABASE_VERSION = 7;
 
 /**
  * 表结构
@@ -13,6 +13,8 @@ const DATABASE_VERSION = 6;
  * - device.purchase_date / warranty_until、device_accessory：设备购买日期、保修到期日、随设备的配件（v4 起）
  * - office：办公点；stock_product、device 各有 office_id，条码只在同一办公点内不重复（v5 起）
  * - stock_movement.unit_price / total_price：入库时填的单价（按入库单位）和总价，可不填；device.invoice_no：发票号（v6 起）
+ * - stocktake / stocktake_item：盘点单和每一项的账面数、实盘数（v7 起）。只在本机，不进备份文件；
+ *   盘点完成时对库存的调整记成出入库记录（type='adjust'），这部分会随备份走
  * - setting：键值设置
  */
 export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
@@ -161,6 +163,40 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
       ALTER TABLE stock_movement ADD COLUMN unit_price REAL;
       ALTER TABLE stock_movement ADD COLUMN total_price REAL;
       ALTER TABLE device ADD COLUMN invoice_no TEXT;
+    `);
+  }
+
+  if (currentVersion < 7) {
+    // kinds：这次盘哪些分类，逗号分隔（food,daily,devices 的子集）
+    // expected_qty：清点那一刻的账面数；counted_qty 为 null 表示还没盘；adjusted_qty：完成时对库存实际调了多少
+    // 一个办公点同一时间只能有一个进行中的盘点（部分唯一索引）
+    await db.execAsync(`
+      CREATE TABLE stocktake (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        office_id INTEGER NOT NULL,
+        kinds TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('open', 'done', 'cancelled')),
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        note TEXT
+      );
+      CREATE UNIQUE INDEX ux_stocktake_open_office ON stocktake(office_id) WHERE status = 'open';
+      CREATE INDEX ix_stocktake_office ON stocktake(office_id, started_at);
+
+      CREATE TABLE stocktake_item (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        stocktake_id INTEGER NOT NULL REFERENCES stocktake(id) ON DELETE CASCADE,
+        item_type TEXT NOT NULL CHECK (item_type IN ('product', 'device')),
+        item_id INTEGER NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('food', 'daily', 'devices')),
+        name TEXT NOT NULL,
+        unit TEXT NOT NULL,
+        expected_qty REAL,
+        counted_qty REAL,
+        counted_at TEXT,
+        adjusted_qty REAL,
+        UNIQUE (stocktake_id, item_type, item_id)
+      );
     `);
   }
 
