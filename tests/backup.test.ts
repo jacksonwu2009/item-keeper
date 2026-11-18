@@ -211,22 +211,14 @@ describe('备份导入校验', () => {
     if (!result.ok) assert.match(result.error, /不是 JSON/);
   });
 
-  it('第 1 版备份（没有包装规格和输入单位）也能导入', () => {
-    const data = exported();
-    data.format = 1;
-    delete data.offices;
-    for (const product of data.products) {
-      delete product.packs;
-      for (const movement of product.movements) {
-        delete movement.inputQty;
-        delete movement.inputUnit;
-      }
+  it('1.2.0 以前的旧版备份直接拒绝', () => {
+    for (const format of [1, 2, 3, 4]) {
+      const data = exported();
+      data.format = format;
+      const result = parseBackup(JSON.stringify(data));
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.match(result.error, /1\.2\.0 以前.*不支持/);
     }
-    const result = parseBackup(JSON.stringify(data));
-    assert.equal(result.ok, true);
-    if (!result.ok) return;
-    assert.deepEqual(result.data.products[0].packs, []);
-    assert.equal(result.data.products[0].movements[0].inputUnit, null);
   });
 
   it('带 BOM 的文件也能读', () => {
@@ -267,32 +259,6 @@ describe('按分类导出导入', () => {
     assert.equal(result.summary.daily, 1);
     assert.equal(result.summary.food, 0);
     assert.equal(result.data.settings?.expiryLeadDays, 5);
-  });
-
-  it('第 3 版备份没有购买日期、保修和配件，导入后为空', () => {
-    const data = JSON.parse(JSON.stringify(buildBackup(source, at)));
-    data.format = 3;
-    delete data.offices;
-    for (const device of data.devices) {
-      delete device.purchaseDate;
-      delete device.warrantyUntil;
-      delete device.accessories;
-    }
-    const result = parseBackup(JSON.stringify(data));
-    assert.equal(result.ok, true);
-    if (!result.ok) return;
-    assert.equal(result.data.devices[0].warrantyUntil, null);
-    assert.deepEqual(result.data.devices[0].accessories, []);
-  });
-
-  it('第 2 版备份没有 scope，当作全部分类', () => {
-    const data = JSON.parse(JSON.stringify(buildBackup(source, at)));
-    data.format = 2;
-    delete data.scope;
-    delete data.offices;
-    const result = parseBackup(JSON.stringify(data));
-    assert.equal(result.ok, true);
-    if (result.ok) assert.deepEqual(result.data.scope, ['food', 'daily', 'devices', 'settings']);
   });
 
   it('拒绝：标明只有食品却混进了日用品', () => {
@@ -353,18 +319,6 @@ describe('办公点', () => {
       { name: '北京', food: 1, daily: 0, devices: 1 },
       { name: '上海', food: 0, daily: 1, devices: 0 },
     ]);
-  });
-
-  it('旧版备份没有办公点，摘要里办公点为空', () => {
-    const data = JSON.parse(JSON.stringify(buildBackup(source, at)));
-    data.format = 4;
-    delete data.offices;
-    const result = parseBackup(JSON.stringify(data));
-    assert.equal(result.ok, true);
-    if (!result.ok) return;
-    assert.deepEqual(result.data.offices, []);
-    assert.equal(result.data.products[0].office, null);
-    assert.equal(result.summary.offices[0].name, null);
   });
 
   it('同一条码可以出现在不同办公点', () => {

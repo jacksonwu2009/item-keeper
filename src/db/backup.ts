@@ -260,10 +260,8 @@ async function writeSettings(db: SQLiteDatabase, settings: BackupData['settings'
 export type ImportChoice = {
   /** 要导入的分类（只能是文件里有的） */
   scope: readonly BackupScope[];
-  /** 要导入的办公点名称（只能是文件里有的）；旧版文件不用填 */
+  /** 要导入的办公点名称（只能是文件里有的） */
   offices: readonly string[];
-  /** 旧版文件（没分办公点）导入到本机哪个办公点 */
-  legacyTargetOfficeId: number;
 };
 
 /**
@@ -274,29 +272,25 @@ export async function replaceData(db: SQLiteDatabase, data: BackupData, choice: 
   const selected = normalizeScope(choice.scope).filter((item) => data.scope.includes(item));
   const kinds = selected.filter((item): item is 'food' | 'daily' => item === 'food' || item === 'daily');
   const withDevices = selected.includes('devices');
-  const legacy = data.offices.length === 0;
-  const officeNames: (string | null)[] = legacy ? [null] : data.offices.filter((name) => choice.offices.includes(name));
+  const officeNames = data.offices.filter((name) => choice.offices.includes(name));
   const hasData = kinds.length > 0 || withDevices;
   if (!selected.length || (hasData && !officeNames.length)) throw new Error('没有选要导入的内容');
 
   // 事务前先查冲突：只涉及本机已有的办公点（新建的办公点里没有东西，不会冲突）
   if (kinds.length) {
     for (const name of officeNames) {
-      const existing =
-        name === null
-          ? { id: choice.legacyTargetOfficeId }
-          : await db.getFirstAsync<{ id: number }>('SELECT id FROM office WHERE name = ?', [name]);
+      const existing = await db.getFirstAsync<{ id: number }>('SELECT id FROM office WHERE name = ?', [name]);
       if (!existing) continue;
       const incoming = data.products.filter((product) => product.office === name && kinds.includes(product.kind));
       const conflict = findBarcodeConflict(incoming, await keptProducts(db, existing.id, kinds));
-      if (conflict) throw new Error(name ? `「${name}」：${conflict}` : conflict);
+      if (conflict) throw new Error(`「${name}」：${conflict}`);
     }
   }
 
   await db.withTransactionAsync(async () => {
     if (hasData) {
       for (const name of officeNames) {
-        const officeId = name === null ? choice.legacyTargetOfficeId : await ensureOfficeByName(db, name);
+        const officeId = await ensureOfficeByName(db, name);
         for (const kind of kinds) await deleteProductsOf(db, officeId, kind);
         if (withDevices) await deleteDevicesOf(db, officeId);
         for (const product of data.products) {
@@ -331,7 +325,7 @@ export async function restoreAll(db: SQLiteDatabase, data: BackupData): Promise<
       DELETE FROM setting WHERE key = 'ui.currentOfficeId';
     `);
     const names = data.offices.length ? data.offices : ['默认办公点'];
-    const ids = new Map<string | null, number>();
+    const ids = new Map<string, number>();
     let sort = 0;
     for (const name of names) {
       const result = await db.runAsync('INSERT INTO office (name, sort, created_at) VALUES (?, ?, ?)', [

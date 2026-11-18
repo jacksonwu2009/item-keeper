@@ -6,7 +6,7 @@ import { Alert, Linking, StyleSheet, Text, View } from 'react-native';
 import { TimeField } from '../../components/DateField';
 import { IntegerField } from '../../components/NumberField';
 import { OfficeManager } from '../../components/OfficeManager';
-import { Button, Card, ChoiceChips, Label, MultiChips, Screen, SectionTitle, Segmented, Sheet, SwitchRow } from '../../components/ui';
+import { Button, Card, Label, MultiChips, Screen, SectionTitle, Segmented, Sheet, SwitchRow } from '../../components/ui';
 import { listDevices } from '../../db/devices';
 import { DEFAULT_SETTINGS, getSettings, saveSettings, type AppSettings } from '../../db/settings';
 import { listProducts } from '../../db/stock';
@@ -109,7 +109,6 @@ export default function SettingsScreen() {
   const [exportOfficeIds, setExportOfficeIds] = useState<number[] | null>(null);
   const [importScope, setImportScope] = useState<BackupScope[]>([]);
   const [importOffices, setImportOffices] = useState<string[]>([]);
-  const [legacyTarget, setLegacyTarget] = useState<number | null>(null);
   const current = settings ?? data.settings;
   const countsOf = (officeId: number | undefined) => (officeId === undefined ? EMPTY_COUNTS : data.officeCounts[officeId] ?? EMPTY_COUNTS);
 
@@ -164,7 +163,6 @@ export default function SettingsScreen() {
       setPending({ fileName: picked.fileName, data: picked.result.data, summary: picked.result.summary });
       setImportScope(picked.result.summary.scope);
       setImportOffices(picked.result.data.offices);
-      setLegacyTarget(office.defaultId);
     } catch (error) {
       setDataNotice({ text: error instanceof Error ? error.message : '选文件时出错了，请重试', tone: 'error' });
     } finally {
@@ -176,11 +174,7 @@ export default function SettingsScreen() {
     if (!pending) return;
     setBusy('import');
     try {
-      await importBackup(db, pending.data, {
-        scope: importScope,
-        offices: importOffices,
-        legacyTargetOfficeId: legacyTarget ?? office.defaultId,
-      });
+      await importBackup(db, pending.data, { scope: importScope, offices: importOffices });
       setPending(null);
       setSettings(null);
       setDataNotice({
@@ -402,9 +396,8 @@ export default function SettingsScreen() {
             </Text>
             <Text style={setStyles.hint}>备份时间：{formatDateTime(pending.summary.exportedAt)}</Text>
             {pending.summary.offices.map((item) => (
-              <Text key={item.name ?? '-'} style={setStyles.body}>
-                {item.name ? `${item.name}：` : '备份里有：'}
-                {describeSummary(item, pending.summary.scope)}
+              <Text key={item.name} style={setStyles.body}>
+                {item.name}：{describeSummary(item, pending.summary.scope)}
               </Text>
             ))}
             <Text style={setStyles.hint}>
@@ -419,16 +412,6 @@ export default function SettingsScreen() {
                 options={pending.data.offices.map((name) => ({ value: name, label: name }))}
                 values={importOffices}
                 onChange={setImportOffices}
-              />
-            </View>
-          ) : null}
-          {pending.data.offices.length === 0 && office.multiple ? (
-            <View style={setStyles.group}>
-              <Label>这是旧版备份，没分办公点，导入到</Label>
-              <ChoiceChips
-                options={office.offices.map((item) => ({ value: item.id, label: item.name }))}
-                value={legacyTarget}
-                onChange={setLegacyTarget}
               />
             </View>
           ) : null}
@@ -448,9 +431,8 @@ export default function SettingsScreen() {
               scope: importScope,
               fileOffices: pending.data.offices,
               chosenOffices: importOffices,
-              legacyName: office.officeName(legacyTarget ?? office.defaultId),
-              countsOf: (name) => countsOf(name === null ? (legacyTarget ?? office.defaultId) : localOfficeId(name)),
-              exists: (name) => name === null || localOfficeId(name) !== undefined,
+              countsOf: (name) => countsOf(localOfficeId(name)),
+              exists: (name) => localOfficeId(name) !== undefined,
             })}
           </Text>
           <View style={setStyles.row}>
@@ -467,9 +449,7 @@ export default function SettingsScreen() {
               loading={busy === 'import'}
               disabled={
                 importScope.length === 0 ||
-                (pending.data.offices.length > 0 &&
-                  importOffices.length === 0 &&
-                  importScope.some((item) => item !== 'settings'))
+                (importOffices.length === 0 && importScope.some((item) => item !== 'settings'))
               }
               onPress={() => runImport()}
             />
@@ -487,26 +467,23 @@ function importPlanText({
   scope,
   fileOffices,
   chosenOffices,
-  legacyName,
   countsOf,
   exists,
 }: {
   scope: BackupScope[];
   fileOffices: string[];
   chosenOffices: string[];
-  legacyName: string;
-  countsOf: (name: string | null) => Counts;
-  exists: (name: string | null) => boolean;
+  countsOf: (name: string) => Counts;
+  exists: (name: string) => boolean;
 }): string {
   if (!scope.length) return '至少选一类。';
   const dataScope = scope.filter((item) => item !== 'settings');
-  const names: (string | null)[] = fileOffices.length ? fileOffices.filter((name) => chosenOffices.includes(name)) : [null];
+  const names = fileOffices.filter((name) => chosenOffices.includes(name));
   if (dataScope.length && !names.length) return '至少选一个办公点。';
   const parts: string[] = [];
   if (dataScope.length) {
     for (const name of names) {
-      const label = name ?? legacyName;
-      parts.push(exists(name) ? `${label}的${describeReplaced(dataScope, countsOf(name))}` : `${label}（本机还没有，会新建）`);
+      parts.push(exists(name) ? `${name}的${describeReplaced(dataScope, countsOf(name))}` : `${name}（本机还没有，会新建）`);
     }
   }
   if (scope.includes('settings')) parts.push('提醒设置');

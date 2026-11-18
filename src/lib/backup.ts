@@ -16,11 +16,9 @@ import { validateAccessories, type Accessory } from './warranty';
 
 export const BACKUP_APP = 'item-keeper';
 /**
- * 1：首版；2：加了包装规格 packs 和流水的 inputQty / inputUnit（读 1 版时这些取空）；
- * 3：加了 scope，可以只含部分分类（读 1、2 版时当作全部分类）；
- * 4：设备加了 purchaseDate、warrantyUntil、accessories（读旧版时取空）；
- * 5：加了办公点：offices 列出文件里有哪些办公点，每样物品、设备带 office（读旧版时 office 为空，导入时放进用户选的办公点）。
- * 只含部分分类的文件必须让旧版 App 拒绝，否则旧版会当成全量备份把别的分类清空，所以升版本号。
+ * 备份格式版本号。1.2.0 起为 5（含办公点、分类范围、包装规格、设备保修和配件）；
+ * 更早的版本没有正式使用过，不再兼容，导入时直接提示。
+ * 以后改格式要升这个号：旧版 App 读到新号会拒绝，免得它按自己的理解把数据替换掉。
  */
 export const BACKUP_FORMAT = 5;
 export const OFFICE_NAME_LIMIT = 20;
@@ -57,8 +55,8 @@ export type BackupMovement = {
 };
 
 export type BackupProduct = {
-  /** 办公点名称；第 5 版以前的文件为 null */
-  office: string | null;
+  /** 办公点名称 */
+  office: string;
   kind: 'food' | 'daily';
   barcode: string | null;
   name: string;
@@ -85,8 +83,8 @@ export type BackupAssignment = {
 };
 
 export type BackupDevice = {
-  /** 办公点名称；第 5 版以前的文件为 null */
-  office: string | null;
+  /** 办公点名称 */
+  office: string;
   category: string;
   name: string;
   model: string | null;
@@ -110,15 +108,14 @@ export type BackupData = {
   scope: BackupScope[];
   /** scope 不含 settings 时为 null */
   settings: AppSettings | null;
-  /** 文件里有哪些办公点（含空的），按原顺序；第 5 版以前的文件为空数组 */
+  /** 文件里有哪些办公点（含空的），按原顺序 */
   offices: string[];
   products: BackupProduct[];
   devices: BackupDevice[];
 };
 
 export type OfficeSummary = {
-  /** null 表示旧版文件，没分办公点 */
-  name: string | null;
+  name: string;
   food: number;
   daily: number;
   devices: number;
@@ -196,7 +193,7 @@ export function buildBackup(
     products: source.products
       .filter((product) => included.includes(product.kind) && officeName.has(product.officeId))
       .map(({ id, ...product }) => ({
-      office: officeName.get(product.officeId) ?? null,
+      office: officeName.get(product.officeId) ?? '',
       kind: product.kind,
       barcode: product.barcode,
       name: product.name,
@@ -231,7 +228,7 @@ export function buildBackup(
     devices: (included.includes('devices') ? source.devices : [])
       .filter((device) => officeName.has(device.officeId))
       .map(({ id, ...device }) => ({
-      office: officeName.get(device.officeId) ?? null,
+      office: officeName.get(device.officeId) ?? '',
       category: device.category,
       name: device.name,
       model: device.model,
@@ -258,11 +255,10 @@ export function buildBackup(
 }
 
 export function summarizeBackup(data: BackupData): BackupSummary {
-  const names: (string | null)[] = data.offices.length ? data.offices : [null];
   return {
     exportedAt: data.exportedAt,
     scope: data.scope,
-    offices: names.map((name) => ({
+    offices: data.offices.map((name) => ({
       name,
       food: data.products.filter((product) => product.office === name && product.kind === 'food').length,
       daily: data.products.filter((product) => product.office === name && product.kind === 'daily').length,
@@ -390,15 +386,14 @@ function parseSettings(value: unknown): AppSettings {
   return settings as AppSettings;
 }
 
-/** 第 5 版起每项都要写办公点，且必须在文件的办公点名单里；旧版文件 offices 为 null，办公点留空。 */
-function parseOffice(raw: Obj, where: string, offices: string[] | null): string | null {
-  if (offices === null) return null;
+/** 每项都要写办公点，且必须在文件的办公点名单里。 */
+function parseOffice(raw: Obj, where: string, offices: string[]): string {
   const office = reqText(raw.office, where, '办公点');
   if (!offices.includes(office)) fail(where, `办公点「${office}」不在文件的办公点名单里`);
   return office;
 }
 
-function parseProduct(raw: unknown, index: number, exportedAt: string, offices: string[] | null): BackupProduct {
+function parseProduct(raw: unknown, index: number, exportedAt: string, offices: string[]): BackupProduct {
   let where = `第 ${index + 1} 个物品`;
   if (!isObj(raw)) fail(where, '格式不对');
   const name = reqText(raw.name, where, '名称');
@@ -474,7 +469,7 @@ function parseProduct(raw: unknown, index: number, exportedAt: string, offices: 
   };
 }
 
-function parseDevice(raw: unknown, index: number, exportedAt: string, offices: string[] | null): BackupDevice {
+function parseDevice(raw: unknown, index: number, exportedAt: string, offices: string[]): BackupDevice {
   let where = `第 ${index + 1} 台设备`;
   if (!isObj(raw)) fail(where, '格式不对');
   const name = reqText(raw.name, where, '名称');
@@ -547,28 +542,23 @@ export function parseBackup(text: string): ParseResult {
     const format = typeof root.format === 'number' ? root.format : 0;
     if (format < 1) fail('', '备份文件缺少版本号，可能已损坏');
     if (format > BACKUP_FORMAT) fail('', '这个备份来自更新版本的 App，请先升级 App 再导入');
+    if (format < BACKUP_FORMAT) fail('', '这是 1.2.0 以前的 App 导出的备份，现在不支持了，请用新版 App 重新导出');
     const exportedAt = timestamp(root.exportedAt, `${todayStr()}T00:00:00.000Z`);
 
-    let scope: BackupScope[] = [...ALL_SCOPES];
-    if (format >= 3) {
-      const rawScope = list(root.scope, '', '分类');
-      if (!rawScope.length) fail('', '备份没写包含哪些分类，可能已损坏');
-      for (const item of rawScope) {
-        if (!ALL_SCOPES.includes(item as BackupScope)) fail('', `不认识的分类「${String(item)}」`);
-      }
-      scope = normalizeScope(rawScope as BackupScope[]);
+    const rawScope = list(root.scope, '', '分类');
+    if (!rawScope.length) fail('', '备份没写包含哪些分类，可能已损坏');
+    for (const item of rawScope) {
+      if (!ALL_SCOPES.includes(item as BackupScope)) fail('', `不认识的分类「${String(item)}」`);
     }
+    const scope = normalizeScope(rawScope as BackupScope[]);
 
-    let offices: string[] | null = null;
-    if (format >= 5) {
-      offices = list(root.offices, '', '办公点').map((raw, index) => {
-        const name = reqText(raw, `第 ${index + 1} 个办公点`, '名称');
-        if (name.length > OFFICE_NAME_LIMIT) fail('', `办公点名称「${name}」超过 ${OFFICE_NAME_LIMIT} 个字`);
-        return name;
-      });
-      if (!offices.length) fail('', '备份没写包含哪些办公点，可能已损坏');
-      if (new Set(offices).size !== offices.length) fail('', '备份里的办公点名称有重复');
-    }
+    const offices = list(root.offices, '', '办公点').map((raw, index) => {
+      const name = reqText(raw, `第 ${index + 1} 个办公点`, '名称');
+      if (name.length > OFFICE_NAME_LIMIT) fail('', `办公点名称「${name}」超过 ${OFFICE_NAME_LIMIT} 个字`);
+      return name;
+    });
+    if (!offices.length) fail('', '备份没写包含哪些办公点，可能已损坏');
+    if (new Set(offices).size !== offices.length) fail('', '备份里的办公点名称有重复');
 
     const products = list(root.products, '', '物品').map((raw, index) => parseProduct(raw, index, exportedAt, offices));
     const devices = list(root.devices, '', '设备').map((raw, index) => parseDevice(raw, index, exportedAt, offices));
@@ -580,14 +570,14 @@ export function parseBackup(text: string): ParseResult {
     // 物品条码和包装条码在同一个办公点里不能重复
     const barcodeOwner = new Map<string, string>();
     for (const product of products) {
-      const place = product.office ? `${product.office}的` : '';
+      const place = `${product.office}的`;
       const codes: [string | null, string][] = [
         [product.barcode, `${place}「${product.name}」`],
         ...product.packs.map((pack): [string | null, string] => [pack.barcode, `${place}「${product.name}」的${pack.unit}`]),
       ];
       for (const [code, label] of codes) {
         if (!code) continue;
-        const key = `${product.office ?? ''}\u0000${code}`;
+        const key = `${product.office}\u0000${code}`;
         const owner = barcodeOwner.get(key);
         if (owner) fail('', `条码 ${code} 同时出现在${owner}和${label}`);
         barcodeOwner.set(key, label);
@@ -600,7 +590,7 @@ export function parseBackup(text: string): ParseResult {
       exportedAt,
       scope,
       settings: scope.includes('settings') ? parseSettings(root.settings) : null,
-      offices: offices ?? [],
+      offices,
       products,
       devices,
     };

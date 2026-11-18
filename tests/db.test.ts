@@ -191,7 +191,7 @@ describe('手机之间按办公点传数据（真实 SQLite）', () => {
     const hq = await openDb();
     await renameFirstOffice(hq, '总部');
     await createProduct(hq, product({ name: '总部的咖啡', barcode: '690' }), { quantity: 2, expiryDate: null });
-    await replaceData(hq, file, { scope: ['food'], offices: ['北京'], legacyTargetOfficeId: 1 });
+    await replaceData(hq, file, { scope: ['food'], offices: ['北京'] });
 
     const offices = await listOffices(hq);
     assert.deepEqual(
@@ -212,10 +212,10 @@ describe('手机之间按办公点传数据（真实 SQLite）', () => {
     const source = await beijingPhone();
     const hq = await openDb();
     const everything = await collectBackup(source);
-    await replaceData(hq, everything, { scope: ['food', 'daily', 'devices'], offices: ['北京'], legacyTargetOfficeId: 1 });
+    await replaceData(hq, everything, { scope: ['food', 'daily', 'devices'], offices: ['北京'] });
     await stockOut(source, 1, 2, '用掉');
     const foodOnly = await collectBackup(source, ['food'], [1]);
-    await replaceData(hq, foodOnly, { scope: ['food'], offices: ['北京'], legacyTargetOfficeId: 1 });
+    await replaceData(hq, foodOnly, { scope: ['food'], offices: ['北京'] });
 
     const beijing = (await listOffices(hq)).find((office) => office.name === '北京')!;
     const food = await listProducts(hq, 'food', beijing.id);
@@ -232,7 +232,7 @@ describe('手机之间按办公点传数据（真实 SQLite）', () => {
     await renameFirstOffice(hq, '北京');
     await createProduct(hq, product({ kind: 'daily', name: '洗衣液', barcode: '690' }), { quantity: 1, expiryDate: null });
     await assert.rejects(
-      replaceData(hq, file, { scope: ['food'], offices: ['北京'], legacyTargetOfficeId: 1 }),
+      replaceData(hq, file, { scope: ['food'], offices: ['北京'] }),
       /「北京」：条码 690 在备份的「可乐」和手机上日用品里的「洗衣液」重复/,
     );
     assert.equal((await listProducts(hq, 'food', 1)).length, 0);
@@ -246,7 +246,6 @@ describe('手机之间按办公点传数据（真实 SQLite）', () => {
     await replaceData(hq, await collectBackup(other), {
       scope: ['food', 'daily', 'devices', 'settings'],
       offices: ['默认办公点'],
-      legacyTargetOfficeId: 1,
     });
     assert.equal((await listOffices(hq)).length, 2);
 
