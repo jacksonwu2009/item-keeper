@@ -12,7 +12,7 @@ import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-import { collectBackup, replaceData } from '../db/backup';
+import { collectBackup, replaceData, restoreAll, type ImportChoice } from '../db/backup';
 import {
   ALL_SCOPES,
   backupFileName,
@@ -27,9 +27,14 @@ import { rescheduleReminders } from './notifications';
 
 const UNDO_FILE_NAME = 'before-last-import.json';
 
-export async function exportBackup(db: SQLiteDatabase, scope: readonly BackupScope[]): Promise<BackupSummary> {
-  const data = await collectBackup(db, scope);
-  const file = new File(Paths.cache, backupFileName(new Date(), scope));
+/** officeIds 为 null 时导出所有办公点。 */
+export async function exportBackup(
+  db: SQLiteDatabase,
+  scope: readonly BackupScope[],
+  officeIds: readonly number[] | null,
+): Promise<BackupSummary> {
+  const data = await collectBackup(db, scope, officeIds);
+  const file = new File(Paths.cache, backupFileName(new Date(), scope, officeIds === null ? null : data.offices));
   file.create({ overwrite: true });
   await file.write(JSON.stringify(data, null, 2));
   if (!(await Sharing.isAvailableAsync())) throw new Error('这台手机不支持系统分享，没法把备份文件存出去');
@@ -58,11 +63,11 @@ export async function pickBackup(): Promise<PickedBackup | null> {
   return { fileName: asset.name, result: parseBackup(text) };
 }
 
-/** 用备份替换所选分类的数据；替换前先把手机上的全部数据留一份，用于撤销。 */
-export async function importBackup(db: SQLiteDatabase, data: BackupData, scope: readonly BackupScope[]): Promise<void> {
+/** 用备份替换所选办公点、所选分类的数据；替换前先把手机上的全部数据留一份，用于撤销。 */
+export async function importBackup(db: SQLiteDatabase, data: BackupData, choice: ImportChoice): Promise<void> {
   // 先在内存里留底，导入成功后才写盘：导入被拒（如条码冲突）时不会留下一份没意义的「撤销」
   const current = await collectBackup(db, ALL_SCOPES);
-  await replaceData(db, data, scope);
+  await replaceData(db, data, choice);
   const undoFile = new File(Paths.document, UNDO_FILE_NAME);
   undoFile.create({ overwrite: true });
   await undoFile.write(JSON.stringify(current));
@@ -81,7 +86,7 @@ export async function readUndoSnapshot(): Promise<{ data: BackupData; summary: B
 export async function undoLastImport(db: SQLiteDatabase): Promise<boolean> {
   const snapshot = await readUndoSnapshot();
   if (!snapshot) return false;
-  await replaceData(db, snapshot.data, ALL_SCOPES);
+  await restoreAll(db, snapshot.data);
   new File(Paths.document, UNDO_FILE_NAME).delete();
   await rescheduleReminders(db).catch(() => undefined);
   return true;

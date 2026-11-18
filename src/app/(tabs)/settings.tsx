@@ -6,11 +6,12 @@ import { Alert, Linking, StyleSheet, Text, View } from 'react-native';
 import { TimeField } from '../../components/DateField';
 import { IntegerField } from '../../components/NumberField';
 import { OfficeManager } from '../../components/OfficeManager';
-import { Button, Card, Label, MultiChips, Screen, SectionTitle, Segmented, Sheet, SwitchRow } from '../../components/ui';
+import { Button, Card, ChoiceChips, Label, MultiChips, Screen, SectionTitle, Segmented, Sheet, SwitchRow } from '../../components/ui';
 import { listDevices } from '../../db/devices';
 import { DEFAULT_SETTINGS, getSettings, saveSettings, type AppSettings } from '../../db/settings';
 import { listProducts } from '../../db/stock';
 import { useFocusData } from '../../hooks/useFocusData';
+import { useOffice } from '../../hooks/useOffice';
 import { ALL_SCOPES, SCOPE_LABEL, type BackupData, type BackupScope, type BackupSummary } from '../../lib/backup';
 import { formatDateTime } from '../../lib/dates';
 import { exportBackup, importBackup, pickBackup, readUndoSnapshot, undoLastImport } from '../../lib/dataTransfer';
@@ -37,11 +38,17 @@ function describeSummary(counts: Counts, scope: readonly BackupScope[] = ['food'
     .join('、');
 }
 
-/** 导入时会被替换掉的手机上的数据：「食品（现有 8 种）、提醒设置」。 */
+/** 导入时会被替换掉的某个办公点的数据：「食品（现有 8 种）、设备（现有 3 种）」。 */
 function describeReplaced(scope: readonly BackupScope[], counts: Counts): string {
-  return ALL_SCOPES.filter((item) => scope.includes(item))
-    .map((item) => (item === 'settings' ? SCOPE_LABEL.settings : `${SCOPE_LABEL[item]}（现有 ${counts[item]} 种）`))
+  return ALL_SCOPES.filter((item) => scope.includes(item) && item !== 'settings')
+    .map((item) => `${SCOPE_LABEL[item as Exclude<BackupScope, 'settings'>]}（现有 ${counts[item as keyof Counts]} 种）`)
     .join('、');
+}
+
+const EMPTY_COUNTS: Counts = { food: 0, daily: 0, devices: 0 };
+
+function addCounts(a: Counts, b: Counts): Counts {
+  return { food: a.food + b.food, daily: a.daily + b.daily, devices: a.devices + b.devices };
 }
 
 type PendingImport = { fileName: string; data: BackupData; summary: BackupSummary };
@@ -56,6 +63,7 @@ const REPEAT_OPTIONS = [
 
 export default function SettingsScreen() {
   const db = useSQLiteContext();
+  const office = useOffice();
   const loader = useCallback(async () => {
     const [settings, permission, products, devices, undo] = await Promise.all([
       getSettings(db),
@@ -64,12 +72,21 @@ export default function SettingsScreen() {
       listDevices(db),
       readUndoSnapshot().catch(() => null),
     ]);
+    // 每个办公点各有多少：导出、导入时按办公点显示
+    const officeCounts: Record<number, Counts> = {};
+    const bump = (officeId: number, key: keyof Counts) => {
+      officeCounts[officeId] = { ...(officeCounts[officeId] ?? EMPTY_COUNTS) };
+      officeCounts[officeId][key] += 1;
+    };
+    for (const product of products) bump(product.officeId, product.kind);
+    for (const device of devices) bump(device.officeId, 'devices');
     return {
       settings,
       permission,
       foodCount: products.filter((product) => product.kind === 'food').length,
       dailyCount: products.filter((product) => product.kind === 'daily').length,
       deviceCount: devices.length,
+      officeCounts,
       undo: undo?.summary ?? null,
     };
   }, [db]);
@@ -79,6 +96,7 @@ export default function SettingsScreen() {
     foodCount: 0,
     dailyCount: 0,
     deviceCount: 0,
+    officeCounts: {} as Record<number, Counts>,
     undo: null as BackupSummary | null,
   });
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -87,9 +105,21 @@ export default function SettingsScreen() {
   const [busy, setBusy] = useState<'export' | 'pick' | 'import' | 'undo' | null>(null);
   const [pending, setPending] = useState<PendingImport | null>(null);
   const [exportScope, setExportScope] = useState<BackupScope[]>(ALL_SCOPES);
+  /** null 表示还没手动选过：默认是当前办公点（看全部时是全部） */
+  const [exportOfficeIds, setExportOfficeIds] = useState<number[] | null>(null);
   const [importScope, setImportScope] = useState<BackupScope[]>([]);
+  const [importOffices, setImportOffices] = useState<string[]>([]);
+  const [legacyTarget, setLegacyTarget] = useState<number | null>(null);
   const current = settings ?? data.settings;
-  const phoneCounts: Counts = { food: data.foodCount, daily: data.dailyCount, devices: data.deviceCount };
+  const countsOf = (officeId: number | undefined) => (officeId === undefined ? EMPTY_COUNTS : data.officeCounts[officeId] ?? EMPTY_COUNTS);
+
+  const allOfficeIds = office.offices.map((item) => item.id);
+  const chosenExportOffices = (
+    exportOfficeIds ?? (office.filterId !== null ? [office.filterId] : allOfficeIds)
+  ).filter((id) => allOfficeIds.includes(id));
+  const exportAllOffices = chosenExportOffices.length === allOfficeIds.length;
+  const exportCounts = chosenExportOffices.reduce((sum, id) => addCounts(sum, countsOf(id)), EMPTY_COUNTS);
+  const localOfficeId = (name: string) => office.offices.find((item) => item.name === name)?.id;
 
   async function update(patch: Partial<AppSettings>) {
     setSettings({ ...current, ...patch });
@@ -108,9 +138,10 @@ export default function SettingsScreen() {
     setBusy('export');
     setDataNotice(null);
     try {
-      const summary = await exportBackup(db, exportScope);
+      const summary = await exportBackup(db, exportScope, exportAllOffices ? null : chosenExportOffices);
+      const where = office.multiple && !exportAllOffices ? `${summary.offices.map((item) => item.name).join('、')}：` : '';
       setDataNotice({
-        text: `已生成备份（${describeSummary(summary, summary.scope)}）。没存好的话可以再导一次。`,
+        text: `已生成备份（${where}${describeSummary(summary, summary.scope)}）。没存好的话可以再导一次。`,
         tone: 'ok',
       });
     } catch (error) {
@@ -132,6 +163,8 @@ export default function SettingsScreen() {
       }
       setPending({ fileName: picked.fileName, data: picked.result.data, summary: picked.result.summary });
       setImportScope(picked.result.summary.scope);
+      setImportOffices(picked.result.data.offices);
+      setLegacyTarget(office.defaultId);
     } catch (error) {
       setDataNotice({ text: error instanceof Error ? error.message : '选文件时出错了，请重试', tone: 'error' });
     } finally {
@@ -143,14 +176,18 @@ export default function SettingsScreen() {
     if (!pending) return;
     setBusy('import');
     try {
-      await importBackup(db, pending.data, importScope);
+      await importBackup(db, pending.data, {
+        scope: importScope,
+        offices: importOffices,
+        legacyTargetOfficeId: legacyTarget ?? office.defaultId,
+      });
       setPending(null);
       setSettings(null);
       setDataNotice({
-        text: `已导入（${describeSummary(pending.summary, importScope)}），没选的分类没动。导入前的数据留了一份，可以撤销。`,
+        text: `已导入，没选的办公点和分类没动。导入前的数据留了一份，可以撤销。`,
         tone: 'ok',
       });
-      await reload();
+      await Promise.all([reload(), office.reload()]);
     } catch (error) {
       setPending(null);
       setDataNotice({
@@ -174,6 +211,7 @@ export default function SettingsScreen() {
           try {
             const restored = await undoLastImport(db);
             setSettings(null);
+            await office.reload();
             setDataNotice(
               restored ? { text: '已换回导入前的数据。', tone: 'ok' } : { text: '找不到导入前的数据。', tone: 'error' },
             );
@@ -289,24 +327,36 @@ export default function SettingsScreen() {
       <SectionTitle title="导入导出" />
       <Card>
         <Text style={setStyles.hint}>
-          数据只存在这台手机上。导出会生成一个备份文件（.json），可以存到「文件」、网盘或发给自己；换手机时在新手机上导入它。
-          可以只导出、只导入其中几类。
+          数据只存在这台手机上。导出会生成一个文件（.json），用微信、TypeX、隔空投送等发给别的手机，对方在这里导入；换手机、备份也用它。
+          {office.multiple ? '每个办公点由一台手机负责记，定期把自己办公点导出发给汇总的人，对方导入时只替换这个办公点。' : ''}
         </Text>
+        {office.multiple ? (
+          <View style={setStyles.group}>
+            <Label>导出哪些办公点</Label>
+            <MultiChips
+              options={office.offices.map((item) => ({ value: String(item.id), label: item.name }))}
+              values={chosenExportOffices.map(String)}
+              onChange={(values) => setExportOfficeIds(values.map(Number))}
+            />
+          </View>
+        ) : null}
         <View style={setStyles.group}>
-          <Label>导出哪些</Label>
+          <Label>导出哪些分类</Label>
           <MultiChips
-            options={ALL_SCOPES.map((item) => ({ value: item, label: describeScopeItem(item, phoneCounts) }))}
+            options={ALL_SCOPES.map((item) => ({ value: item, label: describeScopeItem(item, exportCounts) }))}
             values={exportScope}
             onChange={setExportScope}
           />
         </View>
         <View style={setStyles.row}>
           <Button
-            title={exportScope.length === ALL_SCOPES.length ? '导出全部' : '导出所选'}
+            title={exportScope.length === ALL_SCOPES.length && exportAllOffices ? '导出全部' : '导出所选'}
             icon="share-outline"
             compact
             loading={busy === 'export'}
-            disabled={(busy !== null && busy !== 'export') || exportScope.length === 0}
+            disabled={
+              (busy !== null && busy !== 'export') || exportScope.length === 0 || chosenExportOffices.length === 0
+            }
             onPress={() => runExport()}
           />
           <Button
@@ -351,27 +401,57 @@ export default function SettingsScreen() {
               {pending.fileName}
             </Text>
             <Text style={setStyles.hint}>备份时间：{formatDateTime(pending.summary.exportedAt)}</Text>
-            <Text style={setStyles.body}>备份里有：{describeSummary(pending.summary, pending.summary.scope)}</Text>
+            {pending.summary.offices.map((item) => (
+              <Text key={item.name ?? '-'} style={setStyles.body}>
+                {item.name ? `${item.name}：` : '备份里有：'}
+                {describeSummary(item, pending.summary.scope)}
+              </Text>
+            ))}
             <Text style={setStyles.hint}>
               含 {pending.summary.batches} 个批次、{pending.summary.movements} 条出入库记录、
               {pending.summary.assignments} 条设备领用记录。
             </Text>
           </Card>
+          {pending.data.offices.length > 1 ? (
+            <View style={setStyles.group}>
+              <Label>导入哪些办公点</Label>
+              <MultiChips
+                options={pending.data.offices.map((name) => ({ value: name, label: name }))}
+                values={importOffices}
+                onChange={setImportOffices}
+              />
+            </View>
+          ) : null}
+          {pending.data.offices.length === 0 && office.multiple ? (
+            <View style={setStyles.group}>
+              <Label>这是旧版备份，没分办公点，导入到</Label>
+              <ChoiceChips
+                options={office.offices.map((item) => ({ value: item.id, label: item.name }))}
+                value={legacyTarget}
+                onChange={setLegacyTarget}
+              />
+            </View>
+          ) : null}
           <View style={setStyles.group}>
-            <Label>导入哪些</Label>
+            <Label>导入哪些分类</Label>
             <MultiChips
               options={pending.summary.scope.map((item) => ({
                 value: item,
-                label: describeScopeItem(item, pending.summary),
+                label: SCOPE_LABEL[item],
               }))}
               values={importScope}
               onChange={setImportScope}
             />
           </View>
           <Text style={setStyles.warning}>
-            {importScope.length
-              ? `会替换手机上的：${describeReplaced(importScope, phoneCounts)}。没选的分类不动。替换前会自动留一份，导错了可以撤销。`
-              : '至少选一类。'}
+            {importPlanText({
+              scope: importScope,
+              fileOffices: pending.data.offices,
+              chosenOffices: importOffices,
+              legacyName: office.officeName(legacyTarget ?? office.defaultId),
+              countsOf: (name) => countsOf(name === null ? (legacyTarget ?? office.defaultId) : localOfficeId(name)),
+              exists: (name) => name === null || localOfficeId(name) !== undefined,
+            })}
           </Text>
           <View style={setStyles.row}>
             <Button
@@ -385,7 +465,12 @@ export default function SettingsScreen() {
               title="替换并导入"
               style={setStyles.flex}
               loading={busy === 'import'}
-              disabled={importScope.length === 0}
+              disabled={
+                importScope.length === 0 ||
+                (pending.data.offices.length > 0 &&
+                  importOffices.length === 0 &&
+                  importScope.some((item) => item !== 'settings'))
+              }
               onPress={() => runImport()}
             />
           </View>
@@ -395,6 +480,37 @@ export default function SettingsScreen() {
       <Text style={setStyles.footer}>物品管家 {Constants.expoConfig?.version ?? ''}</Text>
     </Screen>
   );
+}
+
+/** 导入前告诉用户会替换掉本机的哪些东西。 */
+function importPlanText({
+  scope,
+  fileOffices,
+  chosenOffices,
+  legacyName,
+  countsOf,
+  exists,
+}: {
+  scope: BackupScope[];
+  fileOffices: string[];
+  chosenOffices: string[];
+  legacyName: string;
+  countsOf: (name: string | null) => Counts;
+  exists: (name: string | null) => boolean;
+}): string {
+  if (!scope.length) return '至少选一类。';
+  const dataScope = scope.filter((item) => item !== 'settings');
+  const names: (string | null)[] = fileOffices.length ? fileOffices.filter((name) => chosenOffices.includes(name)) : [null];
+  if (dataScope.length && !names.length) return '至少选一个办公点。';
+  const parts: string[] = [];
+  if (dataScope.length) {
+    for (const name of names) {
+      const label = name ?? legacyName;
+      parts.push(exists(name) ? `${label}的${describeReplaced(dataScope, countsOf(name))}` : `${label}（本机还没有，会新建）`);
+    }
+  }
+  if (scope.includes('settings')) parts.push('提醒设置');
+  return `会替换本机的：${parts.join('；')}。没选的办公点和分类不动。替换前会自动留一份，导错了可以撤销。`;
 }
 
 const setStyles = StyleSheet.create({

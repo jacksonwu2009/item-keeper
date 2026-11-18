@@ -12,9 +12,14 @@ import {
 
 const source: BackupSource = {
   settings: { ...DEFAULT_SETTINGS, expiryLeadDays: 5 },
+  offices: [
+    { id: 1, name: '北京' },
+    { id: 2, name: '上海' },
+  ],
   products: [
     {
       id: 1,
+      officeId: 1,
       kind: 'food',
       barcode: '6901234567892',
       name: '纯牛奶',
@@ -30,6 +35,7 @@ const source: BackupSource = {
     },
     {
       id: 2,
+      officeId: 2,
       kind: 'daily',
       barcode: null,
       name: '抽纸',
@@ -75,6 +81,7 @@ const source: BackupSource = {
   devices: [
     {
       id: 7,
+      officeId: 1,
       category: '笔记本',
       name: 'MacBook Pro 14',
       model: 'M3 Pro',
@@ -169,8 +176,16 @@ describe('备份导入校验', () => {
     ['过期日期无效', (data) => (data.products[0].batches[0].expiryDate = '2026-13-01'), /纯牛奶.*过期日期「2026-13-01」/],
     ['类别不对', (data) => (data.products[1].kind = 'tool'), /抽纸.*类别/],
     ['缺名称', (data) => (data.products[0].name = ' '), /第 1 个物品：缺少名称/],
-    ['条码重复', (data) => (data.products[1].barcode = '6901234567892'), /条码 6901234567892 同时出现/],
-    ['包装条码和别的物品条码重复', (data) => (data.products[1].barcode = '16901234567899'), /同时出现在「纯牛奶」的箱和「抽纸」/],
+    [
+      '同一办公点条码重复',
+      (data) => ((data.products[1].office = '北京'), (data.products[1].barcode = '6901234567892')),
+      /条码 6901234567892 同时出现/,
+    ],
+    [
+      '同一办公点包装条码和别的物品条码重复',
+      (data) => ((data.products[1].office = '北京'), (data.products[1].barcode = '16901234567899')),
+      /同时出现在北京的「纯牛奶」的箱和北京的「抽纸」/,
+    ],
     ['包装和最小单位同名', (data) => (data.products[0].packs[0].unit = '盒'), /不能和最小单位「盒」同名/],
     ['包装换算数量为 0', (data) => (data.products[0].packs[0].size = 0), /大于 0/],
     ['退还早于领取', (data) => (data.devices[0].assignments[1].returnedOn = '2026-08-01'), /退还日期早于领取日期/],
@@ -199,6 +214,7 @@ describe('备份导入校验', () => {
   it('第 1 版备份（没有包装规格和输入单位）也能导入', () => {
     const data = exported();
     data.format = 1;
+    delete data.offices;
     for (const product of data.products) {
       delete product.packs;
       for (const movement of product.movements) {
@@ -256,6 +272,7 @@ describe('按分类导出导入', () => {
   it('第 3 版备份没有购买日期、保修和配件，导入后为空', () => {
     const data = JSON.parse(JSON.stringify(buildBackup(source, at)));
     data.format = 3;
+    delete data.offices;
     for (const device of data.devices) {
       delete device.purchaseDate;
       delete device.warrantyUntil;
@@ -272,6 +289,7 @@ describe('按分类导出导入', () => {
     const data = JSON.parse(JSON.stringify(buildBackup(source, at)));
     data.format = 2;
     delete data.scope;
+    delete data.offices;
     const result = parseBackup(JSON.stringify(data));
     assert.equal(result.ok, true);
     if (result.ok) assert.deepEqual(result.data.scope, ['food', 'daily', 'devices', 'settings']);
@@ -300,5 +318,87 @@ describe('按分类导出导入', () => {
       findBarcodeConflict(food, [{ name: '洗衣液', kind: 'daily', barcodes: ['16901234567899'] }]) ?? '',
       /条码 16901234567899 在备份的「纯牛奶」和手机上日用品里的「洗衣液」重复/,
     );
+  });
+});
+
+describe('办公点', () => {
+  const at = new Date('2026-11-18T02:00:00.000Z');
+
+  it('导出时每项带办公点，可以只导出一个办公点', () => {
+    const all = buildBackup(source, at);
+    assert.deepEqual(all.offices, ['北京', '上海']);
+    assert.deepEqual(
+      all.products.map((product) => [product.name, product.office]),
+      [
+        ['纯牛奶', '北京'],
+        ['抽纸', '上海'],
+      ],
+    );
+    const beijing = buildBackup(source, at, ['food', 'daily', 'devices'], [1]);
+    assert.deepEqual(beijing.offices, ['北京']);
+    assert.deepEqual(
+      beijing.products.map((product) => product.name),
+      ['纯牛奶'],
+    );
+    assert.equal(beijing.devices.length, 1);
+    const shanghai = buildBackup(source, at, ['devices'], [2]);
+    assert.equal(shanghai.devices.length, 0);
+  });
+
+  it('摘要按办公点分开数', () => {
+    const result = parseBackup(JSON.stringify(buildBackup(source, at)));
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.deepEqual(result.summary.offices, [
+      { name: '北京', food: 1, daily: 0, devices: 1 },
+      { name: '上海', food: 0, daily: 1, devices: 0 },
+    ]);
+  });
+
+  it('旧版备份没有办公点，摘要里办公点为空', () => {
+    const data = JSON.parse(JSON.stringify(buildBackup(source, at)));
+    data.format = 4;
+    delete data.offices;
+    const result = parseBackup(JSON.stringify(data));
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.deepEqual(result.data.offices, []);
+    assert.equal(result.data.products[0].office, null);
+    assert.equal(result.summary.offices[0].name, null);
+  });
+
+  it('同一条码可以出现在不同办公点', () => {
+    const data = JSON.parse(JSON.stringify(buildBackup(source, at)));
+    data.products[1].barcode = '6901234567892';
+    assert.equal(parseBackup(JSON.stringify(data)).ok, true);
+  });
+
+  it('拒绝：同一办公点里条码重复', () => {
+    const data = JSON.parse(JSON.stringify(buildBackup(source, at)));
+    data.products[1].office = '北京';
+    data.products[1].barcode = '6901234567892';
+    const result = parseBackup(JSON.stringify(data));
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.error, /条码 6901234567892 同时出现在北京的「纯牛奶」和北京的「抽纸」/);
+  });
+
+  it('拒绝：物品的办公点不在名单里，或者没写办公点', () => {
+    const wrong = JSON.parse(JSON.stringify(buildBackup(source, at)));
+    wrong.products[0].office = '广州';
+    const result = parseBackup(JSON.stringify(wrong));
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.error, /办公点「广州」不在文件的办公点名单里/);
+
+    const missing = JSON.parse(JSON.stringify(buildBackup(source, at)));
+    delete missing.devices[0].office;
+    const result2 = parseBackup(JSON.stringify(missing));
+    assert.equal(result2.ok, false);
+    if (!result2.ok) assert.match(result2.error, /缺少办公点/);
+  });
+
+  it('只导出一个办公点时文件名带上办公点', () => {
+    const now = new Date(2026, 10, 18, 9, 5);
+    assert.equal(backupFileName(now, ['food'], ['北京 办公室']), 'item-keeper-北京_办公室-food-20261118-0905.json');
+    assert.equal(backupFileName(now, ['food'], ['北京', '上海']), 'item-keeper-food-20261118-0905.json');
   });
 });
