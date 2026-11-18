@@ -202,13 +202,13 @@ export default function ReportScreen() {
                 />
               ))}
             </View>
-            <Text style={reportStyles.subTitle}>用得最多</Text>
+            <Text style={reportStyles.subTitle}>出库次数最多</Text>
             {consumption.topProducts.map((rank) => (
               <ValueRow
                 key={rank.productId}
                 name={rank.name}
-                detail={KIND_LABEL[rank.kind]}
-                value={`${formatQty(rank.quantity)} ${rank.unit}`}
+                detail={`${KIND_LABEL[rank.kind]} · 共 ${formatQty(rank.quantity)} ${rank.unit}`}
+                value={`${rank.count} 次`}
                 onPress={() => openProduct(rank.productId)}
               />
             ))}
@@ -289,6 +289,19 @@ export default function ReportScreen() {
                 value={`${row.total} 件`}
               />
             ))}
+            {devices.byConfig.length ? (
+              <>
+                <Text style={reportStyles.subTitle}>电脑配置</Text>
+                {devices.byConfig.map((row) => (
+                  <ValueRow
+                    key={row.config}
+                    name={row.config}
+                    detail={`借出 ${row.out} · 在库 ${row.inStock}`}
+                    value={`${row.total} 台`}
+                  />
+                ))}
+              </>
+            ) : null}
             {devices.warrantySoonQty || devices.warrantyExpiredQty ? (
               <>
                 <Text style={reportStyles.subTitle}>保修</Text>

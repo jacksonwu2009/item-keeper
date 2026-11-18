@@ -8,35 +8,71 @@ import { Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-nat
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '../components/ui';
+import { findDeviceBySerial } from '../db/devices';
 import { findByBarcode } from '../db/stock';
 import { useOffice } from '../hooks/useOffice';
+import { parseDeviceCode } from '../lib/devicePresets';
 import { putScanResult } from '../lib/scanHandoff';
 import { isStockKind } from '../lib/stock';
 import { font, radius } from '../theme';
 
 /**
- * 两种用法：
+ * 几种用法：
  * - /scan?kind=food|daily：扫商品条码。认识的条码直接打开该物品（入库/出库），不认识的进新建页。
- * - /scan?target=xxx：给表单扫一个码（比如设备序列号），扫到后返回上一页。
+ * - /scan?target=xxx：给表单扫一个码，扫到后返回上一页。
+ * - mode=device：扫设备序列号。只认序列号条码（苹果包装盒上的去掉前面的 S），扫到商品条码、型号编号会提示换一个；
+ *   不带 target 时，登记过的序列号直接打开那台设备，没登记过的进新增页（带 template 时沿用那一台的信息）。
  */
 export default function ScanScreen() {
   const db = useSQLiteContext();
   const office = useOffice();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ kind?: string; target?: string }>();
+  const params = useLocalSearchParams<{ kind?: string; target?: string; mode?: string; template?: string }>();
   const kind = isStockKind(params.kind) ? params.kind : 'food';
   const target = typeof params.target === 'string' ? params.target : null;
+  const deviceMode = params.mode === 'device';
+  const templateId = typeof params.template === 'string' ? params.template : null;
+  const [notice, setNotice] = useState<string | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [manualCode, setManualCode] = useState('');
   const [torch, setTorch] = useState(false);
   const handled = useRef(false);
 
-  async function handleCode(raw: string) {
+  async function handleCode(raw: string, barcodeType: string | null = null) {
     const code = raw.trim();
     if (!code || handled.current) return;
     handled.current = true;
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
 
+    if (deviceMode) {
+      const parsed = parseDeviceCode(code, barcodeType);
+      if (parsed.kind === 'notSerial') {
+        // 不是序列号：提示一下，过一会儿接着扫（相机会一直报同一个码，不能马上放开）
+        setNotice(parsed.reason);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => undefined);
+        setTimeout(() => {
+          handled.current = false;
+        }, 1500);
+        return;
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+      if (target) {
+        putScanResult(target, parsed.serial);
+        router.back();
+        return;
+      }
+      const existing = await findDeviceBySerial(db, parsed.serial, office.filterId);
+      if (existing) {
+        router.replace({ pathname: '/device/[id]', params: { id: String(existing.id) } });
+      } else {
+        router.replace({
+          pathname: '/device/new',
+          params: { serial: parsed.serial, ...(templateId ? { template: templateId } : {}) },
+        });
+      }
+      return;
+    }
+
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
     if (target) {
       putScanResult(target, code);
       router.back();
@@ -56,7 +92,7 @@ export default function ScanScreen() {
   }
 
   function onScanned(result: BarcodeScanningResult) {
-    handleCode(result.data).catch(() => {
+    handleCode(result.data, result.type).catch(() => {
       handled.current = false;
     });
   }
@@ -75,14 +111,14 @@ export default function ScanScreen() {
 
   const manualEntry = (
     <View style={scanStyles.manual}>
-      <Text style={scanStyles.manualLabel}>扫不出来？手动输入条码</Text>
+      <Text style={scanStyles.manualLabel}>{deviceMode ? '扫不出来？手动输入序列号' : '扫不出来？手动输入条码'}</Text>
       <View style={scanStyles.manualRow}>
         <TextInput
           value={manualCode}
           onChangeText={setManualCode}
-          placeholder="例如 6901234567892"
+          placeholder={deviceMode ? '例如 C02XK1ABJGH5' : '例如 6901234567892'}
           placeholderTextColor="rgba(255,255,255,0.5)"
-          keyboardType={target ? 'default' : 'number-pad'}
+          keyboardType={target || deviceMode ? 'default' : 'number-pad'}
           autoCapitalize="characters"
           style={scanStyles.manualInput}
           returnKeyType="done"
@@ -128,12 +164,18 @@ export default function ScanScreen() {
       <View style={scanStyles.overlay} pointerEvents="none">
         <View style={scanStyles.frame} />
         <Text style={scanStyles.tip}>
-          {target?.startsWith('stocktake')
-            ? '扫物品或包装上的条码，设备扫序列号'
-            : target
-              ? '对准序列号条码或二维码'
-              : '把商品条码放进框里'}
+          {deviceMode
+            ? '扫包装盒标签上 Serial No. 的条码'
+            : target?.startsWith('stocktake')
+              ? '扫物品或包装上的条码，设备扫序列号'
+              : target
+                ? '对准序列号条码或二维码'
+                : '把商品条码放进框里'}
         </Text>
+        {deviceMode && !notice ? (
+          <Text style={scanStyles.subTip}>没有包装盒的，序列号在电脑「关于本机」里，可以在下面手动输入</Text>
+        ) : null}
+        {notice ? <Text style={scanStyles.notice}>{notice}</Text> : null}
       </View>
       {closeButton}
       <Pressable
@@ -163,6 +205,18 @@ const scanStyles = StyleSheet.create({
     borderRadius: radius.lg,
   },
   tip: { color: '#FFFFFF', fontSize: font.body, fontWeight: '600' },
+  subTip: { color: 'rgba(255,255,255,0.75)', fontSize: font.small, textAlign: 'center', paddingHorizontal: 32 },
+  notice: {
+    color: '#FFFFFF',
+    fontSize: font.small,
+    fontWeight: '600',
+    textAlign: 'center',
+    backgroundColor: 'rgba(196,60,44,0.85)',
+    borderRadius: radius.sm,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    marginHorizontal: 24,
+  },
   close: {
     position: 'absolute',
     width: 42,

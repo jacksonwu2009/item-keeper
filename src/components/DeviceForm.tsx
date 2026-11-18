@@ -5,6 +5,19 @@ import { StyleSheet, Text, View } from 'react-native';
 import { DEVICE_CATEGORIES, type DeviceInput } from '../db/devices';
 import { useOffice } from '../hooks/useOffice';
 import { formatDate } from '../lib/dates';
+import {
+  composeChip,
+  hasComputerConfig,
+  isMacName,
+  MAC_CHIP_GENERATIONS,
+  MAC_CHIP_TIERS,
+  MEMORY_OPTIONS,
+  normalizeCapacity,
+  parseChip,
+  presetLabel,
+  STORAGE_OPTIONS,
+  type DevicePreset,
+} from '../lib/devicePresets';
 import { takeScanResult } from '../lib/scanHandoff';
 import { validateAccessories, warrantyEnd, type WarrantyUnit } from '../lib/warranty';
 import { colors, font, radius } from '../theme';
@@ -26,12 +39,18 @@ export function DeviceForm({
   minQuantity = 1,
   submitLabel,
   onSubmit,
+  presets,
+  onSubmitAndNext,
 }: {
   initial?: Partial<DeviceInput>;
   /** 编辑时数量不能少于正在借出的数量 */
   minQuantity?: number;
   submitLabel: string;
   onSubmit: (input: DeviceInput) => Promise<void>;
+  /** 新增时的快速选择（登记过的组合 + 内置常用设备）；不传就不显示 */
+  presets?: DevicePreset[];
+  /** 传了就多一个「保存并扫下一台」按钮（同款批量登记） */
+  onSubmitAndNext?: (input: DeviceInput) => Promise<void>;
 }) {
   const office = useOffice();
   const [officeId, setOfficeId] = useState(initial?.officeId ?? office.defaultId);
@@ -39,6 +58,9 @@ export function DeviceForm({
   const [name, setName] = useState(initial?.name ?? '');
   const [model, setModel] = useState(initial?.model ?? '');
   const [serialNo, setSerialNo] = useState(initial?.serialNo ?? '');
+  const [chip, setChip] = useState(initial?.chip ?? '');
+  const [memory, setMemory] = useState(initial?.memory ?? '');
+  const [storage, setStorage] = useState(initial?.storage ?? '');
   const [quantity, setQuantity] = useState<number | null>(initial?.quantity ?? 1);
   const [note, setNote] = useState(initial?.note ?? '');
   const [purchaseDate, setPurchaseDate] = useState<string | null>(initial?.purchaseDate ?? null);
@@ -99,13 +121,27 @@ export function DeviceForm({
     setAccessories((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
   }
 
-  async function submit() {
+  /** 选了快速选择里的一项：类别、名称、型号、配置、配件都换成它的 */
+  function applyPreset(preset: DevicePreset) {
+    setCategory(preset.category);
+    setName(preset.name);
+    setModel(preset.model ?? '');
+    setChip(preset.chip ?? '');
+    setMemory(preset.memory ?? '');
+    setStorage(preset.storage ?? '');
+    setAccessories(preset.accessories.map((item) => ({ key: ++accessoryKey, name: item.name, quantity: item.quantity })));
+  }
+
+  const showConfig = hasComputerConfig(category);
+  const chipParts = parseChip(chip);
+
+  async function submit(handler: (input: DeviceInput) => Promise<void>) {
     setShowErrors(true);
     setSubmitError(null);
     if (hasErrors) return;
     setBusy(true);
     try {
-      await onSubmit({
+      await handler({
         officeId,
         category,
         name,
@@ -116,6 +152,10 @@ export function DeviceForm({
         purchaseDate,
         warrantyUntil,
         invoiceNo,
+        // 不是电脑的类别不存配置（比如先选了笔记本又改成显示器）
+        chip: showConfig ? chip.trim() || null : null,
+        memory: showConfig ? normalizeCapacity(memory) : null,
+        storage: showConfig ? normalizeCapacity(storage) : null,
         accessories: accessoryList,
       });
     } catch (error) {
@@ -127,6 +167,23 @@ export function DeviceForm({
 
   return (
     <Screen>
+      {presets && presets.length > 0 ? (
+        <View style={formStyles.group}>
+          <Label>快速选择</Label>
+          <View style={formStyles.chips}>
+            {presets.slice(0, 14).map((preset) => (
+              <Button
+                key={presetLabel(preset)}
+                title={presetLabel(preset)}
+                compact
+                variant="secondary"
+                onPress={() => applyPreset(preset)}
+              />
+            ))}
+          </View>
+          <Text style={formStyles.hint}>前面是登记过的，选了自动填类别、名称、配置和配件，再按实际改。</Text>
+        </View>
+      ) : null}
       <OfficeChooser value={officeId} onChange={setOfficeId} />
       <Card>
         <View style={formStyles.group}>
@@ -138,10 +195,48 @@ export function DeviceForm({
           required
           value={name}
           onChangeText={setName}
-          placeholder="如 MacBook Pro 14"
+          placeholder="如 MacBook Pro 14 英寸"
           error={shown(errors.name)}
         />
-        <Field label="型号" value={model} onChangeText={setModel} placeholder="如 M3 Pro 18G/512G、U2723QE" />
+        <Field
+          label="型号"
+          value={model}
+          onChangeText={setModel}
+          placeholder={showConfig ? '型号编号等，如 MRX33CH/A，可不填' : '如 U2723QE，可不填'}
+        />
+        {showConfig ? (
+          <View style={formStyles.config}>
+            <Field label="芯片" value={chip} onChangeText={setChip} placeholder="如 M3 Pro、i7-1260P" />
+            {isMacName(name) ? (
+              <>
+                <ChoiceChips
+                  options={MAC_CHIP_GENERATIONS.map((value) => ({ value, label: value }))}
+                  value={chipParts.generation}
+                  onChange={(generation) => setChip(composeChip(generation, chipParts.tier))}
+                />
+                {chipParts.generation ? (
+                  <ChoiceChips
+                    options={MAC_CHIP_TIERS.map((value) => ({ value, label: value || '标准' }))}
+                    value={chipParts.tier}
+                    onChange={(tier) => setChip(composeChip(chipParts.generation, tier))}
+                  />
+                ) : null}
+              </>
+            ) : null}
+            <Field label="内存" value={memory} onChangeText={setMemory} placeholder="如 16G" />
+            <ChoiceChips
+              options={MEMORY_OPTIONS.map((value) => ({ value, label: value }))}
+              value={normalizeCapacity(memory)}
+              onChange={setMemory}
+            />
+            <Field label="硬盘" value={storage} onChangeText={setStorage} placeholder="如 512G" />
+            <ChoiceChips
+              options={STORAGE_OPTIONS.map((value) => ({ value, label: value }))}
+              value={normalizeCapacity(storage)}
+              onChange={setStorage}
+            />
+          </View>
+        ) : null}
         <Field
           label="序列号"
           value={serialNo}
@@ -152,7 +247,7 @@ export function DeviceForm({
             <IconButton
               icon="barcode-outline"
               label="扫描序列号"
-              onPress={() => router.push({ pathname: '/scan', params: { target: SCAN_TARGET } })}
+              onPress={() => router.push({ pathname: '/scan', params: { target: SCAN_TARGET, mode: 'device' } })}
             />
           }
         />
@@ -265,15 +360,28 @@ export function DeviceForm({
         </View>
       </Card>
 
-      <Field label="备注" value={note} onChangeText={setNote} placeholder="发票号、存放位置等" multiline />
+      <Field label="备注" value={note} onChangeText={setNote} placeholder="存放位置等" multiline />
       {submitError ? <Text style={formStyles.error}>{submitError}</Text> : null}
-      <Button title={submitLabel} onPress={submit} loading={busy} />
+      <Button title={submitLabel} onPress={() => submit(onSubmit)} loading={busy} />
+      {onSubmitAndNext ? (
+        <Button
+          title="保存并扫下一台"
+          icon="barcode-outline"
+          variant="secondary"
+          onPress={() => submit(onSubmitAndNext)}
+          disabled={busy}
+        />
+      ) : null}
+      {onSubmitAndNext ? (
+        <Text style={formStyles.hint}>同款批量登记：下一台沿用这台的名称、配置、配件、购买日期、发票号和保修，只换序列号。</Text>
+      ) : null}
     </Screen>
   );
 }
 
 const formStyles = StyleSheet.create({
   group: { gap: 8 },
+  config: { gap: 8, padding: 10, borderRadius: radius.sm, backgroundColor: colors.surfaceSunken },
   hint: { fontSize: font.small, color: colors.faint, lineHeight: 18 },
   error: { fontSize: font.small, color: colors.danger },
   computed: { fontSize: font.small, color: colors.muted },

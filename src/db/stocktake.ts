@@ -6,6 +6,8 @@ import {
   adjustmentNote,
   countState,
   parseKinds,
+  type Absence,
+  type OpenStocktakeScope,
   planAdjustment,
   serializeKinds,
   summarizeCounts,
@@ -53,8 +55,10 @@ export type StocktakeItem = {
   bookQty: number;
   /** 物品条码或设备序列号，搜索用 */
   code: string | null;
-  /** 物品、设备还在不在（盘点期间被删了就是 false） */
+  /** 物品、设备是否还在这次盘点的办公点和分类里（被删、被移走就是 false） */
   present: boolean;
+  /** 不在的原因：被删了，或移到了别的办公点 / 分类 */
+  absence: Absence;
 };
 
 type StocktakeRow = Omit<Stocktake, 'kinds'> & { kinds: string };
@@ -82,9 +86,20 @@ const ITEM_COLUMNS = `
     ELSE (SELECT d.serial_no FROM device d WHERE d.id = i.item_id)
   END AS code,
   CASE i.item_type
-    WHEN 'product' THEN EXISTS (SELECT 1 FROM stock_product p WHERE p.id = i.item_id)
-    ELSE EXISTS (SELECT 1 FROM device d WHERE d.id = i.item_id)
-  END AS present`;
+    WHEN 'product' THEN (
+      SELECT CASE
+               WHEN p.id IS NULL THEN 'deleted'
+               WHEN p.office_id != s.office_id OR instr(',' || s.kinds || ',', ',' || p.kind || ',') = 0 THEN 'moved'
+             END
+        FROM stocktake s LEFT JOIN stock_product p ON p.id = i.item_id
+       WHERE s.id = i.stocktake_id)
+    ELSE (
+      SELECT CASE WHEN d.id IS NULL THEN 'deleted' WHEN d.office_id != s.office_id THEN 'moved' END
+        FROM stocktake s LEFT JOIN device d ON d.id = i.item_id
+       WHERE s.id = i.stocktake_id)
+  END AS absence`;
+
+type ItemRow = Omit<StocktakeItem, 'present'>;
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -94,8 +109,27 @@ function toStocktake(row: StocktakeRow): Stocktake {
   return { ...row, kinds: parseKinds(row.kinds) };
 }
 
-function toItem(row: Omit<StocktakeItem, 'present'> & { present: number | boolean }): StocktakeItem {
-  return { ...row, bookQty: roundQty(row.bookQty), present: !!row.present };
+function toItem(row: ItemRow): StocktakeItem {
+  const absence: Absence = row.absence === 'deleted' || row.absence === 'moved' ? row.absence : null;
+  return { ...row, bookQty: roundQty(row.bookQty), absence, present: absence === null };
+}
+
+/**
+ * 完成、放弃盘点一次只跑一个。expo-sqlite 的事务和其他语句共用一个连接，
+ * 两个事务同时跑会互相混进去（比如完成到一半点了放弃），所以这里排队执行。
+ */
+let exclusiveQueue: Promise<unknown> = Promise.resolve();
+
+function runExclusively<T>(task: () => Promise<T>): Promise<T> {
+  const run = exclusiveQueue.then(task, task);
+  exclusiveQueue = run.catch(() => undefined);
+  return run;
+}
+
+/** 盘点单不是进行中时给用户看的原因 */
+async function notOpenReason(db: SQLiteDatabase, stocktakeId: number): Promise<string> {
+  const stocktake = await getStocktake(db, stocktakeId);
+  return stocktake ? '这次盘点已经结束了' : '找不到这次盘点';
 }
 
 export async function getStocktake(db: SQLiteDatabase, id: number): Promise<Stocktake | null> {
@@ -140,7 +174,7 @@ export async function listStocktakes(db: SQLiteDatabase, officeId: number | null
 }
 
 export async function listStocktakeItems(db: SQLiteDatabase, stocktakeId: number): Promise<StocktakeItem[]> {
-  const rows = await db.getAllAsync<Omit<StocktakeItem, 'present'> & { present: number }>(
+  const rows = await db.getAllAsync<ItemRow>(
     `SELECT ${ITEM_COLUMNS}
        FROM stocktake_item i
       WHERE i.stocktake_id = ?
@@ -151,7 +185,7 @@ export async function listStocktakeItems(db: SQLiteDatabase, stocktakeId: number
 }
 
 async function getItem(db: SQLiteDatabase, itemId: number): Promise<StocktakeItem | null> {
-  const row = await db.getFirstAsync<Omit<StocktakeItem, 'present'> & { present: number }>(
+  const row = await db.getFirstAsync<ItemRow>(
     `SELECT ${ITEM_COLUMNS} FROM stocktake_item i WHERE i.id = ?`,
     [itemId],
   );
@@ -225,6 +259,8 @@ export async function recordCount(db: SQLiteDatabase, itemId: number, countedQty
   const item = await getItem(db, itemId);
   if (!item) throw new Error('找不到这一项');
   await assertOpen(db, item.stocktakeId);
+  if (item.absence === 'deleted') throw new Error('这一项已经删除了，不用盘');
+  if (item.absence === 'moved') throw new Error('这一项已经移到别的办公点或分类了，不用在这里盘');
   if (!(countedQty >= 0)) throw new Error('实盘数量不能小于 0');
   if (item.itemType === 'device' && !Number.isInteger(countedQty)) throw new Error('设备数量要是整数');
   await db.runAsync('UPDATE stocktake_item SET counted_qty = ?, expected_qty = ?, counted_at = ? WHERE id = ?', [
@@ -268,7 +304,9 @@ export async function findStocktakeItemByCode(
     if (row) return { itemId: row.id, packUnit: match.pack?.unit ?? null };
   }
   const device = await db.getFirstAsync<{ id: number }>(
-    `SELECT i.id FROM stocktake_item i JOIN device d ON d.id = i.item_id
+    `SELECT i.id FROM stocktake_item i
+       JOIN stocktake s ON s.id = i.stocktake_id
+       JOIN device d ON d.id = i.item_id AND d.office_id = s.office_id
       WHERE i.stocktake_id = ? AND i.item_type = 'device' AND d.serial_no = ?`,
     [stocktakeId, trimmed],
   );
@@ -285,69 +323,82 @@ export type FinishResult = CountSummary & {
 /**
  * 完成盘点：已盘的物品按「实盘 − 清点时的账面」调整库存（盘亏先扣最早到期的批次，
  * 盘盈加到最早到期的那一批，没有批次就新建一批），每项记一条「调整」出入库记录。
- * 设备只记差异，不改数量；未盘的不调整；盘点期间被删掉的物品跳过。
+ * 设备只记差异，不改数量；未盘的不调整；盘点期间被删掉或移到别的办公点 / 分类的跳过。
+ * 先在事务里把状态从「进行中」改成「已完成」（改不动就说明已经结束了，报错、什么都不调），
+ * 再在同一个事务里调库存，所以同一张盘点单不会调两次。
  */
-export async function finishStocktake(db: SQLiteDatabase, stocktakeId: number): Promise<FinishResult> {
-  await assertOpen(db, stocktakeId);
-  const items = await listStocktakeItems(db, stocktakeId);
-  const summary = summarizeCounts(items);
-  let adjustedProducts = 0;
-  let deviceDifferences = 0;
-
-  await db.withTransactionAsync(async () => {
-    const now = nowIso();
-    for (const item of items) {
-      const state = countState(item);
-      if (state === 'uncounted') continue;
-      if (item.itemType === 'device') {
-        if (state !== 'match') deviceDifferences += 1;
-        continue;
-      }
-      if (!item.present || item.countedQty === null) continue;
-      const expected = item.expectedQty ?? 0;
-      if (state === 'match') {
-        await db.runAsync('UPDATE stocktake_item SET adjusted_qty = 0 WHERE id = ?', [item.id]);
-        continue;
-      }
-      const batches = await db.getAllAsync<{ id: number; quantity: number; expiryDate: string | null }>(
-        'SELECT id, quantity, expiry_date AS expiryDate FROM stock_batch WHERE product_id = ? AND quantity > 0',
-        [item.itemId],
+export function finishStocktake(db: SQLiteDatabase, stocktakeId: number): Promise<FinishResult> {
+  return runExclusively(async () => {
+    let result: FinishResult | null = null;
+    await db.withTransactionAsync(async () => {
+      const now = nowIso();
+      const claimed = await db.runAsync(
+        "UPDATE stocktake SET status = 'done', finished_at = ? WHERE id = ? AND status = 'open'",
+        [now, stocktakeId],
       );
-      const plan = planAdjustment(batches, item.countedQty - expected);
-      for (const update of plan.updates) {
-        if (update.quantity <= 0) {
-          await db.runAsync('DELETE FROM stock_batch WHERE id = ?', [update.id]);
-        } else {
-          await db.runAsync('UPDATE stock_batch SET quantity = ? WHERE id = ?', [update.quantity, update.id]);
+      if (claimed.changes !== 1) throw new Error(await notOpenReason(db, stocktakeId));
+
+      const items = await listStocktakeItems(db, stocktakeId);
+      let adjustedProducts = 0;
+      let deviceDifferences = 0;
+      for (const item of items) {
+        const state = countState(item);
+        if (state === 'uncounted' || !item.present || item.countedQty === null) continue;
+        if (item.itemType === 'device') {
+          if (state !== 'match') deviceDifferences += 1;
+          continue;
         }
-      }
-      if (plan.newBatchQty > 0) {
-        await db.runAsync(
-          'INSERT INTO stock_batch (product_id, quantity, expiry_date, added_on, note) VALUES (?, ?, NULL, ?, ?)',
-          [item.itemId, plan.newBatchQty, todayStr(), '盘点多出'],
+        const expected = item.expectedQty ?? 0;
+        if (state === 'match') {
+          await db.runAsync('UPDATE stocktake_item SET adjusted_qty = 0 WHERE id = ?', [item.id]);
+          continue;
+        }
+        const batches = await db.getAllAsync<{ id: number; quantity: number; expiryDate: string | null }>(
+          'SELECT id, quantity, expiry_date AS expiryDate FROM stock_batch WHERE product_id = ? AND quantity > 0',
+          [item.itemId],
         );
+        const plan = planAdjustment(batches, item.countedQty - expected);
+        for (const update of plan.updates) {
+          if (update.quantity <= 0) {
+            await db.runAsync('DELETE FROM stock_batch WHERE id = ?', [update.id]);
+          } else {
+            await db.runAsync('UPDATE stock_batch SET quantity = ? WHERE id = ?', [update.quantity, update.id]);
+          }
+        }
+        if (plan.newBatchQty > 0) {
+          await db.runAsync(
+            'INSERT INTO stock_batch (product_id, quantity, expiry_date, added_on, note) VALUES (?, ?, NULL, ?, ?)',
+            [item.itemId, plan.newBatchQty, todayStr(), '盘点多出'],
+          );
+        }
+        if (plan.applied !== 0) {
+          await db.runAsync(
+            `INSERT INTO stock_movement
+               (product_id, type, delta, expiry_date, happened_at, note, input_qty, input_unit, unit_price, total_price)
+             VALUES (?, 'adjust', ?, ?, ?, ?, NULL, NULL, NULL, NULL)`,
+            [item.itemId, plan.applied, plan.targetExpiry, now, adjustmentNote(expected, item.countedQty, plan.applied)],
+          );
+          await db.runAsync('UPDATE stock_product SET updated_at = ? WHERE id = ?', [now, item.itemId]);
+          adjustedProducts += 1;
+        }
+        await db.runAsync('UPDATE stocktake_item SET adjusted_qty = ? WHERE id = ?', [plan.applied, item.id]);
       }
-      if (plan.applied !== 0) {
-        await db.runAsync(
-          `INSERT INTO stock_movement
-             (product_id, type, delta, expiry_date, happened_at, note, input_qty, input_unit, unit_price, total_price)
-           VALUES (?, 'adjust', ?, ?, ?, ?, NULL, NULL, NULL, NULL)`,
-          [item.itemId, plan.applied, plan.targetExpiry, now, adjustmentNote(expected, item.countedQty, plan.applied)],
-        );
-        await db.runAsync('UPDATE stock_product SET updated_at = ? WHERE id = ?', [now, item.itemId]);
-        adjustedProducts += 1;
-      }
-      await db.runAsync('UPDATE stocktake_item SET adjusted_qty = ? WHERE id = ?', [plan.applied, item.id]);
-    }
-    await db.runAsync("UPDATE stocktake SET status = 'done', finished_at = ? WHERE id = ?", [now, stocktakeId]);
+      result = { ...summarizeCounts(items), adjustedProducts, deviceDifferences };
+    });
+    if (!result) throw new Error('完成盘点失败，请重试');
+    return result;
   });
-  return { ...summary, adjustedProducts, deviceDifferences };
 }
 
-/** 放弃盘点：不改库存，盘点单留作记录 */
-export async function cancelStocktake(db: SQLiteDatabase, stocktakeId: number): Promise<void> {
-  await assertOpen(db, stocktakeId);
-  await db.runAsync("UPDATE stocktake SET status = 'cancelled', finished_at = ? WHERE id = ?", [nowIso(), stocktakeId]);
+/** 放弃盘点：不改库存，盘点单留作记录。已经完成或放弃过的报错。 */
+export function cancelStocktake(db: SQLiteDatabase, stocktakeId: number): Promise<void> {
+  return runExclusively(async () => {
+    const result = await db.runAsync(
+      "UPDATE stocktake SET status = 'cancelled', finished_at = ? WHERE id = ? AND status = 'open'",
+      [nowIso(), stocktakeId],
+    );
+    if (result.changes !== 1) throw new Error(await notOpenReason(db, stocktakeId));
+  });
 }
 
 /** 删掉一个办公点的全部盘点（删办公点时用） */
@@ -376,4 +427,15 @@ export async function dropOpenStocktakesFor(
     await db.runAsync('DELETE FROM stocktake_item WHERE stocktake_id = ?', [stocktake.id]);
     await db.runAsync('DELETE FROM stocktake WHERE id = ?', [stocktake.id]);
   }
+}
+
+/** 所有进行中的盘点在哪个办公点、盘哪些分类（导入、撤销导入前提示会清掉哪些用） */
+export async function listOpenStocktakeScopes(db: SQLiteDatabase): Promise<OpenStocktakeScope[]> {
+  const rows = await db.getAllAsync<{ officeName: string | null; kinds: string }>(
+    `SELECT o.name AS officeName, s.kinds
+       FROM stocktake s LEFT JOIN office o ON o.id = s.office_id
+      WHERE s.status = 'open'
+      ORDER BY s.id`,
+  );
+  return rows.map((row) => ({ officeName: row.officeName, kinds: parseKinds(row.kinds) }));
 }

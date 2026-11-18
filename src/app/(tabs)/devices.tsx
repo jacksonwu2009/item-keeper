@@ -17,6 +17,7 @@ import { useFocusData } from '../../hooks/useFocusData';
 import { usePendingDelete } from '../../hooks/usePendingDelete';
 import { useOffice } from '../../hooks/useOffice';
 import { diffDays, formatDate, todayStr } from '../../lib/dates';
+import { describeConfig } from '../../lib/devicePresets';
 import { warrantyStatus } from '../../lib/warranty';
 import { colors, font, radius } from '../../theme';
 
@@ -59,7 +60,15 @@ export default function DevicesScreen() {
       if (filter === 'out' && device.outQty <= 0) return false;
       if (filter === 'in' && device.quantity - device.outQty <= 0) return false;
       if (!keyword) return true;
-      return [device.name, device.model, device.serialNo, device.invoiceNo, device.category, device.holders]
+      return [
+        device.name,
+        device.model,
+        describeConfig(device),
+        device.serialNo,
+        device.invoiceNo,
+        device.category,
+        device.holders,
+      ]
         .filter(Boolean)
         .join(' ')
         .toLowerCase()
@@ -90,7 +99,21 @@ export default function DevicesScreen() {
 
   const header = (
     <View style={deviceStyles.header}>
-      <Button title="新增设备" icon="add" onPress={() => router.push('/device/new')} />
+      <View style={deviceStyles.actions}>
+        <Button
+          title="扫码录入"
+          icon="barcode-outline"
+          onPress={() => router.push({ pathname: '/scan', params: { mode: 'device' } })}
+          style={deviceStyles.actionMain}
+        />
+        <Button
+          title="手动添加"
+          icon="add"
+          variant="secondary"
+          onPress={() => router.push('/device/new')}
+          style={deviceStyles.actionSide}
+        />
+      </View>
       {devices.length > 0 ? (
         <>
           <Text style={deviceStyles.summary}>
@@ -220,10 +243,11 @@ export default function DevicesScreen() {
                 <Text style={deviceStyles.name} numberOfLines={1}>
                   {item.name}
                 </Text>
-                {showOffice || item.model || item.serialNo ? (
+                {showOffice || item.model || item.serialNo || describeConfig(item) ? (
                   <Text style={deviceStyles.meta} numberOfLines={1}>
                     {[
                       showOffice && office.officeName(item.officeId),
+                      describeConfig(item),
                       item.model,
                       item.serialNo && `SN ${item.serialNo}`,
                     ]
@@ -262,6 +286,9 @@ const deviceStyles = StyleSheet.create({
   list: { flex: 1, backgroundColor: colors.bg },
   content: { padding: 16, paddingBottom: 40 },
   header: { gap: 12, marginBottom: 4 },
+  actions: { flexDirection: 'row', gap: 10 },
+  actionMain: { flex: 2 },
+  actionSide: { flex: 1 },
   summary: { fontSize: font.small, color: colors.muted },
   sectionTitle: { fontSize: font.small, fontWeight: '700', color: colors.muted, letterSpacing: 0.6, marginTop: 8 },
   sectionGap: { height: 8 },

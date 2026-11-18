@@ -1,6 +1,6 @@
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { NumberField } from '../../components/NumberField';
@@ -41,6 +41,7 @@ import { formatBreakdown, toBaseQty, type PackUnit } from '../../lib/packs';
 import { takeScanResult } from '../../lib/scanHandoff';
 import { formatQty, parseQty } from '../../lib/stock';
 import {
+  ABSENCE_LABEL,
   buildStocktakeCsv,
   countDifference,
   countState,
@@ -48,6 +49,7 @@ import {
   describeKinds,
   matchesFilter,
   matchesKeyword,
+  previewFinish,
   STOCKTAKE_KIND_LABEL,
   STOCKTAKE_KINDS,
   STOCKTAKE_STATUS_LABEL,
@@ -83,6 +85,8 @@ export default function StocktakeScreen() {
   const [countTarget, setCountTarget] = useState<CountTarget | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** 完成或放弃正在进行：确认框连点两次时第二次不再执行 */
+  const actionRunning = useRef(false);
 
   const loader = useCallback(async () => {
     const [stocktake, items, packs] = await Promise.all([
@@ -144,51 +148,63 @@ export default function StocktakeScreen() {
     await reload();
   }
 
+  /** 完成、放弃都走这里：同一时间只跑一个，跑的时候两个按钮都不能点 */
+  async function runAction(action: () => Promise<void>, failTitle: string) {
+    if (actionRunning.current) return;
+    actionRunning.current = true;
+    setBusy(true);
+    try {
+      await action();
+    } catch (caught) {
+      Alert.alert(failTitle, caught instanceof Error ? caught.message : '请重试');
+      await reload().catch(() => undefined);
+    } finally {
+      actionRunning.current = false;
+      setBusy(false);
+    }
+  }
+
   function confirmFinish() {
+    if (busy) return;
     if (summary.counted === 0) {
       Alert.alert('还没有盘任何一项', '点一行填上数到的数量，或者扫码找到它。');
       return;
     }
-    const deviceDifferences = items.filter(
-      (item) => item.itemType === 'device' && (countState(item) === 'surplus' || countState(item) === 'deficit'),
-    ).length;
+    const preview = previewFinish(items);
     const lines = [
-      `盘盈 ${summary.surplus} 项、盘亏 ${summary.deficit} 项、相符 ${summary.match} 项。`,
-      summary.uncounted > 0 ? `还有 ${summary.uncounted} 项没盘，这些不调整。` : null,
-      deviceDifferences > 0 ? `${deviceDifferences} 种设备有差异，只记录，不自动改数量。` : null,
+      `盘盈 ${preview.surplus} 项、盘亏 ${preview.deficit} 项、相符 ${preview.match} 项。`,
+      preview.uncounted > 0 ? `还有 ${preview.uncounted} 项没盘，这些不调整。` : null,
+      preview.absent > 0 ? `已删除或移走 ${preview.absent} 项，这些不调整。` : null,
+      preview.deviceDifferences > 0 ? `${preview.deviceDifferences} 种设备有差异，只记录，不自动改数量。` : null,
       '完成后物品按实盘数调整库存，不能撤销。',
     ].filter(Boolean);
     Alert.alert('完成盘点？', lines.join('\n'), [
       { text: '再看看', style: 'cancel' },
       {
         text: '完成',
-        onPress: async () => {
-          setBusy(true);
-          try {
+        onPress: () =>
+          runAction(async () => {
             await finishStocktake(db, stocktakeId);
             rescheduleReminders(db).catch(() => undefined);
             notifyDataChanged();
             await reload();
-          } catch (caught) {
-            Alert.alert('没能完成', caught instanceof Error ? caught.message : '请重试');
-          } finally {
-            setBusy(false);
-          }
-        },
+          }, '没能完成'),
       },
     ]);
   }
 
   function confirmCancel() {
+    if (busy) return;
     Alert.alert('放弃这次盘点？', '已经填的数量不会用来改库存，盘点单会留在历史里。', [
       { text: '不放弃', style: 'cancel' },
       {
         text: '放弃',
         style: 'destructive',
-        onPress: async () => {
-          await cancelStocktake(db, stocktakeId);
-          router.back();
-        },
+        onPress: () =>
+          runAction(async () => {
+            await cancelStocktake(db, stocktakeId);
+            router.back();
+          }, '没能放弃'),
       },
     ]);
   }
@@ -258,6 +274,10 @@ export default function StocktakeScreen() {
                       first={index === 0}
                       onPress={() => {
                         setMessage(null);
+                        if (item.absence) {
+                          Alert.alert(item.name, `${ABSENCE_LABEL[item.absence]}，不用盘。`);
+                          return;
+                        }
                         setCountTarget({ itemId: item.id, unit: null });
                       }}
                     />
@@ -269,8 +289,14 @@ export default function StocktakeScreen() {
         )}
 
         <View style={pageStyles.actions}>
-          <Button title="完成盘点" icon="checkmark-done-outline" loading={busy} onPress={confirmFinish} />
-          <Button title="放弃这次盘点" variant="ghost" onPress={confirmCancel} />
+          <Button
+            title="完成盘点"
+            icon="checkmark-done-outline"
+            loading={busy}
+            disabled={busy}
+            onPress={confirmFinish}
+          />
+          <Button title="放弃这次盘点" variant="ghost" disabled={busy} onPress={confirmCancel} />
         </View>
       </Screen>
 
@@ -313,7 +339,9 @@ function ItemRow({ item, first, onPress }: { item: StocktakeItem; first: boolean
         <Text style={pageStyles.rowTitle} numberOfLines={2}>
           {item.name}
         </Text>
-        <Text style={pageStyles.sub}>{item.present ? detail : '已经删除，完成时跳过'}</Text>
+        <Text style={item.absence ? pageStyles.note : pageStyles.sub}>
+          {item.absence ? ABSENCE_LABEL[item.absence] : detail}
+        </Text>
       </View>
       <Chip text={describeDifference(item, item.unit)} tone={STATE_TONE[state]} />
     </Pressable>
@@ -438,7 +466,8 @@ function ResultView({
     const state = countState(item);
     return state === 'surplus' || state === 'deficit';
   });
-  const deviceDifferences = differences.filter((item) => item.itemType === 'device').length;
+  // 已删除、移走的设备不算进「要手动处理」
+  const deviceDifferences = differences.filter((item) => item.itemType === 'device' && item.present).length;
   const done = stocktake.status === 'done';
 
   async function exportCsv() {
@@ -495,11 +524,13 @@ function ResultView({
               const difference = countDifference(item) ?? 0;
               const adjustedNote =
                 item.itemType === 'device'
-                  ? '设备，需要手动处理'
+                  ? item.present
+                    ? '设备，需要手动处理'
+                    : '设备已删除或移走'
                   : done && item.adjustedQty !== null && item.adjustedQty !== difference
                     ? `实际调整 ${formatQty(item.adjustedQty)}（清点后库存变了，只能扣到 0）`
                     : done && item.adjustedQty === null
-                      ? '物品已删除，没有调整'
+                      ? '物品已删除或移走，没有调整'
                       : null;
               return (
                 <View key={item.id} style={[pageStyles.row, index > 0 && pageStyles.rowDivider]}>

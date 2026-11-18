@@ -10,6 +10,7 @@
 
 import { DEFAULT_SETTINGS, type AppSettings } from '../db/settings';
 import { isValidDateStr, todayStr } from './dates';
+import { hasComputerConfig, splitLegacyModel } from './devicePresets';
 import { validatePacks, type PackUnit } from './packs';
 import { roundQty } from './stock';
 import { validateAccessories, type Accessory } from './warranty';
@@ -19,10 +20,11 @@ export const BACKUP_APP = 'item-keeper';
  * 备份格式版本号。
  * - 5：1.2.0 起（含办公点、分类范围、包装规格、设备保修和配件）
  * - 6：1.4.0 起，入库记录多了单价、总价，设备多了发票号；读 5 时这几项当作没填
+ * - 7：1.5.0 起，设备多了芯片、内存、硬盘；读 5、6 时以前写在型号里的配置会拆出来
  * 更早的版本没有正式使用过，不再兼容，导入时直接提示。
  * 以后改格式要升这个号：旧版 App 读到新号会拒绝，免得它按自己的理解把数据替换掉。
  */
-export const BACKUP_FORMAT = 6;
+export const BACKUP_FORMAT = 7;
 /** 还能导入的最老格式 */
 export const MIN_BACKUP_FORMAT = 5;
 export const OFFICE_NAME_LIMIT = 20;
@@ -101,6 +103,10 @@ export type BackupDevice = {
   purchaseDate: string | null;
   warrantyUntil: string | null;
   invoiceNo: string | null;
+  /** 电脑的芯片、内存、硬盘 */
+  chip: string | null;
+  memory: string | null;
+  storage: string | null;
   /** 每件设备配的配件 */
   accessories: Accessory[];
   createdAt: string;
@@ -248,6 +254,9 @@ export function buildBackup(
       purchaseDate: device.purchaseDate,
       warrantyUntil: device.warrantyUntil,
       invoiceNo: device.invoiceNo,
+      chip: device.chip,
+      memory: device.memory,
+      storage: device.storage,
       accessories: (accessoriesByDevice.get(id) ?? []).map((accessory) => ({
         name: accessory.name,
         quantity: accessory.quantity,
@@ -482,7 +491,13 @@ function parseProduct(raw: unknown, index: number, exportedAt: string, offices: 
   };
 }
 
-function parseDevice(raw: unknown, index: number, exportedAt: string, offices: string[]): BackupDevice {
+function parseDevice(
+  raw: unknown,
+  index: number,
+  exportedAt: string,
+  offices: string[],
+  format: number,
+): BackupDevice {
   let where = `第 ${index + 1} 台设备`;
   if (!isObj(raw)) fail(where, '格式不对');
   const name = reqText(raw.name, where, '名称');
@@ -521,19 +536,30 @@ function parseDevice(raw: unknown, index: number, exportedAt: string, offices: s
   const accessoryError = validateAccessories(accessories);
   if (accessoryError) fail(where, accessoryError);
   const purchaseDate = optDate(raw.purchaseDate, where, '购买日期');
+  const category = optText(raw.category, where, '类别') ?? '其他';
+  // 1.5.0 以前（格式 7 以前）的备份没有配置这几栏，按升级时同样的规则从型号里拆
+  const model = optText(raw.model, where, '型号');
+  const chip = optText(raw.chip, where, '芯片');
+  const memory = optText(raw.memory, where, '内存');
+  const storage = optText(raw.storage, where, '硬盘');
+  const legacy =
+    format < 7 && !chip && !memory && !storage && hasComputerConfig(category) ? splitLegacyModel(model) : null;
+  const deviceConfig = legacy
+    ? { model: legacy.model, chip: legacy.chip, memory: legacy.memory, storage: legacy.storage }
+    : { model, chip, memory, storage };
   const warrantyUntil = optDate(raw.warrantyUntil, where, '保修到期日');
 
   return {
     office,
-    category: optText(raw.category, where, '类别') ?? '其他',
+    category,
     name,
-    model: optText(raw.model, where, '型号'),
     serialNo: optText(raw.serialNo, where, '序列号'),
     quantity,
     note: optText(raw.note, where, '备注'),
     purchaseDate,
     warrantyUntil,
     invoiceNo: optText(raw.invoiceNo, where, '发票号'),
+    ...deviceConfig,
     accessories,
     createdAt: timestamp(raw.createdAt, exportedAt),
     updatedAt: timestamp(raw.updatedAt, exportedAt),
@@ -575,7 +601,7 @@ export function parseBackup(text: string): ParseResult {
     if (new Set(offices).size !== offices.length) fail('', '备份里的办公点名称有重复');
 
     const products = list(root.products, '', '物品').map((raw, index) => parseProduct(raw, index, exportedAt, offices));
-    const devices = list(root.devices, '', '设备').map((raw, index) => parseDevice(raw, index, exportedAt, offices));
+    const devices = list(root.devices, '', '设备').map((raw, index) => parseDevice(raw, index, exportedAt, offices, format));
     for (const product of products) {
       if (!scope.includes(product.kind)) fail('', `备份标明不含${SCOPE_LABEL[product.kind]}，里面却有「${product.name}」，文件可能被改坏了`);
     }

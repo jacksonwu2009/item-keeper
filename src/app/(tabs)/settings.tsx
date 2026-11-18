@@ -10,11 +10,13 @@ import { Button, Card, Label, MultiChips, Screen, SectionTitle, Segmented, Sheet
 import { listDevices } from '../../db/devices';
 import { DEFAULT_SETTINGS, getSettings, saveSettings, type AppSettings } from '../../db/settings';
 import { listProducts } from '../../db/stock';
+import { listOpenStocktakeScopes } from '../../db/stocktake';
 import { useFocusData } from '../../hooks/useFocusData';
 import { useOffice } from '../../hooks/useOffice';
 import { ALL_SCOPES, SCOPE_LABEL, type BackupData, type BackupScope, type BackupSummary } from '../../lib/backup';
 import { formatDateTime } from '../../lib/dates';
 import { exportBackup, importBackup, pickBackup, readUndoSnapshot, undoLastImport } from '../../lib/dataTransfer';
+import { stocktakesClearedByImport, type OpenStocktakeScope } from '../../lib/stocktake';
 import {
   getPermissionState,
   requestPermission,
@@ -65,12 +67,13 @@ export default function SettingsScreen() {
   const db = useSQLiteContext();
   const office = useOffice();
   const loader = useCallback(async () => {
-    const [settings, permission, products, devices, undo] = await Promise.all([
+    const [settings, permission, products, devices, undo, openStocktakes] = await Promise.all([
       getSettings(db),
       getPermissionState().catch((): PermissionState => 'undetermined'),
       listProducts(db),
       listDevices(db),
       readUndoSnapshot().catch(() => null),
+      listOpenStocktakeScopes(db),
     ]);
     // 每个办公点各有多少：导出、导入时按办公点显示
     const officeCounts: Record<number, Counts> = {};
@@ -88,6 +91,7 @@ export default function SettingsScreen() {
       deviceCount: devices.length,
       officeCounts,
       undo: undo?.summary ?? null,
+      openStocktakes,
     };
   }, [db]);
   const [data, reload] = useFocusData(loader, {
@@ -98,6 +102,7 @@ export default function SettingsScreen() {
     deviceCount: 0,
     officeCounts: {} as Record<number, Counts>,
     undo: null as BackupSummary | null,
+    openStocktakes: [] as OpenStocktakeScope[],
   });
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -199,7 +204,11 @@ export default function SettingsScreen() {
 
   function confirmUndo() {
     if (!data.undo) return;
-    Alert.alert('撤销上次导入？', `会换回导入前的数据（${describeSummary(data.undo)}），导入之后新记的东西会丢掉。`, [
+    // 撤销会重建全部物品和设备，进行中的盘点对不上了，都会清掉
+    const stocktakeNote = data.openStocktakes.length
+      ? `进行中的盘点也会清掉（已录的实盘数不保留）。`
+      : '';
+    Alert.alert('撤销上次导入？', `会换回导入前的数据（${describeSummary(data.undo)}），导入之后新记的东西会丢掉。${stocktakeNote}`, [
       { text: '取消', style: 'cancel' },
       {
         text: '撤销导入',
@@ -437,6 +446,10 @@ export default function SettingsScreen() {
               chosenOffices: importOffices,
               countsOf: (name) => countsOf(localOfficeId(name)),
               exists: (name) => localOfficeId(name) !== undefined,
+              clearedStocktakes: stocktakesClearedByImport(data.openStocktakes, {
+                offices: pending.data.offices.filter((name) => importOffices.includes(name)),
+                scope: importScope.filter((item) => pending.summary.scope.includes(item)),
+              }),
             })}
           </Text>
           <View style={setStyles.row}>
@@ -473,12 +486,15 @@ function importPlanText({
   chosenOffices,
   countsOf,
   exists,
+  clearedStocktakes,
 }: {
   scope: BackupScope[];
   fileOffices: string[];
   chosenOffices: string[];
   countsOf: (name: string) => Counts;
   exists: (name: string) => boolean;
+  /** 这次导入会清掉进行中盘点的办公点 */
+  clearedStocktakes: string[];
 }): string {
   if (!scope.length) return '至少选一类。';
   const dataScope = scope.filter((item) => item !== 'settings');
@@ -491,7 +507,10 @@ function importPlanText({
     }
   }
   if (scope.includes('settings')) parts.push('提醒设置');
-  return `会替换本机的：${parts.join('；')}。没选的办公点和分类不动。替换前会自动留一份，导错了可以撤销。`;
+  const stocktakeNote = clearedStocktakes.length
+    ? `会清掉${clearedStocktakes.map((name) => `「${name}」`).join('、')}进行中的盘点（已录的实盘数不保留）。`
+    : '';
+  return `会替换本机的：${parts.join('；')}。没选的办公点和分类不动。${stocktakeNote}替换前会自动留一份，导错了可以撤销。`;
 }
 
 const setStyles = StyleSheet.create({

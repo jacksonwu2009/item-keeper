@@ -4,7 +4,14 @@ import { useEffect, useState } from 'react';
 
 import { DeviceForm } from '../../../components/DeviceForm';
 import { Empty, Screen } from '../../../components/ui';
-import { getDevice, listAccessories, outQuantity, updateDevice, type Device } from '../../../db/devices';
+import {
+  findDeviceBySerial,
+  getDevice,
+  listAccessories,
+  outQuantity,
+  updateDevice,
+  type Device,
+} from '../../../db/devices';
 import type { Accessory } from '../../../lib/warranty';
 
 export default function EditDeviceScreen() {
@@ -35,6 +42,10 @@ export default function EditDeviceScreen() {
       submitLabel="保存修改"
       onSubmit={async (input) => {
         if (input.quantity < state.out) throw new Error(`目前借出 ${state.out} 件，数量不能比这个少`);
+        const sameSerial = input.serialNo ? await findDeviceBySerial(db, input.serialNo) : null;
+        if (sameSerial && sameSerial.id !== deviceId) {
+          throw new Error(`序列号 ${input.serialNo} 已经登记过：「${sameSerial.name}」`);
+        }
         await updateDevice(db, deviceId, input);
         router.back();
       }}

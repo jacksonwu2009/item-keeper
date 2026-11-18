@@ -17,6 +17,10 @@ export type Device = {
   warrantyUntil: string | null;
   /** 发票号 */
   invoiceNo: string | null;
+  /** 电脑的芯片、内存、硬盘，如 M3 Pro、18G、512G；不是电脑为 null */
+  chip: string | null;
+  memory: string | null;
+  storage: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -57,6 +61,9 @@ export type DeviceInput = {
   warrantyUntil: string | null;
   /** 发票号 */
   invoiceNo: string | null;
+  chip: string | null;
+  memory: string | null;
+  storage: string | null;
   /** 每件设备配的配件 */
   accessories: Accessory[];
 };
@@ -72,6 +79,7 @@ export type AssignmentInput = {
 const DEVICE_COLUMNS = `
   d.id, d.office_id AS officeId, d.category, d.name, d.model, d.serial_no AS serialNo, d.quantity, d.note,
   d.purchase_date AS purchaseDate, d.warranty_until AS warrantyUntil, d.invoice_no AS invoiceNo,
+  d.chip, d.memory, d.storage,
   d.created_at AS createdAt, d.updated_at AS updatedAt`;
 
 const ASSIGNMENT_COLUMNS = `
@@ -153,6 +161,9 @@ function deviceParams(input: DeviceInput) {
     input.purchaseDate,
     input.warrantyUntil,
     emptyToNull(input.invoiceNo),
+    emptyToNull(input.chip),
+    emptyToNull(input.memory),
+    emptyToNull(input.storage),
   ];
 }
 
@@ -188,8 +199,8 @@ export async function createDevice(db: SQLiteDatabase, input: DeviceInput): Prom
     const result = await db.runAsync(
       `INSERT INTO device
          (office_id, category, name, model, serial_no, quantity, note, purchase_date, warranty_until, invoice_no,
-          created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          chip, memory, storage, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [...deviceParams(input), now, now],
     );
     deviceId = result.lastInsertRowId;
@@ -202,12 +213,60 @@ export async function updateDevice(db: SQLiteDatabase, id: number, input: Device
   await db.withTransactionAsync(async () => {
     await db.runAsync(
       `UPDATE device SET office_id = ?, category = ?, name = ?, model = ?, serial_no = ?, quantity = ?, note = ?,
-              purchase_date = ?, warranty_until = ?, invoice_no = ?, updated_at = ?
+              purchase_date = ?, warranty_until = ?, invoice_no = ?, chip = ?, memory = ?, storage = ?, updated_at = ?
         WHERE id = ?`,
       [...deviceParams(input), nowIso(), id],
     );
     await saveAccessories(db, id, input.accessories);
   });
+}
+
+/** 按序列号找设备（不管大小写）；officeId 为 null 时在所有办公点里找。 */
+export async function findDeviceBySerial(
+  db: SQLiteDatabase,
+  serialNo: string,
+  officeId: number | null = null,
+): Promise<Device | null> {
+  const serial = serialNo.trim();
+  if (!serial) return null;
+  return db.getFirstAsync<Device>(
+    `SELECT ${DEVICE_COLUMNS} FROM device d
+      WHERE d.serial_no = ? COLLATE NOCASE AND (? IS NULL OR d.office_id = ?)
+      ORDER BY d.id LIMIT 1`,
+    [serial, officeId, officeId],
+  );
+}
+
+export type DeviceTemplate = {
+  category: string;
+  name: string;
+  model: string | null;
+  chip: string | null;
+  memory: string | null;
+  storage: string | null;
+  accessories: Accessory[];
+  /** 登记过几次 */
+  uses: number;
+};
+
+/**
+ * 登记过的「类别 + 名称 + 型号 + 配置」组合，用得多的、最近的排前面；新增设备时直接选。
+ * 配件取这个组合最近登记的那一台的。
+ */
+export async function listDeviceTemplates(db: SQLiteDatabase, limit = 8): Promise<DeviceTemplate[]> {
+  const rows = await db.getAllAsync<Omit<DeviceTemplate, 'accessories'> & { latestId: number }>(
+    `SELECT category, name, model, chip, memory, storage, COUNT(*) AS uses, MAX(id) AS latestId
+       FROM device
+      GROUP BY category, name COLLATE NOCASE, model, chip, memory, storage
+      ORDER BY uses DESC, latestId DESC
+      LIMIT ?`,
+    [limit],
+  );
+  const templates: DeviceTemplate[] = [];
+  for (const { latestId, ...row } of rows) {
+    templates.push({ ...row, accessories: await listAccessories(db, latestId) });
+  }
+  return templates;
 }
 
 export async function deleteDevice(db: SQLiteDatabase, id: number): Promise<void> {

@@ -71,6 +71,9 @@ function device(overrides: Partial<ReportDevice> & { id: number; name: string })
     model: null,
     serialNo: null,
     invoiceNo: null,
+    chip: null,
+    memory: null,
+    storage: null,
     quantity: 1,
     outQty: 0,
     holders: null,
@@ -215,13 +218,14 @@ describe('消耗汇总', () => {
         ['没写原因', 1],
       ],
     );
+    // 按出库次数排，同次数再按数量；不同单位的数量不放在一起比
     assert.deepEqual(
-      summary.topProducts.map((rank) => [rank.name, rank.quantity, rank.unit]),
+      summary.topProducts.map((rank) => [rank.name, rank.count, rank.quantity, rank.unit]),
       [
-        ['纸巾', 20, '包'],
-        ['物品1', 11, '瓶'],
-        ['物品3', 1, '瓶'],
-        ['物品4', 1, '瓶'],
+        ['物品1', 3, 11, '瓶'],
+        ['纸巾', 1, 20, '包'],
+        ['物品3', 1, 1, '瓶'],
+        ['物品4', 1, 1, '瓶'],
       ],
     );
     // 最近的排前面；11-05 的按每瓶 2，11-15 的按每瓶 3，物品 3 没有进价
@@ -269,7 +273,16 @@ describe('设备汇总', () => {
   it('按类别统计总数、借出、在库；保修按件数；领用排行', () => {
     const summary = summarizeDevices(
       [
-        device({ id: 1, name: 'MacBook', quantity: 3, outQty: 2, warrantyUntil: '2026-12-01' }),
+        device({
+          id: 1,
+          name: 'MacBook',
+          chip: 'M1',
+          memory: '8G',
+          storage: '256G',
+          quantity: 3,
+          outQty: 2,
+          warrantyUntil: '2026-12-01',
+        }),
         device({ id: 2, name: 'ThinkPad', quantity: 2, outQty: 0, warrantyUntil: '2026-10-01' }),
         device({ id: 3, name: 'U2723QE', category: '显示器', quantity: 4, outQty: 1, warrantyUntil: '2028-01-01' }),
       ],
@@ -286,6 +299,14 @@ describe('设备汇总', () => {
       [
         ['笔记本', 5, 2, 3],
         ['显示器', 4, 1, 3],
+      ],
+    );
+    // 电脑按配置：显示器不算，没记配置的排最后
+    assert.deepEqual(
+      summary.byConfig.map((row) => [row.config, row.total, row.out, row.inStock]),
+      [
+        ['M1 8G/256G', 3, 2, 1],
+        ['没记配置', 2, 0, 2],
       ],
     );
     assert.equal(summary.warrantySoonQty, 3);
@@ -337,8 +358,8 @@ describe('导出表格', () => {
       officeName,
     );
     assert.deepEqual(table.rows, [
-      ['北京', '食品', '牛奶', '690', 6, '瓶', '2026-11-25', '2026-11-18', '冰箱'],
-      ['北京', '食品', '牛奶', '690', 4, '瓶', null, '2026-11-10', '冰箱'],
+      ['北京', '食品', '牛奶', { text: '690' }, 6, '瓶', '2026-11-25', '2026-11-18', '冰箱'],
+      ['北京', '食品', '牛奶', { text: '690' }, 4, '瓶', null, '2026-11-10', '冰箱'],
       ['北京', '食品', '面包', null, 0, '瓶', null, null, null],
     ]);
   });
@@ -350,6 +371,9 @@ describe('导出表格', () => {
           id: 7,
           name: 'MacBook',
           invoiceNo: 'FP-001',
+          chip: 'M3 Pro',
+          memory: '18G',
+          storage: '512G',
           quantity: 3,
           outQty: 2,
           holders: '张三、张三',
@@ -364,8 +388,11 @@ describe('导出表格', () => {
       '笔记本',
       'MacBook',
       null,
+      'M3 Pro',
+      '18G',
+      '512G',
       null,
-      'FP-001',
+      { text: 'FP-001' },
       3,
       2,
       1,
@@ -462,8 +489,8 @@ describe('报表取数（真实 SQLite）', () => {
     const devices = summarizeDevices(source.devices, source.assignments, '2026-11-18');
     assert.deepEqual([devices.total, devices.out, devices.inStock], [2, 1, 1]);
     const table = deviceTable(source.devices, source.accessoriesByDevice, (officeId) => source.officeNames.get(officeId) ?? '');
-    assert.equal(table.rows[0][5], 'FP-001');
-    assert.equal(table.rows[0][12], '充电器 ×1');
+    assert.deepEqual(table.rows[0][8], { text: 'FP-001' });
+    assert.equal(table.rows[0][15], '充电器 ×1');
 
     const everywhere = await loadReportSource(db, null, periodRange('thisMonth'));
     assert.equal(everywhere.products.length, 2);

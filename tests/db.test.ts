@@ -8,7 +8,16 @@ import { describe, it } from 'node:test';
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { collectBackup, replaceData, restoreAll } from '../src/db/backup';
-import { createDevice, issueDevice, listActiveAssignments, listDevices, returnDevice } from '../src/db/devices';
+import {
+  createDevice,
+  findDeviceBySerial,
+  issueDevice,
+  listActiveAssignments,
+  listDevices,
+  listDeviceTemplates,
+  returnDevice,
+} from '../src/db/devices';
+import { splitLegacyDeviceModels } from '../src/db/schema';
 import { createOffice, deleteOffice, listOffices } from '../src/db/offices';
 import {
   createProduct,
@@ -113,6 +122,68 @@ describe('数据层（真实 SQLite）', () => {
     assert.equal(device.warrantyUntil, '2027-09-30');
     assert.equal(device.invoiceNo, '044031900111');
     assert.equal((await listDevices(db, 99)).length, 0);
+  });
+
+  it('电脑配置分开存；按序列号找（不管大小写）；登记过的组合按次数排', async () => {
+    const db = await openDb();
+    const macbook = {
+      officeId: 1,
+      category: '笔记本',
+      name: 'MacBook Pro 14 英寸',
+      model: null,
+      serialNo: 'C02ABC',
+      quantity: 1,
+      note: null,
+      purchaseDate: null,
+      warrantyUntil: null,
+      invoiceNo: null,
+      chip: 'M3 Pro',
+      memory: '18G',
+      storage: '512G',
+      accessories: [{ name: '电源适配器', quantity: 1 }],
+    };
+    await createDevice(db, macbook);
+    await createDevice(db, { ...macbook, serialNo: 'C02DEF' });
+    await createDevice(db, { ...macbook, category: '显示器', name: 'Studio Display', serialNo: null, chip: null, memory: null, storage: null });
+
+    const found = await findDeviceBySerial(db, ' c02def ');
+    assert.deepEqual(found && [found.serialNo, found.chip, found.memory, found.storage], ['C02DEF', 'M3 Pro', '18G', '512G']);
+    assert.equal(await findDeviceBySerial(db, 'C02DEF', 99), null);
+    assert.equal(await findDeviceBySerial(db, ''), null);
+
+    const templates = await listDeviceTemplates(db);
+    assert.deepEqual(
+      templates.map((template) => [template.name, template.uses, template.chip]),
+      [
+        ['MacBook Pro 14 英寸', 2, 'M3 Pro'],
+        ['Studio Display', 1, null],
+      ],
+    );
+    assert.deepEqual(templates[0].accessories, [{ name: '电源适配器', quantity: 1 }]);
+  });
+
+  it('升级时把型号里的芯片、内存、硬盘拆出来，只拆电脑、认不出的不动', async () => {
+    const db = await openDb();
+    const insert = (category: string, model: string) =>
+      db.runAsync(
+        `INSERT INTO device (office_id, category, name, model, quantity, created_at, updated_at)
+         VALUES (1, ?, 'x', ?, 1, '2026-11-18T00:00:00Z', '2026-11-18T00:00:00Z')`,
+        [category, model],
+      );
+    await insert('笔记本', 'M3 Pro 18G/512G');
+    await insert('台式机', 'MRX33CH/A M2 16G/1T');
+    await insert('笔记本', 'ThinkPad X1');
+    await insert('显示器', 'M1 8G/256G');
+    assert.equal(await splitLegacyDeviceModels(db), 2);
+    const rows = await db.getAllAsync<{ model: string | null; chip: string | null; memory: string | null; storage: string | null }>(
+      'SELECT model, chip, memory, storage FROM device ORDER BY id',
+    );
+    assert.deepEqual(rows, [
+      { model: null, chip: 'M3 Pro', memory: '18G', storage: '512G' },
+      { model: 'MRX33CH/A', chip: 'M2', memory: '16G', storage: '1T' },
+      { model: 'ThinkPad X1', chip: null, memory: null, storage: null },
+      { model: 'M1 8G/256G', chip: null, memory: null, storage: null },
+    ]);
   });
 
   it('入库价格记在每条入库记录上，下次默认用上一次的价', async () => {

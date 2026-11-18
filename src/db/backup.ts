@@ -84,11 +84,15 @@ export async function collectBackup(
       purchaseDate: string | null;
       warrantyUntil: string | null;
       invoiceNo: string | null;
+      chip: string | null;
+      memory: string | null;
+      storage: string | null;
       createdAt: string;
       updatedAt: string;
     }>(
       `SELECT id, office_id AS officeId, category, name, model, serial_no AS serialNo, quantity, note,
               purchase_date AS purchaseDate, warranty_until AS warrantyUntil, invoice_no AS invoiceNo,
+              chip, memory, storage,
               created_at AS createdAt, updated_at AS updatedAt
          FROM device ORDER BY id`,
     ),
@@ -204,8 +208,8 @@ async function insertDevice(db: SQLiteDatabase, officeId: number, device: Backup
   const result = await db.runAsync(
     `INSERT INTO device
        (office_id, category, name, model, serial_no, quantity, note, purchase_date, warranty_until, invoice_no,
-        created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        chip, memory, storage, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       officeId,
       device.category,
@@ -217,6 +221,9 @@ async function insertDevice(db: SQLiteDatabase, officeId: number, device: Backup
       device.purchaseDate,
       device.warrantyUntil,
       device.invoiceNo,
+      device.chip,
+      device.memory,
+      device.storage,
       device.createdAt,
       device.updatedAt,
     ],

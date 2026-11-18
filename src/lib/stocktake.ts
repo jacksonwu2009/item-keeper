@@ -39,6 +39,18 @@ export function describeKinds(kinds: readonly StocktakeKind[]): string {
   return kinds.map((kind) => STOCKTAKE_KIND_LABEL[kind]).join('、');
 }
 
+/**
+ * 盘点期间物品、设备的去向：null = 还在这次盘点的办公点和分类里；
+ * deleted = 被删了；moved = 移到了别的办公点，或物品改成了不在这次盘点范围里的分类。
+ * 不在的项完成时跳过，不调整。
+ */
+export type Absence = 'deleted' | 'moved' | null;
+
+export const ABSENCE_LABEL: Record<Exclude<Absence, null>, string> = {
+  deleted: '已经删除，完成时跳过',
+  moved: '已移到别的办公点或分类，完成时跳过',
+};
+
 /** 每一项的盘点结果 */
 export type CountState = 'uncounted' | 'match' | 'surplus' | 'deficit';
 
@@ -68,6 +80,34 @@ export function summarizeCounts(items: readonly CountedValues[]): CountSummary {
     if (state !== 'uncounted') summary.counted += 1;
   }
   return summary;
+}
+
+export type FinishPreview = {
+  surplus: number;
+  deficit: number;
+  match: number;
+  uncounted: number;
+  /** 已删除或移走的项（不管盘没盘），完成时不调整 */
+  absent: number;
+  /** 有差异的设备（只记录，不改数量） */
+  deviceDifferences: number;
+};
+
+/** 「完成盘点」确认框里的计数：已删除、移走的单独算，不计入盘盈盘亏和设备差异 */
+export function previewFinish(
+  items: readonly (CountedValues & { itemType: 'product' | 'device'; absence: Absence })[],
+): FinishPreview {
+  const preview: FinishPreview = { surplus: 0, deficit: 0, match: 0, uncounted: 0, absent: 0, deviceDifferences: 0 };
+  for (const item of items) {
+    if (item.absence) {
+      preview.absent += 1;
+      continue;
+    }
+    const state = countState(item);
+    preview[state] += 1;
+    if (item.itemType === 'device' && (state === 'surplus' || state === 'deficit')) preview.deviceDifferences += 1;
+  }
+  return preview;
 }
 
 /** 列表上的差异标签文字：盘盈 +2 瓶 / 盘亏 -1 瓶 / 相符 / 未盘 */
@@ -154,6 +194,18 @@ export type CsvItem = CountedValues & {
   itemType: 'product' | 'device';
 };
 
+/** 盘点表「是否已调整库存」一列 */
+export function describeAdjustment(item: CsvItem, status: StocktakeStatus): string {
+  const state = countState(item);
+  if (status !== 'done' || state === 'uncounted') return '否';
+  if (state === 'match') return '不需要';
+  if (item.itemType === 'device') return '否（设备要手动处理）';
+  // 完成时物品已删除或移走，跳过了，adjusted_qty 没写
+  if (item.adjustedQty === null) return '否（物品已删除或移走）';
+  if (item.adjustedQty === 0) return '否（库存已经是 0，没法再扣）';
+  return `是（${item.adjustedQty > 0 ? '+' : ''}${roundQty(item.adjustedQty)}）`;
+}
+
 const STATE_LABEL: Record<CountState, string> = {
   uncounted: '未盘',
   match: '相符',
@@ -165,16 +217,6 @@ const STATE_LABEL: Record<CountState, string> = {
 export function buildStocktakeCsv(items: readonly CsvItem[], status: StocktakeStatus): string {
   const rows = items.map((item) => {
     const state = countState(item);
-    const adjusted =
-      status !== 'done' || state === 'uncounted'
-        ? '否'
-        : item.itemType === 'device'
-          ? '否（设备要手动处理）'
-          : item.adjustedQty !== null && item.adjustedQty !== 0
-            ? `是（${item.adjustedQty > 0 ? '+' : ''}${roundQty(item.adjustedQty)}）`
-            : state === 'match'
-              ? '不需要'
-              : '否';
     return [
       STOCKTAKE_KIND_LABEL[item.kind],
       item.name,
@@ -183,8 +225,31 @@ export function buildStocktakeCsv(items: readonly CsvItem[], status: StocktakeSt
       item.countedQty,
       countDifference(item),
       STATE_LABEL[state],
-      adjusted,
+      describeAdjustment(item, status),
     ];
   });
   return toCsv(['分类', '名称', '单位', '账面数量', '实盘数量', '差异', '结果', '是否已调整库存'], rows);
+}
+
+export type OpenStocktakeScope = { officeName: string | null; kinds: readonly StocktakeKind[] };
+
+/**
+ * 导入会清掉哪些办公点进行中的盘点：规则和导入（replaceData）一致——
+ * 被替换的办公点里，盘点范围和导入的分类有交集的，就会被删（物品、设备重建后 id 对不上了）。
+ * 返回办公点名称。
+ */
+export function stocktakesClearedByImport(
+  open: readonly OpenStocktakeScope[],
+  choice: { offices: readonly string[]; scope: readonly string[] },
+): string[] {
+  const replacedKinds = STOCKTAKE_KINDS.filter((kind) => choice.scope.includes(kind));
+  if (!replacedKinds.length) return [];
+  const names = open.flatMap((stocktake) =>
+    stocktake.officeName !== null &&
+    choice.offices.includes(stocktake.officeName) &&
+    stocktake.kinds.some((kind) => replacedKinds.includes(kind))
+      ? [stocktake.officeName]
+      : [],
+  );
+  return [...new Set(names)];
 }

@@ -42,6 +42,9 @@
   --app-warn: #8F5600;
   --app-warn-soft: #FBEFD5;
   --app-info: #2E5C99;
+  --app-info-soft: #E2EBF7;
+  --app-ok: #2C7A4B;
+  --app-ok-soft: #E0F1E6;
   --app-frame: #18211C;
 
   --font-body: "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
@@ -286,6 +289,8 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
 .chip { font-size: 10.5px; font-weight: 700; border-radius: 999px; padding: 1px 7px; background: var(--app-sunken); color: var(--app-muted); }
 .chip.warn { background: var(--app-warn-soft); color: var(--app-warn); }
 .chip.danger { background: var(--app-danger-soft); color: var(--app-danger); }
+.chip.ok { background: var(--app-ok-soft); color: var(--app-ok); }
+.chip.info { background: var(--app-info-soft); color: var(--app-info); }
 .sheet { background: var(--app-surface); border-radius: 14px; padding: 12px; display: grid; gap: 9px; border: 1px solid var(--app-line); }
 .sheet-title { font-weight: 700; font-size: 14px; }
 .lbl { font-size: 11px; color: var(--app-muted); font-weight: 700; }
@@ -314,6 +319,9 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
 /* 并排的两个输入框（单价 / 总价） */
 .pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; }
 .pair > div { display: grid; gap: 4px; min-width: 0; }
+/* 盘点进度条 */
+.app-bar { height: 6px; border-radius: 999px; background: var(--app-sunken); overflow: hidden; }
+.app-bar i { display: block; height: 100%; background: var(--app-accent); border-radius: 999px; }
 </style>
 
 <header class="masthead">
@@ -327,10 +335,10 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
         <rect x="23.5" y="26.5" width="9" height="2.4" rx="1.2" fill="#0D6B5E"/>
         <rect x="22.5" y="32" width="11" height="6.5" rx="1.3" fill="#F2B140"/>
       </svg>
-      <div class="brand-meta">物品管家 · 1.4.0 · 安卓 / iPhone</div>
+      <div class="brand-meta">物品管家 · 1.5.0 · 安卓 / iPhone</div>
     </div>
     <h1>物品管家使用指南</h1>
-    <p class="lede">用手机管三类东西：食品、日用品、设备。扫条码就能录入，库存和过期日期记在手机上，快到期、快用完会按时提醒；电脑和配件记下谁领走、哪天还回来。</p>
+    <p class="lede">用手机管三类东西：食品、日用品、设备。扫条码就能录入，库存和过期日期记在手机上，快到期、快用完会按时提醒；电脑和配件记下谁领走、哪天还回来。还可以定期盘点，看进货和消耗的报表。</p>
     <ul class="facts">
       <li><b>安装</b>安卓装 APK，iPhone 用 Expo Go</li>
       <li><b>数据</b>存在自己手机上，按办公点导出发给别人</li>
@@ -350,6 +358,8 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
       <a href="#units">整箱进、按个出</a>
       <a href="#reminders">到期和库存提醒</a>
       <a href="#devices">设备领用与退还</a>
+      <a href="#stocktake">盘点</a>
+      <a href="#report">报表</a>
       <a href="#offices">办公点</a>
       <a href="#backup">导入导出与手机互传</a>
       <a href="#faq">常见问题</a>
@@ -391,10 +401,10 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
       <p class="kicker">认识界面</p>
       <h2>底部五个标签</h2>
       <dl class="tabs-table">
-        <div><dt>提醒</dt><dd>打开 App 先看这里：已过期、快到期、库存不足、借出中的设备都列在一页，点哪条就进到哪件东西。</dd></div>
+        <div><dt>提醒</dt><dd>打开 App 先看这里：已过期、快到期、库存不足、借出中的设备都列在一页，点哪条就进到哪件东西。上方有「盘点」「报表」两个入口。</dd></div>
         <div><dt>食品</dt><dd>食品清单。扫码入库、手动添加、搜索，按「快到期 / 库存不足」筛选。</dd></div>
         <div><dt>日用品</dt><dd>纸巾、洗衣液、电池这类。用法和食品一样，过期日期可以不记。</dd></div>
-        <div><dt>设备</dt><dd>电脑和配件。记型号、序列号、发票号、数量，登记谁领走、哪天退还；可以按使用人查看。</dd></div>
+        <div><dt>设备</dt><dd>电脑和配件。扫序列号录入，记型号、芯片、内存、硬盘、序列号、发票号、数量，登记谁领走、哪天退还；可以按使用人查看。</dd></div>
         <div><dt>设置</dt><dd>办公点、提醒规则、通知权限、导入导出。</dd></div>
       </dl>
       <p class="muted">除了点底部标签，也可以在页面上<b>左右滑动</b>切到相邻的标签。有多个办公点时，前四个标签页右上角会出现办公点切换，比如「北京 ▾」，点开可以换办公点或看全部办公点。</p>
@@ -619,7 +629,10 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
       <p class="kicker">设备</p>
       <h2>设备领用与退还</h2>
       <ol class="steps">
-        <li><div><b>登记设备</b>：「设备」页点 <b>新增设备</b>，选类别（笔记本、显示器、键盘、鼠标……），填名称、型号、数量。序列号可以手填，也可以点旁边的按钮扫机身上的条码。多台同款建议分开登记，各记各的序列号。</div></li>
+        <li><div><b>扫码录入</b>：「设备」页点 <b>扫码录入</b>，扫包装盒标签上标着 Serial No. 的条码。没登记过的序列号直接进新增页、序列号已填好；登记过的直接打开那台设备。扫到商品条码或型号编号（Part No.）会提示换一个。没有包装盒的，序列号在电脑的「关于本机」里，可以在扫码页下面手动输入。不扫码的点 <b>手动添加</b>。</div></li>
+        <li><div><b>快速选择</b>：新增页最上面列着常用设备，前面是你们登记过的组合（名称、配置一起），后面是内置的 MacBook Air / Pro、Mac mini、iMac、妙控键盘等。点一个，类别、名称、配置和常见配件都填好，再按实际改。</div></li>
+        <li><div><b>电脑配置</b>：笔记本、台式机有 <b>芯片、内存、硬盘</b> 三栏，分开记，报表和导出的表格里也各占一列。名称带 Mac 时芯片可以点选 M1–M5 再选标准 / Pro / Max / Ultra；内存、硬盘点常用容量，也能手填。「型号」那栏写型号编号这类，比如 MRX33CH/A，可以不填。</div></li>
+        <li><div><b>同款批量登记</b>：填完第一台点 <b>保存并扫下一台</b>，直接回到扫码，下一台沿用名称、配置、配件、购买日期、发票号和保修，只换序列号。序列号重复的不让保存，会告诉你已经登记在哪台。</div></li>
         <li><div><b>购买与保修</b>：填购买日期和发票号（发票号单独一栏，可以不填）；保修可以填年限（比如 3 年，自动按购买日期算出到期日），也可以直接选保修到期日。</div></li>
         <li><div><b>配件</b>：把随设备一起领走、一起退还的东西记上，比如「充电器 ×1、扩展坞 ×1」，常见配件点一下就能加。数量按每件设备配几个填。</div></li>
         <li><div><b>登记领用</b>：进设备详情点 <b>登记领用</b>，填使用人、数量、领取日期（默认今天）。用过的人名下次可以直接点选。面板上方会列出要一起交给对方的配件。</div></li>
@@ -628,10 +641,85 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
       <ul class="points">
         <li>详情页上方显示 <b>总数 / 借出 / 在库</b> 和保修状态，全部借出时不能再登记领用。</li>
         <li>保修剩 30 天以内或已过保的设备，在列表里会标出来。</li>
-        <li>发票号显示在设备详情的「信息」里；设备页的搜索也能按发票号找。</li>
+        <li>发票号、芯片、内存、硬盘显示在设备详情的「信息」里；设备页的搜索也能按它们找。</li>
+        <li>升级到 1.5.0 时，以前写在「型号」里的「M3 Pro 18G/512G」这类配置会自动拆到芯片、内存、硬盘三栏，认不出的保持原样。</li>
         <li>单独借出的备用鼠标、键盘这类，建议另外登记成一件设备，按数量领用和退还。</li>
         <li>每条领用记录都留着，点开可以改人名、日期，登记错了也能删。</li>
         <li>设备页切到 <b>按使用人</b>，能看到每个人手上有哪些设备、领了多少天。</li>
+      </ul>
+    </section>
+
+    <section id="stocktake">
+      <p class="kicker">盘点</p>
+      <h2>定期盘点，把账和实物对上</h2>
+      <p>入口在「提醒」页上方的 <b>盘点</b>。盘点就是把一个办公点的东西逐样数一遍、填上实际数量，完成后 App 按数到的数量改库存。</p>
+      <div class="with-figure">
+        <div style="display:grid;gap:18px">
+          <ol class="steps">
+            <li><div><b>开始盘点</b>：点 <b>开始盘点</b>。有多个办公点时先选办公点，再选盘哪些：食品、日用品、设备，默认食品和日用品。同一个办公点同时只能有一次进行中的盘点，已经有一次没完成时，点 <b>接着盘那一次</b>。</div></li>
+            <li><div><b>逐样清点</b>：点一行，填数到的数量，点 <b>保存</b>。设了包装规格的可以按箱或按瓶填；和账面一样就点 <b>和账面一样</b>，一下就存好。填错了再点开改，也可以点 <b>改回未盘</b>。</div></li>
+            <li><div><b>找东西</b>：点搜索框右边的扫码按钮，扫物品条码、箱子上的条码（自动按箱填）或设备序列号，直接打开那一样；也可以搜名称、条码、序列号。上方可以筛 <b>全部 / 未盘 / 有差异</b>。</div></li>
+            <li><div><b>完成盘点</b>：数完后点 <b>完成盘点</b>，确认框里列出盘盈、盘亏、相符各几项，还有几项没盘。点 <b>完成</b> 后按数到的数量调整库存，不能撤销。</div></li>
+          </ol>
+          <ul class="points">
+            <li>盘到一半可以离开，数量随填随存；回来在盘点列表里点那一次接着盘。</li>
+            <li>差异按「实盘 − 清点那一刻的账面」算。数完某一样之后又入库或出库了，不会算错。</li>
+            <li>少了：先从最早到期的那一批扣。多了：并到最早到期的那一批，没有批次就新建一批。每一项都会在物品的出入库记录里记一条「调整」，写着「盘点：账面 10，实盘 8」。</li>
+            <li>没盘的不调整。</li>
+            <li>设备盘的是在库数量（总数减去借出的），借出去的不算。设备只记差异，不自动改数量；丢了、坏了要到设备里手动处理。</li>
+            <li>不想要这次盘点了，点 <b>放弃这次盘点</b>，库存不改，盘点单留在历史里。</li>
+            <li>完成的盘点在列表的「历史」里，点开看结果和差异，点 <b>导出 CSV（全部明细）</b> 可以发出去。</li>
+            <li>盘点记录只存在这台手机上，不在导出的备份文件里；盘点改过的库存和那条「调整」记录会随备份带走。</li>
+          </ul>
+        </div>
+        <figure class="phone">
+          <div class="screen" aria-label="盘点单的界面示意">
+            <div class="app-title">盘点 <small>食品、日用品</small></div>
+            <div class="sheet">
+              <div class="sheet-title">已盘 3 / 共 4</div>
+              <div class="app-bar"><i style="width:75%"></i></div>
+              <div class="chips"><span class="chip info">盘盈 1</span><span class="chip danger">盘亏 1</span><span class="chip ok">相符 1</span></div>
+            </div>
+            <div class="choice"><span class="on">全部</span><span>未盘</span><span>有差异</span></div>
+            <div class="app-row">
+              <div><div class="n">纯牛奶</div><div class="m">清点时账面 12，实盘 10 盒</div></div>
+              <span class="chip danger">盘亏 -2 盒</span>
+            </div>
+            <div class="app-row">
+              <div><div class="n">可乐</div><div class="m">清点时账面 20，实盘 24 瓶</div></div>
+              <span class="chip info">盘盈 +4 瓶</span>
+            </div>
+            <div class="app-row">
+              <div><div class="n">抽纸</div><div class="m">清点时账面 8，实盘 8 包</div></div>
+              <span class="chip ok">相符</span>
+            </div>
+            <div class="app-row">
+              <div><div class="n">面包</div><div class="m">账面 2 袋</div></div>
+              <span class="chip">未盘</span>
+            </div>
+            <div class="app-btn">完成盘点</div>
+          </div>
+          <figcaption>界面示意：盘点单，每一行写着账面、实盘和差异。</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="report">
+      <p class="kicker">报表</p>
+      <h2>看报表、导出表格</h2>
+      <p>入口在「提醒」页上方的 <b>报表</b>。上面选办公点（有多个时，可以选全部）和时间段：本月、上月、近 3 个月（本月加前两个月）、今年。进货、消耗、物品明细按时间段统计；库存概况和设备是现在的情况。</p>
+      <dl class="tabs-table">
+        <div><dt>库存概况</dt><dd>食品、日用品各几种；库存不足、快到期、已过期各几种，点开看名单，点名字进到那样东西。</dd></div>
+        <div><dt>进货</dt><dd>进货金额合计和入库次数，食品、日用品各自的金额，金额最高的前 10 样。没填价格的入库不算进金额，会注明有几次。</dd></div>
+        <div><dt>消耗</dt><dd>出库次数和按原因（用掉、过期丢弃、坏了……）分的次数，用得最多的前 10 样。「过期丢弃」和「坏了」单独列出来，按出库前最近一次的进价估算损失；没有进价的显示「—」，不算进合计。</dd></div>
+        <div><dt>物品明细</dt><dd>每样东西这段时间入库多少、出库多少、现在有多少、进货金额。盘点的调整不算在入库、出库里。</dd></div>
+        <div><dt>设备</dt><dd>总数、借出、在库，按类别分开；保修 30 天内到期和已过保的设备；领用排行，看谁手上设备多。</dd></div>
+      </dl>
+      <h3>导出表格</h3>
+      <ul class="points">
+        <li>页面最下面有三个按钮：<b>导出出入库明细</b>（所选时间段里每一条入库、出库、调整，带单价和总价）、<b>导出当前库存</b>（每样东西的每一批，带过期日期）、<b>导出设备清单</b>（带使用人、发票号、保修、配件）。</li>
+        <li>导出的是 CSV 文件，Excel、WPS、Numbers 都能直接打开，中文不乱码。在分享面板里存到文件，或者直接发给同事。</li>
+        <li>文件名带办公点和时间段，比如 <code>出入库明细-北京-2026年11月.csv</code>。</li>
       </ul>
     </section>
 
@@ -682,8 +770,9 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
       </div>
       <ul class="points">
         <li><b>换手机</b>：旧手机全部导出，新手机全部导入。</li>
-        <li><b>价格和发票号</b>：导出的文件里带着每次入库的单价、总价和设备的发票号，导入后照样能看到。</li>
-        <li><b>新旧版本</b>：1.3.x 导出的文件可以导入 1.4.0，只是没有价格和发票号；1.4.0 导出的文件不能导入 1.3.x，App 会提示先升级，对方装上新版本再导入。</li>
+        <li><b>价格和发票号</b>：导出的文件里带着每次入库的单价、总价和设备的发票号、芯片、内存、硬盘，导入后照样能看到。1.5.0 以前导出的文件里，电脑「型号」写着「M3 Pro 18G/512G」这类的，导入时会拆到芯片、内存、硬盘三栏。</li>
+        <li><b>新旧版本</b>：1.3.x 导出的文件可以导入 1.4.0 及以后的版本，只是没有价格和发票号；1.4.0 及以后导出的文件不能导入 1.3.x，App 会提示先升级，对方装上新版本再导入。</li>
+        <li><b>盘点记录</b>：只存在这台手机上，不在导出的文件里。盘点调整过的库存和出入库记录里的「调整」会照常带走。</li>
       </ul>
     </section>
 
@@ -715,6 +804,10 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
           <div><p>在列表里向左滑删掉的物品、设备、批次，5 秒内点底部的「撤销」就能回来；过了 5 秒，或者在详情页点「删除」确认的，就不能恢复了。导入可以在设置里撤销。建议隔一段时间导出一份全部数据存起来。</p></div>
         </details>
         <details>
+          <summary>盘点完库存数字变了</summary>
+          <div><p>完成盘点后，App 把每样盘过的东西的库存改成数到的数量。要看改了多少，进那样东西的详情，出入库记录里有一条「调整」，写着「盘点：账面 10，实盘 8」。完成后不能撤销，数错了就再入库或出库改回来。</p></div>
+        </details>
+        <details>
           <summary>同一个条码能不能录两次</summary>
           <div><p>不能。一个条码只属于一件东西（包括箱子的条码）。扫到录过的条码会直接打开那件东西，在那里入库就行。</p></div>
         </details>
@@ -724,5 +817,5 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
 </div>
 
 <footer>
-  <div class="wrap">物品管家 1.4.0 · 本指南更新于 2026 年 11 月 18 日 · 界面示意中的物品和数量均为示例</div>
+  <div class="wrap">物品管家 1.5.0 · 本指南更新于 2026 年 11 月 18 日 · 界面示意中的物品和数量均为示例</div>
 </footer>

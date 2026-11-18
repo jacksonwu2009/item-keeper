@@ -88,13 +88,16 @@ const source: BackupSource = {
       officeId: 1,
       category: '笔记本',
       name: 'MacBook Pro 14',
-      model: 'M3 Pro',
+      model: 'MRX33CH/A',
       serialNo: 'C02XYZ',
       quantity: 2,
       note: null,
       purchaseDate: '2026-10-01',
       warrantyUntil: '2027-09-30',
       invoiceNo: '044031900111',
+      chip: 'M3 Pro',
+      memory: '18G',
+      storage: '512G',
       createdAt: '2026-10-01T01:00:00.000Z',
       updatedAt: '2026-10-01T01:00:00.000Z',
     },
@@ -232,6 +235,25 @@ describe('备份导入校验', () => {
       assert.equal(result.data.products[0].movements[0].unitPrice, null);
       assert.equal(result.data.devices[0].invoiceNo, null);
     }
+  });
+
+  it('1.5.0 以前的备份：电脑型号里的芯片、内存、硬盘拆出来；1.5.0 的不拆', () => {
+    const legacy = exported();
+    legacy.format = 6;
+    legacy.devices[0].model = 'M3 Pro 18G/512G';
+    for (const field of ['chip', 'memory', 'storage']) delete legacy.devices[0][field];
+    const result = parseBackup(JSON.stringify(legacy));
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      const device = result.data.devices[0];
+      assert.deepEqual([device.model, device.chip, device.memory, device.storage], [null, 'M3 Pro', '18G', '512G']);
+    }
+    const current = exported();
+    current.devices[0].model = 'M3 Pro';
+    for (const field of ['chip', 'memory', 'storage']) current.devices[0][field] = null;
+    const kept = parseBackup(JSON.stringify(current));
+    assert.equal(kept.ok, true);
+    if (kept.ok) assert.deepEqual([kept.data.devices[0].model, kept.data.devices[0].chip], ['M3 Pro', null]);
   });
 
   it('价格和发票号随备份往返', () => {

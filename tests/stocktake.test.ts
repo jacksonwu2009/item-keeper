@@ -12,6 +12,7 @@ import {
   findStocktakeItemByCode,
   getOpenStocktake,
   getStocktake,
+  listOpenStocktakeScopes,
   listStocktakeItems,
   listStocktakes,
   recordCount,
@@ -28,7 +29,9 @@ import {
   matchesKeyword,
   parseKinds,
   planAdjustment,
+  previewFinish,
   serializeKinds,
+  stocktakesClearedByImport,
   summarizeCounts,
 } from '../src/lib/stocktake';
 import { openDb, plain } from './helpers/memoryDb';
@@ -161,6 +164,44 @@ describe('盘点纯函数', () => {
     assert.equal(lines[1], '食品,可乐,瓶,10,8,-2,盘亏,是（-2）');
     assert.equal(lines[2], '设备,显示器,件,3,2,-1,盘亏,否（设备要手动处理）');
     assert.equal(lines[3], '日用品,抽纸,包,,,,未盘,否');
+  });
+
+  it('导出 CSV：相符的设备写「不需要」；物品被删跳过、库存为 0 扣不了的注明', () => {
+    const text = buildStocktakeCsv(
+      [
+        { kind: 'devices', name: '键盘', unit: '件', itemType: 'device', expectedQty: 3, countedQty: 3, adjustedQty: null },
+        { kind: 'food', name: '面包', unit: '袋', itemType: 'product', expectedQty: 2, countedQty: 5, adjustedQty: null },
+        { kind: 'food', name: '牛奶', unit: '盒', itemType: 'product', expectedQty: 2, countedQty: 0, adjustedQty: 0 },
+      ],
+      'done',
+    );
+    const lines = text.replace('﻿', '').trim().split('\r\n');
+    assert.equal(lines[1], '设备,键盘,件,3,3,0,相符,不需要');
+    assert.equal(lines[2], '食品,面包,袋,2,5,3,盘盈,否（物品已删除或移走）');
+    assert.equal(lines[3], '食品,牛奶,盒,2,0,-2,盘亏,否（库存已经是 0，没法再扣）');
+  });
+
+  it('完成前的计数：已删除、移走的单独算，不计入盘盈盘亏和设备差异', () => {
+    const preview = previewFinish([
+      { itemType: 'product', expectedQty: 10, countedQty: 8, absence: null },
+      { itemType: 'product', expectedQty: 2, countedQty: 5, absence: 'deleted' },
+      { itemType: 'device', expectedQty: 3, countedQty: 2, absence: null },
+      { itemType: 'device', expectedQty: 1, countedQty: 0, absence: 'moved' },
+      { itemType: 'product', expectedQty: null, countedQty: null, absence: null },
+    ]);
+    assert.deepEqual(preview, { surplus: 0, deficit: 2, match: 0, uncounted: 1, absent: 2, deviceDifferences: 1 });
+  });
+
+  it('导入会清掉哪些办公点的进行中盘点：办公点在导入里、分类有交集', () => {
+    const open = [
+      { officeName: '北京', kinds: ['food' as const, 'daily' as const] },
+      { officeName: '上海', kinds: ['devices' as const] },
+      { officeName: null, kinds: ['food' as const] },
+    ];
+    assert.deepEqual(stocktakesClearedByImport(open, { offices: ['北京', '上海'], scope: ['daily', 'settings'] }), ['北京']);
+    assert.deepEqual(stocktakesClearedByImport(open, { offices: ['北京', '上海'], scope: ['devices'] }), ['上海']);
+    assert.deepEqual(stocktakesClearedByImport(open, { offices: ['广州'], scope: ['food'] }), []);
+    assert.deepEqual(stocktakesClearedByImport(open, { offices: ['北京'], scope: ['settings'] }), []);
   });
 });
 
@@ -333,6 +374,81 @@ describe('盘点（真实 SQLite）', () => {
     const result = await finishStocktake(db, id);
     assert.equal(result.adjustedProducts, 0);
     assert.equal((await db.getAllAsync('SELECT id FROM stock_batch WHERE product_id = ?', [breadId])).length, 0);
+  });
+
+  it('完成时物品被移到别的办公点或改了分类：视为已移走，跳过，不动别处的库存', async () => {
+    const { db, colaId, monitorId } = await officeWithStock();
+    const shanghai = await createOffice(db, '上海');
+    const id = await startStocktake(db, 1, ['food', 'devices']);
+    const items = await listStocktakeItems(db, id);
+    await recordCount(db, itemNamed(items, '可乐').id, 4);
+    await recordCount(db, itemNamed(items, '面包').id, 3);
+    await recordCount(db, itemNamed(items, 'U2723QE').id, 0);
+    // 清点后：可乐移到上海，面包改成日用品（这次没盘日用品），显示器也移到上海
+    await db.runAsync('UPDATE stock_product SET office_id = ? WHERE id = ?', [shanghai, colaId]);
+    await db.runAsync("UPDATE stock_product SET kind = 'daily' WHERE name = '面包'");
+    await db.runAsync('UPDATE device SET office_id = ? WHERE id = ?', [shanghai, monitorId]);
+
+    const after = await listStocktakeItems(db, id);
+    assert.deepEqual(
+      after.map((item) => [item.name, item.absence, item.present]),
+      [
+        ['可乐', 'moved', false],
+        ['面包', 'moved', false],
+        ['U2723QE', 'moved', false],
+      ],
+    );
+    await assert.rejects(recordCount(db, itemNamed(after, '可乐').id, 5), /移到别的办公点/);
+    // 扫序列号也找不到已经移走的设备
+    assert.equal(await findStocktakeItemByCode(db, id, 'SN-1'), null);
+
+    const result = await finishStocktake(db, id);
+    assert.equal(result.adjustedProducts, 0);
+    assert.equal(result.deviceDifferences, 0);
+    assert.equal((await listBatches(db, colaId)).reduce((sum, batch) => sum + batch.quantity, 0), 14);
+    assert.equal((await listMovements(db, colaId)).filter((movement) => movement.type === 'adjust').length, 0);
+  });
+
+  it('两次「完成」同时点：库存只调一次，第二次报「已经结束」', async () => {
+    const { db, colaId } = await officeWithStock();
+    const id = await startStocktake(db, 1, ['food']);
+    const items = await listStocktakeItems(db, id);
+    await recordCount(db, itemNamed(items, '可乐').id, 11);
+    const [first, second] = await Promise.allSettled([finishStocktake(db, id), finishStocktake(db, id)]);
+    assert.equal(first.status, 'fulfilled');
+    assert.equal(second.status, 'rejected');
+    if (second.status === 'rejected') assert.match(String(second.reason), /已经结束/);
+    assert.equal((await listBatches(db, colaId)).reduce((sum, batch) => sum + batch.quantity, 0), 11);
+    assert.equal((await listMovements(db, colaId)).filter((movement) => movement.type === 'adjust').length, 1);
+    assert.equal((await getStocktake(db, id))?.status, 'done');
+  });
+
+  it('完成进行中点了放弃：放弃报错，盘点单是已完成，库存按完成调整', async () => {
+    const { db, colaId } = await officeWithStock();
+    const id = await startStocktake(db, 1, ['food']);
+    const items = await listStocktakeItems(db, id);
+    await recordCount(db, itemNamed(items, '可乐').id, 11);
+    const finishing = finishStocktake(db, id);
+    const cancelling = cancelStocktake(db, id);
+    const [finished, cancelled] = await Promise.allSettled([finishing, cancelling]);
+    assert.equal(finished.status, 'fulfilled');
+    assert.equal(cancelled.status, 'rejected');
+    if (cancelled.status === 'rejected') assert.match(String(cancelled.reason), /已经结束/);
+    assert.equal((await getStocktake(db, id))?.status, 'done');
+    assert.equal((await listBatches(db, colaId)).reduce((sum, batch) => sum + batch.quantity, 0), 11);
+    // 已经结束的再放弃、再完成都报错；找不到的盘点单报「找不到」
+    await assert.rejects(cancelStocktake(db, id), /已经结束/);
+    await assert.rejects(finishStocktake(db, 999), /找不到/);
+  });
+
+  it('列出进行中盘点的办公点和分类（导入前提示用）', async () => {
+    const { db } = await officeWithStock();
+    const shanghai = await createOffice(db, '上海');
+    await createProduct(db, product({ officeId: shanghai, name: '上海的可乐' }), { quantity: 1, expiryDate: null });
+    await startStocktake(db, 1, ['food', 'daily']);
+    const finished = await startStocktake(db, shanghai, ['food']);
+    await finishStocktake(db, finished);
+    assert.deepEqual(plain(await listOpenStocktakeScopes(db)), [{ officeName: '默认办公点', kinds: ['food', 'daily'] }]);
   });
 
   it('放弃盘点不改库存', async () => {

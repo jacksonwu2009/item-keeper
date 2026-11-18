@@ -3,7 +3,8 @@
  * 数据由 src/db/report.ts 一次取回，这里只做计算，不碰数据库。
  */
 
-import type { CsvCell } from './csv';
+import { textCell, type CsvCell } from './csv';
+import { describeConfig, hasComputerConfig } from './devicePresets';
 import { perBaseUnitPrice, roundTotalPrice } from './price';
 import { expiryStatus, isLowStock } from './status';
 import { KIND_LABEL, roundQty, type StockKind } from './stock';
@@ -122,6 +123,9 @@ export type ReportDevice = {
   model: string | null;
   serialNo: string | null;
   invoiceNo: string | null;
+  chip: string | null;
+  memory: string | null;
+  storage: string | null;
   quantity: number;
   outQty: number;
   holders: string | null;
@@ -240,7 +244,15 @@ export const LOSS_REASONS = ['过期丢弃', '坏了'];
 const NO_REASON = '没写原因';
 
 export type ReasonCount = { reason: string; count: number };
-export type ConsumptionRank = { productId: number; name: string; kind: StockKind; unit: string; quantity: number };
+/** 出库排行：count 是出库次数，quantity 是出库数量（按该物品的最小单位） */
+export type ConsumptionRank = {
+  productId: number;
+  name: string;
+  kind: StockKind;
+  unit: string;
+  count: number;
+  quantity: number;
+};
 export type LossEntry = {
   movementId: number;
   productId: number;
@@ -294,8 +306,10 @@ export function summarizeConsumption(
       name: movement.productName,
       kind: movement.kind,
       unit: movement.unit,
+      count: 0,
       quantity: 0,
     };
+    rank.count += 1;
     rank.quantity += quantity;
     byProduct.set(movement.productId, rank);
     if (LOSS_REASONS.includes(reason)) {
@@ -319,9 +333,13 @@ export function summarizeConsumption(
   const reasons = [...reasonCounts.entries()]
     .map(([reason, count]) => ({ reason, count }))
     .sort((left, right) => orderOf(left.reason) - orderOf(right.reason) || right.count - left.count);
+  // 各物品单位不同（瓶、包、克），数量放在一起比没有意义，所以按出库次数排，同次数再按数量
   const topProducts = [...byProduct.values()]
     .map((rank) => ({ ...rank, quantity: roundQty(rank.quantity) }))
-    .sort((left, right) => right.quantity - left.quantity || left.name.localeCompare(right.name))
+    .sort(
+      (left, right) =>
+        right.count - left.count || right.quantity - left.quantity || left.name.localeCompare(right.name),
+    )
     .slice(0, topCount);
   losses.sort((left, right) => right.happenedAt.localeCompare(left.happenedAt));
   const estimated = losses.filter((loss) => loss.estimatedLoss !== null);
@@ -393,6 +411,8 @@ export function productDetails(
 // ---------- 设备 ----------
 
 export type DeviceCategoryRow = { category: string; total: number; out: number; inStock: number };
+/** 电脑按配置（芯片 内存/硬盘）统计，方便看哪批该换 */
+export type DeviceConfigRow = { config: string; total: number; out: number; inStock: number };
 export type HolderRank = { person: string; quantity: number };
 export type WarrantyRef = { deviceId: number; name: string; quantity: number; text: string };
 
@@ -401,6 +421,8 @@ export type DeviceSummary = {
   out: number;
   inStock: number;
   byCategory: DeviceCategoryRow[];
+  /** 只算笔记本、台式机；没记配置的归到「没记配置」 */
+  byConfig: DeviceConfigRow[];
   /** 30 天内到期（含今天），按件数 */
   warrantySoonQty: number;
   warrantyExpiredQty: number;
@@ -415,11 +437,13 @@ export function summarizeDevices(
   today: string,
 ): DeviceSummary {
   const categories = new Map<string, DeviceCategoryRow>();
+  const configs = new Map<string, DeviceConfigRow>();
   const summary: DeviceSummary = {
     total: 0,
     out: 0,
     inStock: 0,
     byCategory: [],
+    byConfig: [],
     warrantySoonQty: 0,
     warrantyExpiredQty: 0,
     warrantySoon: [],
@@ -433,6 +457,14 @@ export function summarizeDevices(
     row.out += out;
     row.inStock += device.quantity - out;
     categories.set(device.category, row);
+    if (hasComputerConfig(device.category)) {
+      const config = describeConfig(device) || '没记配置';
+      const configRow = configs.get(config) ?? { config, total: 0, out: 0, inStock: 0 };
+      configRow.total += device.quantity;
+      configRow.out += out;
+      configRow.inStock += device.quantity - out;
+      configs.set(config, configRow);
+    }
     summary.total += device.quantity;
     summary.out += out;
     summary.inStock += device.quantity - out;
@@ -448,6 +480,12 @@ export function summarizeDevices(
   }
   summary.byCategory = [...categories.values()].sort(
     (left, right) => right.total - left.total || left.category.localeCompare(right.category, 'zh'),
+  );
+  summary.byConfig = [...configs.values()].sort(
+    (left, right) =>
+      Number(left.config === '没记配置') - Number(right.config === '没记配置') ||
+      right.total - left.total ||
+      left.config.localeCompare(right.config, 'zh'),
   );
   const holders = new Map<string, number>();
   for (const assignment of assignments) {
@@ -513,7 +551,7 @@ export function stockTable(
   }
   const rows: CsvCell[][] = [];
   for (const product of products) {
-    const base = [officeName(product.officeId), KIND_LABEL[product.kind], product.name, product.barcode];
+    const base: CsvCell[] = [officeName(product.officeId), KIND_LABEL[product.kind], product.name, textCell(product.barcode)];
     const productBatches = batchesByProduct.get(product.id) ?? [];
     if (!productBatches.length) {
       rows.push([...base, 0, product.unit, null, null, product.location]);
@@ -537,6 +575,9 @@ export function deviceTable(
       '类别',
       '名称',
       '型号',
+      '芯片',
+      '内存',
+      '硬盘',
       '序列号',
       '发票号',
       '数量',
@@ -556,8 +597,11 @@ export function deviceTable(
         device.category,
         device.name,
         device.model,
-        device.serialNo,
-        device.invoiceNo,
+        device.chip,
+        device.memory,
+        device.storage,
+        textCell(device.serialNo),
+        textCell(device.invoiceNo),
         device.quantity,
         out,
         device.quantity - out,

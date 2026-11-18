@@ -33,6 +33,7 @@ import {
 import { useFocusData } from '../../hooks/useFocusData';
 import { useOffice } from '../../hooks/useOffice';
 import { diffDays, formatDate, todayStr } from '../../lib/dates';
+import { hasComputerConfig } from '../../lib/devicePresets';
 import { describeAccessories, warrantyStatus, type Accessory } from '../../lib/warranty';
 import { colors, font, radius } from '../../theme';
 
@@ -190,6 +191,13 @@ export default function DeviceDetailScreen() {
         {office.multiple ? <InfoRow label="办公点" value={office.officeName(device.officeId)} /> : null}
         <InfoRow label="类别" value={device.category} />
         <InfoRow label="型号" value={device.model ?? '—'} />
+        {hasComputerConfig(device.category) || device.chip || device.memory || device.storage ? (
+          <>
+            <InfoRow label="芯片" value={device.chip ?? '—'} />
+            <InfoRow label="内存" value={device.memory ?? '—'} />
+            <InfoRow label="硬盘" value={device.storage ?? '—'} />
+          </>
+        ) : null}
         <InfoRow label="序列号" value={device.serialNo ?? '—'} />
         <InfoRow label="购买日期" value={formatDate(device.purchaseDate)} />
         <InfoRow label="发票号" value={device.invoiceNo ?? '—'} />

@@ -1,7 +1,9 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
+import { CONFIG_CATEGORIES, splitLegacyModel } from '../lib/devicePresets';
+
 export const DATABASE_NAME = 'item-keeper.db';
-const DATABASE_VERSION = 7;
+const DATABASE_VERSION = 8;
 
 /**
  * 表结构
@@ -15,6 +17,7 @@ const DATABASE_VERSION = 7;
  * - stock_movement.unit_price / total_price：入库时填的单价（按入库单位）和总价，可不填；device.invoice_no：发票号（v6 起）
  * - stocktake / stocktake_item：盘点单和每一项的账面数、实盘数（v7 起）。只在本机，不进备份文件；
  *   盘点完成时对库存的调整记成出入库记录（type='adjust'），这部分会随备份走
+ * - device.chip / memory / storage：电脑的芯片、内存、硬盘分开记（v8 起；以前写在 model 里的会拆出来）
  * - setting：键值设置
  */
 export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
@@ -200,5 +203,42 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
     `);
   }
 
+  if (currentVersion < 8) {
+    await db.execAsync(`
+      ALTER TABLE device ADD COLUMN chip TEXT;
+      ALTER TABLE device ADD COLUMN memory TEXT;
+      ALTER TABLE device ADD COLUMN storage TEXT;
+    `);
+    await splitLegacyDeviceModels(db);
+  }
+
   await db.execAsync(`PRAGMA user_version = ${DATABASE_VERSION}`);
+}
+
+/**
+ * 以前电脑的芯片、内存、硬盘都写在「型号」里（如「M3 Pro 18G/512G」），拆到各自的栏里；
+ * 只处理笔记本、台式机，且芯片、内存、硬盘三栏都还空着的；认不出的保持原样。
+ */
+export async function splitLegacyDeviceModels(db: SQLiteDatabase): Promise<number> {
+  const placeholders = CONFIG_CATEGORIES.map(() => '?').join(', ');
+  const rows = await db.getAllAsync<{ id: number; model: string }>(
+    `SELECT id, model FROM device
+      WHERE category IN (${placeholders}) AND model IS NOT NULL
+        AND chip IS NULL AND memory IS NULL AND storage IS NULL`,
+    CONFIG_CATEGORIES,
+  );
+  let changed = 0;
+  for (const row of rows) {
+    const split = splitLegacyModel(row.model);
+    if (!split) continue;
+    await db.runAsync('UPDATE device SET chip = ?, memory = ?, storage = ?, model = ? WHERE id = ?', [
+      split.chip,
+      split.memory,
+      split.storage,
+      split.model,
+      row.id,
+    ]);
+    changed++;
+  }
+  return changed;
 }
