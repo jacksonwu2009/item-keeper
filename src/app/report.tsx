@@ -4,7 +4,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState, type ReactNode } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Button, Card, Chip, ChoiceChips, Label, Screen, SectionTitle, type Tone } from '../components/ui';
+import { Button, Card, Chip, ChoiceChips, Label, LIST_PRESS_DELAY, Screen, SectionTitle, type Tone } from '../components/ui';
 import { ALL_OFFICES } from '../db/offices';
 import { EMPTY_REPORT_SOURCE, loadReportSource } from '../db/report';
 import { useFocusData } from '../hooks/useFocusData';
@@ -428,6 +428,7 @@ function ValueRow({
     <Pressable
       accessibilityRole="button"
       onPress={onPress}
+      unstable_pressDelay={LIST_PRESS_DELAY}
       style={({ pressed }) => [reportStyles.row, pressed && reportStyles.rowPressed]}
     >
       {content}
@@ -446,6 +447,7 @@ function ExpandableList({ title, items, tone }: { title: string; items: ProductR
         accessibilityState={{ expanded: open, disabled: empty }}
         disabled={empty}
         onPress={() => setOpen((value) => !value)}
+        unstable_pressDelay={LIST_PRESS_DELAY}
         style={({ pressed }) => [reportStyles.row, pressed && reportStyles.rowPressed]}
       >
         <Text style={[reportStyles.rowName, reportStyles.rowText]}>{title}</Text>
@@ -458,6 +460,7 @@ function ExpandableList({ title, items, tone }: { title: string; items: ProductR
               key={item.productId}
               accessibilityRole="button"
               onPress={() => openProduct(item.productId)}
+              unstable_pressDelay={LIST_PRESS_DELAY}
               style={({ pressed }) => [reportStyles.row, reportStyles.nestedRow, pressed && reportStyles.rowPressed]}
             >
               <Text style={[reportStyles.rowDetail, reportStyles.rowText]} numberOfLines={1}>

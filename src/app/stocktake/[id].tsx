@@ -13,6 +13,7 @@ import {
   Field,
   IconButton,
   InfoRow,
+  LIST_PRESS_DELAY,
   Screen,
   SectionTitle,
   Sheet,
@@ -333,6 +334,7 @@ function ItemRow({ item, first, onPress }: { item: StocktakeItem; first: boolean
       accessibilityRole="button"
       accessibilityLabel={`${item.name}，${detail}，${describeDifference(item, item.unit)}`}
       onPress={onPress}
+      unstable_pressDelay={LIST_PRESS_DELAY}
       style={({ pressed }) => [pageStyles.row, !first && pageStyles.rowDivider, pressed && pageStyles.rowPressed]}
     >
       <View style={pageStyles.rowMain}>

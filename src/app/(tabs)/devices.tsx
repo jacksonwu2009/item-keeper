@@ -5,7 +5,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 
 import { SwipeRow, UndoBar } from '../../components/SwipeRow';
-import { Button, Chip, Empty, Field, Segmented } from '../../components/ui';
+import { Button, Chip, Empty, Field, LIST_PRESS_DELAY, Segmented } from '../../components/ui';
 import {
   deleteDevice,
   listActiveAssignments,
@@ -188,6 +188,7 @@ export default function DevicesScreen() {
           renderItem={({ item }) => (
             <Pressable
               onPress={() => router.push({ pathname: '/device/[id]', params: { id: String(item.deviceId) } })}
+              unstable_pressDelay={LIST_PRESS_DELAY}
               style={({ pressed }) => [deviceStyles.row, pressed && deviceStyles.rowPressed]}
             >
               <View style={deviceStyles.rowMain}>

@@ -3,7 +3,19 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Button, Card, Chip, ChoiceChips, Empty, Label, MultiChips, Screen, SectionTitle, Sheet } from '../../components/ui';
+import {
+  Button,
+  Card,
+  Chip,
+  ChoiceChips,
+  Empty,
+  Label,
+  LIST_PRESS_DELAY,
+  MultiChips,
+  Screen,
+  SectionTitle,
+  Sheet,
+} from '../../components/ui';
 import { ALL_OFFICES } from '../../db/offices';
 import { getOpenStocktake, listStocktakes, startStocktake, type StocktakeListEntry } from '../../db/stocktake';
 import { useFocusData } from '../../hooks/useFocusData';
@@ -107,6 +119,7 @@ function EntryRow({ entry, first, showOffice }: { entry: StocktakeListEntry; fir
     <Pressable
       accessibilityRole="button"
       onPress={() => openStocktake(entry.id)}
+      unstable_pressDelay={LIST_PRESS_DELAY}
       style={({ pressed }) => [listStyles.row, !first && listStyles.rowDivider, pressed && { opacity: 0.6 }]}
     >
       <View style={listStyles.rowMain}>

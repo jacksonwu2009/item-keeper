@@ -4,7 +4,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Button, Card, Chip, Screen, SectionTitle, type Tone } from '../../components/ui';
+import { Button, Card, Chip, LIST_PRESS_DELAY, Screen, SectionTitle, type Tone } from '../../components/ui';
 import { listActiveAssignments, type ActiveAssignment } from '../../db/devices';
 import { DEFAULT_SETTINGS, getDataSince, getLastExportAt, getSettings } from '../../db/settings';
 import { useFocusData } from '../../hooks/useFocusData';
@@ -269,6 +269,7 @@ function Row({
     <Pressable
       accessibilityRole="button"
       onPress={onPress}
+      unstable_pressDelay={LIST_PRESS_DELAY}
       style={({ pressed }) => [dash.row, !first && dash.rowDivider, pressed && { backgroundColor: colors.surfaceSunken }]}
     >
       <View style={dash.rowMain}>

@@ -46,6 +46,12 @@ export function Screen({ children, contentStyle }: { children: ReactNode; conten
   );
 }
 
+/**
+ * 列表里可点的行：按下后等这么久才显示按下的底色。手指一开始就滑动（左滑删除、上下滚动、切标签）时
+ * 按下会被取消，底色不会闪一下；直接点的话松手时照常触发。
+ */
+export const LIST_PRESS_DELAY = 130;
+
 export function Card({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
   return <View style={[styles.card, style]}>{children}</View>;
 }

@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scheduleOnRN } from 'react-native-worklets';
 
 import { colors, font, radius } from '../theme';
+import { LIST_PRESS_DELAY } from './ui';
 
 const ACTION_WIDTH = 84;
 const ANIMATION = { duration: 180 };
@@ -141,7 +142,8 @@ export function SwipeRow({
             }}
             onPress={press}
             onLongPress={onLongPress ? longPress : undefined}
-            delayLongPress={400}
+            unstable_pressDelay={LIST_PRESS_DELAY}
+            delayLongPress={400 - LIST_PRESS_DELAY}
             style={({ pressed }) => [style, pressed && pressedStyle]}
           >
             {children}
