@@ -1,0 +1,432 @@
+import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { useSQLiteContext } from 'expo-sqlite';
+import { useCallback, useState } from 'react';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+
+import { DateField } from '../../components/DateField';
+import { ExpiryInput, type ExpiryValue } from '../../components/ExpiryInput';
+import { Button, Card, Chip, Empty, Field, InfoRow, Screen, SectionTitle, Sheet } from '../../components/ui';
+import { DEFAULT_SETTINGS, getSettings } from '../../db/settings';
+import {
+  deleteBatch,
+  deleteProduct,
+  getProduct,
+  listBatches,
+  stockIn,
+  stockOut,
+  updateBatch,
+  type StockBatch,
+  type StockProduct,
+} from '../../db/stock';
+import { useFocusData } from '../../hooks/useFocusData';
+import { formatDate, todayStr } from '../../lib/dates';
+import { rescheduleReminders } from '../../lib/notifications';
+import { expiryStatus, isLowStock } from '../../lib/status';
+import { formatQty, KIND_LABEL, parseQty, roundQty } from '../../lib/stock';
+import { colors, font, radius } from '../../theme';
+
+type SheetState = { type: 'in' } | { type: 'out' } | { type: 'batch'; batch: StockBatch } | null;
+
+export default function StockDetailScreen() {
+  const db = useSQLiteContext();
+  const params = useLocalSearchParams<{ id: string; scanned?: string }>();
+  const productId = Number(params.id);
+  const [showScanBanner, setShowScanBanner] = useState(params.scanned === '1');
+  const [sheet, setSheet] = useState<SheetState>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const loader = useCallback(async () => {
+    const [product, batches, settings] = await Promise.all([
+      getProduct(db, productId),
+      listBatches(db, productId),
+      getSettings(db),
+    ]);
+    return { product, batches, settings };
+  }, [db, productId]);
+  const [data, reload, loaded] = useFocusData(loader, {
+    product: null as StockProduct | null,
+    batches: [] as StockBatch[],
+    settings: DEFAULT_SETTINGS,
+  });
+  const { product, batches, settings } = data;
+
+  async function afterChange(note?: string) {
+    setSheet(null);
+    setShowScanBanner(false);
+    setMessage(note ?? null);
+    await reload();
+    rescheduleReminders(db).catch(() => undefined);
+  }
+
+  if (!loaded) return <Stack.Screen options={{ title: '' }} />;
+  if (!product) {
+    return (
+      <Screen>
+        <Stack.Screen options={{ title: '' }} />
+        <Empty icon="help-circle-outline" title="找不到这个物品" text="可能已经被删除了。" />
+      </Screen>
+    );
+  }
+
+  const today = todayStr();
+  const leadDays = product.expiryLeadDays ?? settings.expiryLeadDays;
+  const totalQty = roundQty(batches.reduce((sum, batch) => sum + batch.quantity, 0));
+  const low = isLowStock(totalQty, product.lowStockThreshold);
+  const nearest = expiryStatus(batches.find((batch) => batch.expiryDate)?.expiryDate ?? null, today, leadDays);
+
+  function confirmDelete() {
+    if (!product) return;
+    Alert.alert('删除这个物品？', `「${product.name}」和它的所有批次都会被删除，不能恢复。`, [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '删除',
+        style: 'destructive',
+        onPress: async () => {
+          await deleteProduct(db, product.id);
+          rescheduleReminders(db).catch(() => undefined);
+          router.back();
+        },
+      },
+    ]);
+  }
+
+  return (
+    <Screen>
+      <Stack.Screen options={{ title: product.name }} />
+
+      {showScanBanner ? (
+        <View style={detailStyles.banner}>
+          <Text style={detailStyles.bannerText}>已认出：{product.name}。这次是买回来，还是用掉？</Text>
+        </View>
+      ) : null}
+
+      <Card style={detailStyles.summary}>
+        <View style={detailStyles.summaryTop}>
+          <View style={detailStyles.flex}>
+            <Text style={detailStyles.kind}>{KIND_LABEL[product.kind]}</Text>
+            <Text style={detailStyles.title}>{product.name}</Text>
+            {product.brand || product.spec ? (
+              <Text style={detailStyles.sub}>{[product.brand, product.spec].filter(Boolean).join(' · ')}</Text>
+            ) : null}
+          </View>
+          <View style={detailStyles.qtyBox}>
+            <Text style={[detailStyles.qty, totalQty <= 0 && { color: colors.danger }]}>{formatQty(totalQty)}</Text>
+            <Text style={detailStyles.unit}>{product.unit}</Text>
+          </View>
+        </View>
+        {nearest || low ? (
+          <View style={detailStyles.chips}>
+            {nearest ? (
+              <Chip text={`最早一批${nearest.text}`} tone={nearest.level === 'fine' ? 'neutral' : nearest.tone} />
+            ) : null}
+            {low ? <Chip text={`库存不足（下限 ${formatQty(product.lowStockThreshold ?? 0)}）`} tone="warn" /> : null}
+          </View>
+        ) : null}
+        <View style={detailStyles.actions}>
+          <Button title="入库" icon="add-circle-outline" onPress={() => setSheet({ type: 'in' })} style={detailStyles.flex} />
+          <Button
+            title="出库 / 用掉"
+            icon="remove-circle-outline"
+            variant="secondary"
+            onPress={() => setSheet({ type: 'out' })}
+            disabled={totalQty <= 0}
+            style={detailStyles.flex}
+          />
+        </View>
+        {message ? <Text style={detailStyles.message}>{message}</Text> : null}
+      </Card>
+
+      <SectionTitle title={`批次（${batches.length}）`} />
+      {batches.length === 0 ? (
+        <Card>
+          <Text style={detailStyles.sub}>没有库存了。买回来后点「入库」记一下。</Text>
+        </Card>
+      ) : (
+        <Card style={detailStyles.batchCard}>
+          {batches.map((batch, index) => {
+            const status = expiryStatus(batch.expiryDate, today, leadDays);
+            return (
+              <Pressable
+                key={batch.id}
+                accessibilityRole="button"
+                onPress={() => setSheet({ type: 'batch', batch })}
+                style={({ pressed }) => [
+                  detailStyles.batchRow,
+                  index > 0 && detailStyles.batchDivider,
+                  pressed && { backgroundColor: colors.surfaceSunken },
+                ]}
+              >
+                <View style={detailStyles.flex}>
+                  <Text style={detailStyles.batchDate}>
+                    {batch.expiryDate ? `${formatDate(batch.expiryDate)} 到期` : '没记过期日期'}
+                  </Text>
+                  <Text style={detailStyles.batchMeta}>{formatDate(batch.addedOn)} 入库</Text>
+                </View>
+                {status ? <Chip text={status.text} tone={status.level === 'fine' ? 'neutral' : status.tone} /> : null}
+                <Text style={detailStyles.batchQty}>
+                  {formatQty(batch.quantity)} {product.unit}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </Card>
+      )}
+
+      <SectionTitle title="信息" />
+      <Card>
+        <InfoRow label="条码" value={product.barcode ?? '—'} />
+        <InfoRow label="存放位置" value={product.location ?? '—'} />
+        <InfoRow
+          label="库存提醒"
+          value={product.lowStockThreshold === null ? '不提醒' : `≤ ${formatQty(product.lowStockThreshold)} ${product.unit} 时`}
+        />
+        <InfoRow
+          label="到期提醒"
+          value={`到期前 ${leadDays} 天起${product.expiryLeadDays === null ? '（默认）' : ''}`}
+        />
+        {product.note ? <InfoRow label="备注" value={product.note} /> : null}
+      </Card>
+
+      <View style={detailStyles.actions}>
+        <Button
+          title="编辑"
+          icon="create-outline"
+          variant="secondary"
+          onPress={() => router.push({ pathname: '/stock/edit/[id]', params: { id: String(product.id) } })}
+          style={detailStyles.flex}
+        />
+        <Button title="删除" icon="trash-outline" variant="danger" onPress={confirmDelete} style={detailStyles.flex} />
+      </View>
+
+      <StockInSheet
+        visible={sheet?.type === 'in'}
+        unit={product.unit}
+        isFood={product.kind === 'food'}
+        onClose={() => setSheet(null)}
+        onSubmit={async (quantity, expiryDate) => {
+          await stockIn(db, product.id, { quantity, expiryDate });
+          await afterChange(`已入库 ${formatQty(quantity)} ${product.unit}`);
+        }}
+      />
+      <StockOutSheet
+        visible={sheet?.type === 'out'}
+        unit={product.unit}
+        total={totalQty}
+        firstBatch={batches[0] ?? null}
+        onClose={() => setSheet(null)}
+        onSubmit={async (quantity) => {
+          const result = await stockOut(db, product.id, quantity);
+          await afterChange(
+            result.shortfall > 0
+              ? `只有 ${formatQty(result.consumed)} ${product.unit}，已全部出库`
+              : `已出库 ${formatQty(result.consumed)} ${product.unit}`,
+          );
+        }}
+      />
+      {sheet?.type === 'batch' ? (
+        <BatchSheet
+          batch={sheet.batch}
+          unit={product.unit}
+          onClose={() => setSheet(null)}
+          onSave={async (quantity, expiryDate) => {
+            await updateBatch(db, sheet.batch.id, { quantity, expiryDate });
+            await afterChange('批次已更新');
+          }}
+          onDelete={async () => {
+            await deleteBatch(db, sheet.batch.id);
+            await afterChange('批次已删除');
+          }}
+        />
+      ) : null}
+    </Screen>
+  );
+}
+
+function StockInSheet({
+  visible,
+  unit,
+  isFood,
+  onClose,
+  onSubmit,
+}: {
+  visible: boolean;
+  unit: string;
+  isFood: boolean;
+  onClose: () => void;
+  onSubmit: (quantity: number, expiryDate: string | null) => Promise<void>;
+}) {
+  const [qtyText, setQtyText] = useState('1');
+  const [expiry, setExpiry] = useState<ExpiryValue>({ expiry: null, error: null });
+  const [showErrors, setShowErrors] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const qty = parseQty(qtyText);
+  const qtyError = qty === null || qty <= 0 ? '请填大于 0 的数量' : null;
+
+  return (
+    <Sheet visible={visible} title="入库" onClose={onClose}>
+      <Field
+        label={`数量（${unit}）`}
+        value={qtyText}
+        onChangeText={setQtyText}
+        keyboardType="decimal-pad"
+        error={showErrors ? qtyError : null}
+        autoFocus
+      />
+      <ExpiryInput initialMode={isFood ? 'date' : 'none'} allowNone onChange={setExpiry} />
+      {showErrors && expiry.error ? <Text style={detailStyles.error}>{expiry.error}</Text> : null}
+      <Text style={detailStyles.hintText}>过期日期和已有批次相同时会合并到那一批。</Text>
+      <Button
+        title="确认入库"
+        loading={busy}
+        onPress={async () => {
+          setShowErrors(true);
+          if (qtyError || expiry.error || qty === null) return;
+          setBusy(true);
+          try {
+            await onSubmit(qty, expiry.expiry);
+            setQtyText('1');
+            setShowErrors(false);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      />
+    </Sheet>
+  );
+}
+
+function StockOutSheet({
+  visible,
+  unit,
+  total,
+  firstBatch,
+  onClose,
+  onSubmit,
+}: {
+  visible: boolean;
+  unit: string;
+  total: number;
+  firstBatch: StockBatch | null;
+  onClose: () => void;
+  onSubmit: (quantity: number) => Promise<void>;
+}) {
+  const [qtyText, setQtyText] = useState('1');
+  const [showErrors, setShowErrors] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const qty = parseQty(qtyText);
+  const qtyError = qty === null || qty <= 0 ? '请填大于 0 的数量' : null;
+
+  return (
+    <Sheet visible={visible} title="出库 / 用掉" onClose={onClose}>
+      <Field
+        label={`数量（${unit}）`}
+        value={qtyText}
+        onChangeText={setQtyText}
+        keyboardType="decimal-pad"
+        error={showErrors ? qtyError : null}
+        hint={`现有 ${formatQty(total)} ${unit}`}
+        autoFocus
+      />
+      {firstBatch?.expiryDate ? (
+        <Text style={detailStyles.hintText}>先扣 {formatDate(firstBatch.expiryDate)} 到期的那一批。</Text>
+      ) : null}
+      <View style={detailStyles.actions}>
+        <Button title="全部用完" variant="secondary" onPress={() => setQtyText(formatQty(total))} style={detailStyles.flex} />
+        <Button
+          title="确认出库"
+          loading={busy}
+          style={detailStyles.flex}
+          onPress={async () => {
+            setShowErrors(true);
+            if (qtyError || qty === null) return;
+            setBusy(true);
+            try {
+              await onSubmit(qty);
+              setQtyText('1');
+              setShowErrors(false);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        />
+      </View>
+    </Sheet>
+  );
+}
+
+function BatchSheet({
+  batch,
+  unit,
+  onClose,
+  onSave,
+  onDelete,
+}: {
+  batch: StockBatch;
+  unit: string;
+  onClose: () => void;
+  onSave: (quantity: number, expiryDate: string | null) => Promise<void>;
+  onDelete: () => Promise<void>;
+}) {
+  const [qtyText, setQtyText] = useState(formatQty(batch.quantity));
+  const [expiryDate, setExpiryDate] = useState<string | null>(batch.expiryDate);
+  const qty = parseQty(qtyText);
+
+  return (
+    <Sheet visible title="调整这一批" onClose={onClose}>
+      <Field
+        label={`数量（${unit}）`}
+        value={qtyText}
+        onChangeText={setQtyText}
+        keyboardType="decimal-pad"
+        hint="改成 0 等于删除这一批"
+        error={qty === null ? '请填数字' : null}
+      />
+      <DateField label="过期日期" value={expiryDate} onChange={setExpiryDate} clearable placeholder="没记过期日期" />
+      <View style={detailStyles.actions}>
+        <Button title="删除这一批" variant="danger" onPress={onDelete} style={detailStyles.flex} />
+        <Button
+          title="保存"
+          disabled={qty === null}
+          onPress={() => (qty === null ? undefined : onSave(qty, expiryDate))}
+          style={detailStyles.flex}
+        />
+      </View>
+    </Sheet>
+  );
+}
+
+const detailStyles = StyleSheet.create({
+  flex: { flex: 1, minWidth: 0 },
+  banner: {
+    backgroundColor: colors.infoSoft,
+    borderRadius: radius.md,
+    padding: 12,
+  },
+  bannerText: { color: colors.info, fontSize: font.body, fontWeight: '600' },
+  summary: { gap: 12 },
+  summaryTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  kind: { fontSize: font.tiny + 1, color: colors.accent, fontWeight: '700', letterSpacing: 1 },
+  title: { fontSize: font.title, fontWeight: '700', color: colors.ink, marginTop: 2 },
+  sub: { fontSize: font.small, color: colors.muted, marginTop: 2 },
+  qtyBox: { alignItems: 'flex-end' },
+  qty: { fontSize: 34, fontWeight: '800', color: colors.ink, fontVariant: ['tabular-nums'] },
+  unit: { fontSize: font.small, color: colors.muted },
+  chips: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
+  actions: { flexDirection: 'row', gap: 10 },
+  message: { fontSize: font.small, color: colors.ok, fontWeight: '600' },
+  batchCard: { paddingVertical: 4, gap: 0 },
+  batchRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
+  batchDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line },
+  batchDate: { fontSize: font.body, color: colors.ink, fontWeight: '500' },
+  batchMeta: { fontSize: font.small, color: colors.faint, marginTop: 2 },
+  batchQty: {
+    fontSize: font.body,
+    fontWeight: '700',
+    color: colors.ink,
+    minWidth: 56,
+    textAlign: 'right',
+    fontVariant: ['tabular-nums'],
+  },
+  error: { fontSize: font.small, color: colors.danger },
+  hintText: { fontSize: font.small, color: colors.faint },
+});

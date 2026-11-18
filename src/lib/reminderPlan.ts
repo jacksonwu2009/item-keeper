@@ -1,0 +1,172 @@
+/**
+ * 提醒计划：纯函数，不碰数据库和通知 API，方便单测。
+ *
+ * 规则
+ * - 每天固定时刻最多发一条汇总通知。
+ * - 到期提醒：某批次进入「到期前 N 天」后开始提醒，此后每隔 repeatEveryDays 天提醒一次；
+ *   到期当天一定提醒；过期后仍按同样间隔提醒，直到这批东西被用掉或删除。
+ * - 库存提醒：库存 ≤ 下限时，每隔 repeatEveryDays 天提醒一次（按固定日历节奏，
+ *   不会因为每天打开 App 重新排程而一直往后推）。
+ * - 某天只要有一项「轮到提醒」，那天就发通知，内容列出当天所有需要注意的东西。
+ */
+
+import { addDays, dateStrToLocalDate, describeDaysLeft, diffDays, epochDay, todayStr } from './dates';
+
+export type ReminderSettings = {
+  expiryEnabled: boolean;
+  lowStockEnabled: boolean;
+  /** 到期前几天开始提醒（商品没单独设置时用这个）。 */
+  expiryLeadDays: number;
+  /** 每隔几天提醒一次，1 = 每天。 */
+  repeatEveryDays: number;
+  reminderHour: number;
+  reminderMinute: number;
+};
+
+export type PlanBatch = { quantity: number; expiryDate: string | null };
+
+export type PlanProduct = {
+  /** 提醒页跳转用，排通知时不需要 */
+  id?: number;
+  kind?: string;
+  name: string;
+  unit: string;
+  totalQty: number;
+  lowStockThreshold: number | null;
+  expiryLeadDays: number | null;
+  batches: PlanBatch[];
+};
+
+export type PlannedReminder = {
+  /** 哪一天（YYYY-MM-DD） */
+  day: string;
+  /** 本地时间的触发时刻 */
+  at: Date;
+  title: string;
+  body: string;
+};
+
+export type ExpiryEntry = { product: PlanProduct; name: string; daysLeft: number; expiryDate: string; quantity: number; due: boolean };
+export type LowStockEntry = { product: PlanProduct; name: string; qty: number; unit: string };
+
+export type DayStatus = {
+  expiring: ExpiryEntry[];
+  expired: ExpiryEntry[];
+  lowStock: LowStockEntry[];
+  due: boolean;
+};
+
+const BODY_LIMIT = 160;
+
+function positiveInt(value: number, fallback: number): number {
+  return Number.isFinite(value) && value >= 1 ? Math.floor(value) : fallback;
+}
+
+/** 某一天的提醒状态：有哪些快到期 / 已过期 / 库存不足，以及这天是否该发通知。 */
+export function statusForDay(products: PlanProduct[], settings: ReminderSettings, day: string): DayStatus {
+  const repeat = positiveInt(settings.repeatEveryDays, 1);
+  const expiring: ExpiryEntry[] = [];
+  const expired: ExpiryEntry[] = [];
+  const lowStock: LowStockEntry[] = [];
+
+  if (settings.expiryEnabled) {
+    for (const product of products) {
+      const lead = Math.max(0, Math.floor(product.expiryLeadDays ?? settings.expiryLeadDays));
+      // 同一商品多个批次时，只保留最紧急的一条，但只要有一批轮到提醒就算轮到。
+      let mostUrgent: ExpiryEntry | null = null;
+      let anyDue = false;
+      for (const batch of product.batches) {
+        if (!batch.expiryDate || !(batch.quantity > 0)) continue;
+        const daysLeft = diffDays(batch.expiryDate, day);
+        if (daysLeft > lead) continue;
+        const alertStart = addDays(batch.expiryDate, -lead);
+        const sinceStart = diffDays(day, alertStart);
+        const due = daysLeft === 0 || sinceStart % repeat === 0;
+        anyDue = anyDue || due;
+        if (!mostUrgent || daysLeft < mostUrgent.daysLeft) {
+          mostUrgent = {
+            product,
+            name: product.name,
+            daysLeft,
+            expiryDate: batch.expiryDate,
+            quantity: batch.quantity,
+            due,
+          };
+        }
+      }
+      if (mostUrgent) {
+        const entry = { ...mostUrgent, due: anyDue };
+        (entry.daysLeft < 0 ? expired : expiring).push(entry);
+      }
+    }
+  }
+
+  const lowStockDue = settings.lowStockEnabled && epochDay(day) % repeat === 0;
+  if (settings.lowStockEnabled) {
+    for (const product of products) {
+      if (product.lowStockThreshold === null || product.lowStockThreshold === undefined) continue;
+      if (product.totalQty <= product.lowStockThreshold) {
+        lowStock.push({ product, name: product.name, qty: product.totalQty, unit: product.unit });
+      }
+    }
+  }
+
+  expiring.sort((a, b) => a.daysLeft - b.daysLeft);
+  expired.sort((a, b) => a.daysLeft - b.daysLeft);
+
+  const due =
+    expiring.some((entry) => entry.due) ||
+    expired.some((entry) => entry.due) ||
+    (lowStockDue && lowStock.length > 0);
+
+  return { expiring, expired, lowStock, due };
+}
+
+function formatQty(qty: number): string {
+  return Number.isInteger(qty) ? String(qty) : String(Math.round(qty * 100) / 100);
+}
+
+export function buildMessage(status: DayStatus): { title: string; body: string } {
+  const titleParts: string[] = [];
+  if (status.expiring.length) titleParts.push(`${status.expiring.length} 样快到期`);
+  if (status.expired.length) titleParts.push(`${status.expired.length} 样已过期`);
+  if (status.lowStock.length) titleParts.push(`${status.lowStock.length} 样库存不足`);
+
+  const lines: string[] = [];
+  for (const entry of [...status.expired, ...status.expiring]) {
+    lines.push(`${entry.name} ${describeDaysLeft(entry.daysLeft)}`);
+  }
+  if (status.lowStock.length) {
+    const names = status.lowStock.map((entry) => `${entry.name}（剩 ${formatQty(entry.qty)} ${entry.unit}）`);
+    lines.push(`库存不足：${names.join('、')}`);
+  }
+
+  let body = lines.join('；');
+  if (body.length > BODY_LIMIT) body = `${body.slice(0, BODY_LIMIT - 1)}…`;
+  return { title: titleParts.join('，'), body };
+}
+
+/**
+ * 从现在起往后 horizonDays 天的通知计划（最多 maxCount 条；iOS 每个 App 最多挂 64 条本地通知）。
+ * 假设这段时间里库存不变；用户一改库存就会重新排。
+ */
+export function planReminders(
+  products: PlanProduct[],
+  settings: ReminderSettings,
+  now: Date,
+  horizonDays = 60,
+  maxCount = 60,
+): PlannedReminder[] {
+  const today = todayStr(now);
+  const plan: PlannedReminder[] = [];
+  for (let offset = 0; offset <= horizonDays && plan.length < maxCount; offset++) {
+    const day = addDays(today, offset);
+    const at = dateStrToLocalDate(day, settings.reminderHour, settings.reminderMinute);
+    if (at.getTime() <= now.getTime()) continue;
+    const status = statusForDay(products, settings, day);
+    if (!status.due) continue;
+    const { title, body } = buildMessage(status);
+    plan.push({ day, at, title, body });
+  }
+  return plan;
+}
