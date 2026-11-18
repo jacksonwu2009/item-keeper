@@ -3,15 +3,13 @@
  * 跑真实的建表迁移和 src/db 下的读写函数，验证 SQL 本身是对的。
  */
 import assert from 'node:assert/strict';
-import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { describe, it } from 'node:test';
 
-import type { SQLiteDatabase } from 'expo-sqlite';
+import { openDb, plain } from './helpers/memoryDb';
 
 import { collectBackup, replaceData, restoreAll } from '../src/db/backup';
 import { createDevice, issueDevice, listActiveAssignments, listDevices, returnDevice } from '../src/db/devices';
 import { createOffice, deleteOffice, listOffices } from '../src/db/offices';
-import { migrateDbIfNeeded } from '../src/db/schema';
 import {
   createProduct,
   findByBarcode,
@@ -24,42 +22,6 @@ import {
   type StockProductInput,
 } from '../src/db/stock';
 
-function plain<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
-
-async function openDb(): Promise<SQLiteDatabase> {
-  const raw = new DatabaseSync(':memory:');
-  const params = (values: unknown[] = []) => values as SQLInputValue[];
-  const db = {
-    async execAsync(sql: string) {
-      raw.exec(sql);
-    },
-    async runAsync(sql: string, values?: unknown[]) {
-      const result = raw.prepare(sql).run(...params(values));
-      return { lastInsertRowId: Number(result.lastInsertRowid), changes: Number(result.changes) };
-    },
-    async getAllAsync(sql: string, values?: unknown[]) {
-      return plain(raw.prepare(sql).all(...params(values)));
-    },
-    async getFirstAsync(sql: string, values?: unknown[]) {
-      const row = raw.prepare(sql).get(...params(values));
-      return row ? plain(row) : null;
-    },
-    async withTransactionAsync(task: () => Promise<void>) {
-      raw.exec('BEGIN');
-      try {
-        await task();
-        raw.exec('COMMIT');
-      } catch (error) {
-        raw.exec('ROLLBACK');
-        throw error;
-      }
-    },
-  } as unknown as SQLiteDatabase;
-  await migrateDbIfNeeded(db);
-  return db;
-}
 
 function product(overrides: Partial<StockProductInput>): StockProductInput {
   return {
