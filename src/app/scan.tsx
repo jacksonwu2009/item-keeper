@@ -8,7 +8,7 @@ import { Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-nat
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '../components/ui';
-import { findProductByBarcode } from '../db/stock';
+import { findByBarcode } from '../db/stock';
 import { putScanResult } from '../lib/scanHandoff';
 import { isStockKind } from '../lib/stock';
 import { font, radius } from '../theme';
@@ -40,9 +40,13 @@ export default function ScanScreen() {
       router.back();
       return;
     }
-    const existing = await findProductByBarcode(db, code);
-    if (existing) {
-      router.replace({ pathname: '/stock/[id]', params: { id: String(existing.id), scanned: '1' } });
+    const match = await findByBarcode(db, code);
+    if (match) {
+      // 扫到的是整箱等包装上的条码时，带上包装单位，入库默认按这个单位
+      router.replace({
+        pathname: '/stock/[id]',
+        params: { id: String(match.product.id), scanned: '1', ...(match.pack ? { unit: match.pack.unit } : {}) },
+      });
     } else {
       router.replace({ pathname: '/stock/new', params: { kind, barcode: code } });
     }

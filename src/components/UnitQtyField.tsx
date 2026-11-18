@@ -1,0 +1,70 @@
+import { StyleSheet, Text, View } from 'react-native';
+
+import { toBaseQty, unitOptions, type PackUnit } from '../lib/packs';
+import { formatQty, parseQty } from '../lib/stock';
+import { colors, font } from '../theme';
+import { ChoiceChips, Field, Label } from './ui';
+
+/**
+ * 数量 + 单位。物品设了包装规格（如 1 箱 = 24 瓶）时，可以按箱或按瓶填，
+ * 下面实时显示换算成最小单位是多少。
+ */
+export function UnitQtyField({
+  label,
+  baseUnit,
+  packs,
+  qtyText,
+  onQtyText,
+  unit,
+  onUnit,
+  error,
+  hint,
+  autoFocus,
+}: {
+  label: string;
+  baseUnit: string;
+  packs: PackUnit[];
+  qtyText: string;
+  onQtyText: (text: string) => void;
+  unit: string;
+  onUnit: (unit: string) => void;
+  error?: string | null;
+  hint?: string;
+  autoFocus?: boolean;
+}) {
+  const options = unitOptions(baseUnit, packs);
+  const current = options.some((option) => option.value === unit) ? unit : baseUnit;
+  const qty = parseQty(qtyText);
+  const base = qty === null ? null : toBaseQty(qty, current, baseUnit, packs);
+  const conversion = current !== baseUnit && base !== null && qty !== null && qty > 0 ? `= ${formatQty(base)} ${baseUnit}` : null;
+
+  return (
+    <View style={unitStyles.wrap}>
+      {options.length > 1 ? (
+        <View style={unitStyles.wrap}>
+          <Label>按什么单位</Label>
+          <ChoiceChips
+            options={options.map((option) => ({ value: option.value, label: option.label }))}
+            value={current}
+            onChange={onUnit}
+          />
+        </View>
+      ) : null}
+      <Field
+        label={`${label}（${current}）`}
+        value={qtyText}
+        onChangeText={onQtyText}
+        keyboardType="decimal-pad"
+        error={error}
+        hint={conversion ?? hint}
+        autoFocus={autoFocus}
+      />
+      {conversion && hint ? <Text style={unitStyles.hint}>{hint}</Text> : null}
+    </View>
+  );
+}
+
+const unitStyles = StyleSheet.create({
+  wrap: { gap: 8 },
+  hint: { fontSize: font.small, color: colors.faint },
+});

@@ -6,6 +6,7 @@ import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { DateField } from '../../components/DateField';
 import { ExpiryInput, type ExpiryValue } from '../../components/ExpiryInput';
 import { Button, Card, Chip, ChoiceChips, Empty, Field, InfoRow, Label, Screen, SectionTitle, Sheet } from '../../components/ui';
+import { UnitQtyField } from '../../components/UnitQtyField';
 import { DEFAULT_SETTINGS, getSettings } from '../../db/settings';
 import {
   deleteBatch,
@@ -13,9 +14,11 @@ import {
   getProduct,
   listBatches,
   listMovements,
+  listPacks,
   stockIn,
   stockOut,
   updateBatch,
+  type EntryQty,
   type StockBatch,
   type StockMovement,
   type StockProduct,
@@ -23,6 +26,7 @@ import {
 import { useFocusData } from '../../hooks/useFocusData';
 import { formatDate, formatDateTime, todayStr } from '../../lib/dates';
 import { rescheduleReminders } from '../../lib/notifications';
+import { describePacks, formatBreakdown, toBaseQty, type PackUnit } from '../../lib/packs';
 import { expiryStatus, isLowStock } from '../../lib/status';
 import { formatQty, KIND_LABEL, parseQty, roundQty } from '../../lib/stock';
 import { colors, font, radius } from '../../theme';
@@ -31,28 +35,32 @@ type SheetState = { type: 'in' } | { type: 'out' } | { type: 'batch'; batch: Sto
 
 export default function StockDetailScreen() {
   const db = useSQLiteContext();
-  const params = useLocalSearchParams<{ id: string; scanned?: string }>();
+  const params = useLocalSearchParams<{ id: string; scanned?: string; unit?: string }>();
+  /** 扫的是整箱等包装上的条码时，入库默认按这个单位 */
+  const scannedUnit = typeof params.unit === 'string' ? params.unit : null;
   const productId = Number(params.id);
   const [showScanBanner, setShowScanBanner] = useState(params.scanned === '1');
   const [sheet, setSheet] = useState<SheetState>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const loader = useCallback(async () => {
-    const [product, batches, movements, settings] = await Promise.all([
+    const [product, batches, movements, packs, settings] = await Promise.all([
       getProduct(db, productId),
       listBatches(db, productId),
       listMovements(db, productId, 100),
+      listPacks(db, productId),
       getSettings(db),
     ]);
-    return { product, batches, movements, settings };
+    return { product, batches, movements, packs, settings };
   }, [db, productId]);
   const [data, reload, loaded] = useFocusData(loader, {
     product: null as StockProduct | null,
     batches: [] as StockBatch[],
     movements: [] as StockMovement[],
+    packs: [] as PackUnit[],
     settings: DEFAULT_SETTINGS,
   });
-  const { product, batches, movements, settings } = data;
+  const { product, batches, movements, packs, settings } = data;
   const [showAllMovements, setShowAllMovements] = useState(false);
 
   async function afterChange(note?: string) {
@@ -78,6 +86,8 @@ export default function StockDetailScreen() {
   const totalQty = roundQty(batches.reduce((sum, batch) => sum + batch.quantity, 0));
   const low = isLowStock(totalQty, product.lowStockThreshold);
   const nearest = expiryStatus(batches.find((batch) => batch.expiryDate)?.expiryDate ?? null, today, leadDays);
+  const breakdown = formatBreakdown(totalQty, product.unit, packs);
+  const scannedPack = scannedUnit ? packs.find((pack) => pack.unit === scannedUnit) ?? null : null;
 
   function confirmDelete() {
     if (!product) return;
@@ -101,7 +111,11 @@ export default function StockDetailScreen() {
 
       {showScanBanner ? (
         <View style={detailStyles.banner}>
-          <Text style={detailStyles.bannerText}>已认出：{product.name}。这次是买回来，还是用掉？</Text>
+          <Text style={detailStyles.bannerText}>
+            已认出：{product.name}
+            {scannedPack ? `（${scannedPack.unit}的条码，1 ${scannedPack.unit} = ${formatQty(scannedPack.size)} ${product.unit}）` : ''}
+            。这次是买回来，还是用掉？
+          </Text>
         </View>
       ) : null}
 
@@ -117,6 +131,7 @@ export default function StockDetailScreen() {
           <View style={detailStyles.qtyBox}>
             <Text style={[detailStyles.qty, totalQty <= 0 && { color: colors.danger }]}>{formatQty(totalQty)}</Text>
             <Text style={detailStyles.unit}>{product.unit}</Text>
+            {breakdown ? <Text style={detailStyles.breakdown}>{breakdown}</Text> : null}
           </View>
         </View>
         {nearest || low ? (
@@ -201,6 +216,12 @@ export default function StockDetailScreen() {
       <SectionTitle title="信息" />
       <Card>
         <InfoRow label="条码" value={product.barcode ?? '—'} />
+        <InfoRow label="包装规格" value={packs.length ? describePacks(product.unit, packs) : '—'} />
+        {packs
+          .filter((pack) => pack.barcode)
+          .map((pack) => (
+            <InfoRow key={pack.unit} label={`${pack.unit}的条码`} value={pack.barcode ?? ''} />
+          ))}
         <InfoRow label="存放位置" value={product.location ?? '—'} />
         <InfoRow
           label="库存提醒"
@@ -224,31 +245,37 @@ export default function StockDetailScreen() {
         <Button title="删除" icon="trash-outline" variant="danger" onPress={confirmDelete} style={detailStyles.flex} />
       </View>
 
-      <StockInSheet
-        visible={sheet?.type === 'in'}
-        unit={product.unit}
-        isFood={product.kind === 'food'}
-        onClose={() => setSheet(null)}
-        onSubmit={async (quantity, expiryDate) => {
-          await stockIn(db, product.id, { quantity, expiryDate });
-          await afterChange(`已入库 ${formatQty(quantity)} ${product.unit}`);
-        }}
-      />
-      <StockOutSheet
-        visible={sheet?.type === 'out'}
-        unit={product.unit}
-        total={totalQty}
-        firstBatch={batches[0] ?? null}
-        onClose={() => setSheet(null)}
-        onSubmit={async (quantity, reason) => {
-          const result = await stockOut(db, product.id, quantity, reason);
-          await afterChange(
-            result.shortfall > 0
-              ? `只有 ${formatQty(result.consumed)} ${product.unit}，已全部出库`
-              : `已出库 ${formatQty(result.consumed)} ${product.unit}`,
-          );
-        }}
-      />
+      {sheet?.type === 'in' ? (
+        <StockInSheet
+          unit={product.unit}
+          packs={packs}
+          defaultUnit={scannedPack?.unit ?? product.unit}
+          isFood={product.kind === 'food'}
+          onClose={() => setSheet(null)}
+          onSubmit={async (quantity, expiryDate, entry) => {
+            await stockIn(db, product.id, { quantity, expiryDate, entry });
+            const asEntered = entry.unit !== product.unit ? `${formatQty(entry.qty)} ${entry.unit}，` : '';
+            await afterChange(`已入库 ${asEntered}${formatQty(quantity)} ${product.unit}`);
+          }}
+        />
+      ) : null}
+      {sheet?.type === 'out' ? (
+        <StockOutSheet
+          unit={product.unit}
+          packs={packs}
+          total={totalQty}
+          firstBatch={batches[0] ?? null}
+          onClose={() => setSheet(null)}
+          onSubmit={async (quantity, reason, entry) => {
+            const result = await stockOut(db, product.id, quantity, reason, entry);
+            await afterChange(
+              result.shortfall > 0
+                ? `只有 ${formatQty(result.consumed)} ${product.unit}，已全部出库`
+                : `已出库 ${formatQty(result.consumed)} ${product.unit}`,
+            );
+          }}
+        />
+      ) : null}
       {sheet?.type === 'batch' ? (
         <BatchSheet
           batch={sheet.batch}
@@ -274,7 +301,12 @@ const MOVEMENT_LABEL: Record<StockMovement['type'], string> = { in: '入库', ou
 
 function MovementRow({ movement, unit, first }: { movement: StockMovement; unit: string; first: boolean }) {
   const positive = movement.delta > 0;
+  const enteredInPack =
+    movement.inputUnit && movement.inputUnit !== unit && movement.inputQty !== null
+      ? `按 ${formatQty(movement.inputQty)} ${movement.inputUnit}`
+      : null;
   const detail = [
+    enteredInPack,
     movement.note,
     movement.type === 'in' && movement.expiryDate ? `${formatDate(movement.expiryDate)} 到期` : null,
   ]
@@ -298,32 +330,39 @@ function MovementRow({ movement, unit, first }: { movement: StockMovement; unit:
 }
 
 function StockInSheet({
-  visible,
   unit,
+  packs,
+  defaultUnit,
   isFood,
   onClose,
   onSubmit,
 }: {
-  visible: boolean;
   unit: string;
+  packs: PackUnit[];
+  defaultUnit: string;
   isFood: boolean;
   onClose: () => void;
-  onSubmit: (quantity: number, expiryDate: string | null) => Promise<void>;
+  onSubmit: (quantity: number, expiryDate: string | null, entry: EntryQty) => Promise<void>;
 }) {
   const [qtyText, setQtyText] = useState('1');
+  const [entryUnit, setEntryUnit] = useState(defaultUnit);
   const [expiry, setExpiry] = useState<ExpiryValue>({ expiry: null, error: null });
   const [showErrors, setShowErrors] = useState(false);
   const [busy, setBusy] = useState(false);
   const qty = parseQty(qtyText);
-  const qtyError = qty === null || qty <= 0 ? '请填大于 0 的数量' : null;
+  const baseQty = qty === null ? null : toBaseQty(qty, entryUnit, unit, packs);
+  const qtyError = qty === null || qty <= 0 || baseQty === null ? '请填大于 0 的数量' : null;
 
   return (
-    <Sheet visible={visible} title="入库" onClose={onClose}>
-      <Field
-        label={`数量（${unit}）`}
-        value={qtyText}
-        onChangeText={setQtyText}
-        keyboardType="decimal-pad"
+    <Sheet visible title="入库" onClose={onClose}>
+      <UnitQtyField
+        label="数量"
+        baseUnit={unit}
+        packs={packs}
+        qtyText={qtyText}
+        onQtyText={setQtyText}
+        unit={entryUnit}
+        onUnit={setEntryUnit}
         error={showErrors ? qtyError : null}
         autoFocus
       />
@@ -335,12 +374,10 @@ function StockInSheet({
         loading={busy}
         onPress={async () => {
           setShowErrors(true);
-          if (qtyError || expiry.error || qty === null) return;
+          if (qtyError || expiry.error || qty === null || baseQty === null) return;
           setBusy(true);
           try {
-            await onSubmit(qty, expiry.expiry);
-            setQtyText('1');
-            setShowErrors(false);
+            await onSubmit(baseQty, expiry.expiry, { qty, unit: entryUnit });
           } finally {
             setBusy(false);
           }
@@ -351,29 +388,32 @@ function StockInSheet({
 }
 
 function StockOutSheet({
-  visible,
   unit,
+  packs,
   total,
   firstBatch,
   onClose,
   onSubmit,
 }: {
-  visible: boolean;
   unit: string;
+  packs: PackUnit[];
   total: number;
   firstBatch: StockBatch | null;
   onClose: () => void;
-  onSubmit: (quantity: number, reason: string) => Promise<void>;
+  onSubmit: (quantity: number, reason: string, entry: EntryQty) => Promise<void>;
 }) {
   const [qtyText, setQtyText] = useState('1');
+  const [entryUnit, setEntryUnit] = useState(unit);
   const [reason, setReason] = useState<string>(OUT_REASONS[0]);
   const [showErrors, setShowErrors] = useState(false);
   const [busy, setBusy] = useState(false);
   const qty = parseQty(qtyText);
-  const qtyError = qty === null || qty <= 0 ? '请填大于 0 的数量' : null;
+  const baseQty = qty === null ? null : toBaseQty(qty, entryUnit, unit, packs);
+  const qtyError = qty === null || qty <= 0 || baseQty === null ? '请填大于 0 的数量' : null;
+  const totalBreakdown = formatBreakdown(total, unit, packs);
 
   return (
-    <Sheet visible={visible} title="出库 / 用掉" onClose={onClose}>
+    <Sheet visible title="出库 / 用掉" onClose={onClose}>
       <View style={detailStyles.group}>
         <Label>原因</Label>
         <ChoiceChips
@@ -382,32 +422,41 @@ function StockOutSheet({
           onChange={setReason}
         />
       </View>
-      <Field
-        label={`数量（${unit}）`}
-        value={qtyText}
-        onChangeText={setQtyText}
-        keyboardType="decimal-pad"
+      <UnitQtyField
+        label="数量"
+        baseUnit={unit}
+        packs={packs}
+        qtyText={qtyText}
+        onQtyText={setQtyText}
+        unit={entryUnit}
+        onUnit={setEntryUnit}
         error={showErrors ? qtyError : null}
-        hint={`现有 ${formatQty(total)} ${unit}`}
+        hint={`现有 ${formatQty(total)} ${unit}${totalBreakdown ? `（${totalBreakdown}）` : ''}`}
         autoFocus
       />
       {firstBatch?.expiryDate ? (
         <Text style={detailStyles.hintText}>先扣 {formatDate(firstBatch.expiryDate)} 到期的那一批。</Text>
       ) : null}
       <View style={detailStyles.actions}>
-        <Button title="全部用完" variant="secondary" onPress={() => setQtyText(formatQty(total))} style={detailStyles.flex} />
+        <Button
+          title="全部用完"
+          variant="secondary"
+          onPress={() => {
+            setEntryUnit(unit);
+            setQtyText(formatQty(total));
+          }}
+          style={detailStyles.flex}
+        />
         <Button
           title="确认出库"
           loading={busy}
           style={detailStyles.flex}
           onPress={async () => {
             setShowErrors(true);
-            if (qtyError || qty === null) return;
+            if (qtyError || qty === null || baseQty === null) return;
             setBusy(true);
             try {
-              await onSubmit(qty, reason);
-              setQtyText('1');
-              setShowErrors(false);
+              await onSubmit(baseQty, reason, { qty, unit: entryUnit });
             } finally {
               setBusy(false);
             }
@@ -494,4 +543,5 @@ const detailStyles = StyleSheet.create({
   error: { fontSize: font.small, color: colors.danger },
   hintText: { fontSize: font.small, color: colors.faint },
   group: { gap: 8 },
+  breakdown: { fontSize: font.small, color: colors.accent, fontWeight: '600', marginTop: 2 },
 });

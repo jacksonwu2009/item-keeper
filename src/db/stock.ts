@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { todayStr } from '../lib/dates';
+import type { PackUnit } from '../lib/packs';
 import { planConsumption, roundQty, type StockKind } from '../lib/stock';
 
 export type StockProduct = {
@@ -45,7 +46,13 @@ export type StockMovement = {
   expiryDate: string | null;
   happenedAt: string;
   note: string | null;
+  /** 当时输入的数量和单位，如 2 箱；按最小单位输入时与 delta 相同 */
+  inputQty: number | null;
+  inputUnit: string | null;
 };
+
+/** 用户输入时用的数量和单位，记进流水里方便以后看「当时是按箱进的」。 */
+export type EntryQty = { qty: number; unit: string };
 
 export type StockProductInput = {
   kind: StockKind;
@@ -58,13 +65,19 @@ export type StockProductInput = {
   lowStockThreshold: number | null;
   expiryLeadDays: number | null;
   note: string | null;
+  /** 包装规格（如 1 箱 = 24 瓶）。库存按 unit（最小单位）记。 */
+  packs: PackUnit[];
 };
 
 export type BatchInput = {
+  /** 最小单位的数量 */
   quantity: number;
   expiryDate: string | null;
   note?: string | null;
+  entry?: EntryQty | null;
 };
+
+export type BarcodeMatch = { product: StockProduct; pack: PackUnit | null };
 
 const PRODUCT_COLUMNS = `
   p.id, p.kind, p.barcode, p.name, p.brand, p.spec, p.unit, p.location,
@@ -76,7 +89,8 @@ const BATCH_COLUMNS = `
   id, product_id AS productId, quantity, expiry_date AS expiryDate, added_on AS addedOn, note`;
 
 const MOVEMENT_COLUMNS = `
-  id, product_id AS productId, type, delta, expiry_date AS expiryDate, happened_at AS happenedAt, note`;
+  id, product_id AS productId, type, delta, expiry_date AS expiryDate, happened_at AS happenedAt, note,
+  input_qty AS inputQty, input_unit AS inputUnit`;
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -114,6 +128,61 @@ export async function findProductByBarcode(db: SQLiteDatabase, barcode: string):
   ]);
 }
 
+/** 按条码找物品：先找物品本身的条码，再找包装（整箱、整包）的条码。 */
+export async function findByBarcode(db: SQLiteDatabase, barcode: string): Promise<BarcodeMatch | null> {
+  const code = barcode.trim();
+  if (!code) return null;
+  const product = await findProductByBarcode(db, code);
+  if (product) return { product, pack: null };
+  const pack = await db.getFirstAsync<PackUnit & { productId: number }>(
+    'SELECT product_id AS productId, unit, size, barcode FROM stock_pack WHERE barcode = ?',
+    [code],
+  );
+  if (!pack) return null;
+  const owner = await getProduct(db, pack.productId);
+  return owner ? { product: owner, pack: { unit: pack.unit, size: pack.size, barcode: pack.barcode } } : null;
+}
+
+/** 物品条码和包装条码都不能和别的物品撞；撞了抛出给用户看的错误。 */
+async function assertBarcodesFree(db: SQLiteDatabase, input: StockProductInput, selfId: number | null): Promise<void> {
+  const own = [input.barcode, ...input.packs.map((pack) => pack.barcode)]
+    .map((code) => code?.trim())
+    .filter((code): code is string => !!code);
+  if (new Set(own).size !== own.length) throw new Error('物品条码和包装条码不能相同');
+  for (const code of own) {
+    const match = await findByBarcode(db, code);
+    if (match && match.product.id !== selfId) {
+      throw new Error(`条码 ${code} 已经给「${match.product.name}」${match.pack ? `的${match.pack.unit}` : ''}用了`);
+    }
+  }
+}
+
+export async function listPacks(db: SQLiteDatabase, productId: number): Promise<PackUnit[]> {
+  return db.getAllAsync<PackUnit>('SELECT unit, size, barcode FROM stock_pack WHERE product_id = ? ORDER BY sort, id', [
+    productId,
+  ]);
+}
+
+export async function listAllPacks(db: SQLiteDatabase): Promise<(PackUnit & { productId: number })[]> {
+  return db.getAllAsync<PackUnit & { productId: number }>(
+    'SELECT product_id AS productId, unit, size, barcode FROM stock_pack ORDER BY product_id, sort, id',
+  );
+}
+
+async function savePacks(db: SQLiteDatabase, productId: number, packs: PackUnit[]): Promise<void> {
+  await db.runAsync('DELETE FROM stock_pack WHERE product_id = ?', [productId]);
+  let sort = 0;
+  for (const pack of packs) {
+    await db.runAsync('INSERT INTO stock_pack (product_id, unit, size, barcode, sort) VALUES (?, ?, ?, ?, ?)', [
+      productId,
+      pack.unit.trim(),
+      pack.size,
+      emptyToNull(pack.barcode),
+      sort++,
+    ]);
+  }
+}
+
 export async function listBatches(db: SQLiteDatabase, productId: number): Promise<StockBatch[]> {
   return db.getAllAsync<StockBatch>(
     `SELECT ${BATCH_COLUMNS} FROM stock_batch
@@ -147,6 +216,7 @@ export async function createProduct(
   input: StockProductInput,
   firstBatch: BatchInput | null,
 ): Promise<number> {
+  await assertBarcodesFree(db, input, null);
   let productId = 0;
   await db.withTransactionAsync(async () => {
     const now = nowIso();
@@ -157,22 +227,27 @@ export async function createProduct(
       [...productParams(input), now, now],
     );
     productId = result.lastInsertRowId;
+    await savePacks(db, productId, input.packs);
     if (firstBatch && firstBatch.quantity > 0) {
       await insertBatch(db, productId, firstBatch);
-      await recordMovement(db, productId, 'in', firstBatch.quantity, firstBatch.expiryDate, firstBatch.note ?? null);
+      await recordMovement(db, productId, 'in', firstBatch.quantity, firstBatch.expiryDate, firstBatch.note ?? null, firstBatch.entry);
     }
   });
   return productId;
 }
 
 export async function updateProduct(db: SQLiteDatabase, id: number, input: StockProductInput): Promise<void> {
-  await db.runAsync(
-    `UPDATE stock_product
-        SET kind = ?, barcode = ?, name = ?, brand = ?, spec = ?, unit = ?, location = ?,
-            low_stock_threshold = ?, expiry_lead_days = ?, note = ?, updated_at = ?
-      WHERE id = ?`,
-    [...productParams(input), nowIso(), id],
-  );
+  await assertBarcodesFree(db, input, id);
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `UPDATE stock_product
+          SET kind = ?, barcode = ?, name = ?, brand = ?, spec = ?, unit = ?, location = ?,
+              low_stock_threshold = ?, expiry_lead_days = ?, note = ?, updated_at = ?
+        WHERE id = ?`,
+      [...productParams(input), nowIso(), id],
+    );
+    await savePacks(db, id, input.packs);
+  });
 }
 
 export async function deleteProduct(db: SQLiteDatabase, id: number): Promise<void> {
@@ -186,11 +261,13 @@ async function recordMovement(
   delta: number,
   expiryDate: string | null,
   note: string | null,
+  entry: EntryQty | null = null,
 ): Promise<void> {
   if (roundQty(delta) === 0 && type !== 'adjust') return;
   await db.runAsync(
-    'INSERT INTO stock_movement (product_id, type, delta, expiry_date, happened_at, note) VALUES (?, ?, ?, ?, ?, ?)',
-    [productId, type, roundQty(delta), expiryDate, nowIso(), emptyToNull(note)],
+    `INSERT INTO stock_movement (product_id, type, delta, expiry_date, happened_at, note, input_qty, input_unit)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [productId, type, roundQty(delta), expiryDate, nowIso(), emptyToNull(note), entry ? roundQty(entry.qty) : null, entry?.unit ?? null],
   );
 }
 
@@ -219,7 +296,7 @@ export async function stockIn(db: SQLiteDatabase, productId: number, batch: Batc
     } else {
       await insertBatch(db, productId, batch);
     }
-    await recordMovement(db, productId, 'in', batch.quantity, batch.expiryDate, batch.note ?? null);
+    await recordMovement(db, productId, 'in', batch.quantity, batch.expiryDate, batch.note ?? null, batch.entry);
     await db.runAsync('UPDATE stock_product SET updated_at = ? WHERE id = ?', [nowIso(), productId]);
   });
 }
@@ -230,6 +307,7 @@ export async function stockOut(
   productId: number,
   amount: number,
   note: string | null = null,
+  entry: EntryQty | null = null,
 ): Promise<{ consumed: number; shortfall: number }> {
   let outcome = { consumed: 0, shortfall: amount };
   await db.withTransactionAsync(async () => {
@@ -242,7 +320,10 @@ export async function stockOut(
         await db.runAsync('UPDATE stock_batch SET quantity = ? WHERE id = ?', [update.quantity, update.id]);
       }
     }
-    if (plan.consumed > 0) await recordMovement(db, productId, 'out', -plan.consumed, null, note);
+    // 不够扣时只按实际扣掉的最小单位记，不再记当时输入的「1 箱」
+    if (plan.consumed > 0) {
+      await recordMovement(db, productId, 'out', -plan.consumed, null, note, plan.shortfall > 0 ? null : entry);
+    }
     await db.runAsync('UPDATE stock_product SET updated_at = ? WHERE id = ?', [nowIso(), productId]);
     outcome = { consumed: plan.consumed, shortfall: plan.shortfall };
   });

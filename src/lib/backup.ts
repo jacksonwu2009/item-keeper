@@ -8,10 +8,12 @@
 
 import { DEFAULT_SETTINGS, type AppSettings } from '../db/settings';
 import { isValidDateStr, todayStr } from './dates';
+import { validatePacks, type PackUnit } from './packs';
 import { roundQty } from './stock';
 
 export const BACKUP_APP = 'item-keeper';
-export const BACKUP_FORMAT = 1;
+/** 1：首版；2：加了包装规格 packs 和流水的 inputQty / inputUnit（读 1 版时这些取空）。 */
+export const BACKUP_FORMAT = 2;
 const MAX_BACKUP_CHARS = 30 * 1024 * 1024;
 
 export type BackupBatch = { quantity: number; expiryDate: string | null; addedOn: string; note: string | null };
@@ -22,6 +24,8 @@ export type BackupMovement = {
   expiryDate: string | null;
   happenedAt: string;
   note: string | null;
+  inputQty: number | null;
+  inputUnit: string | null;
 };
 
 export type BackupProduct = {
@@ -37,6 +41,7 @@ export type BackupProduct = {
   note: string | null;
   createdAt: string;
   updatedAt: string;
+  packs: PackUnit[];
   batches: BackupBatch[];
   movements: BackupMovement[];
 };
@@ -82,7 +87,8 @@ export type BackupSummary = {
 
 // ---------- 导出 ----------
 
-type SourceProduct = Omit<BackupProduct, 'batches' | 'movements'> & { id: number };
+type SourceProduct = Omit<BackupProduct, 'batches' | 'movements' | 'packs'> & { id: number };
+type SourcePack = PackUnit & { productId: number };
 type SourceBatch = BackupBatch & { productId: number };
 type SourceMovement = BackupMovement & { productId: number };
 type SourceDevice = Omit<BackupDevice, 'assignments'> & { id: number };
@@ -91,6 +97,7 @@ type SourceAssignment = BackupAssignment & { deviceId: number };
 export type BackupSource = {
   settings: AppSettings;
   products: SourceProduct[];
+  packs: SourcePack[];
   batches: SourceBatch[];
   movements: SourceMovement[];
   devices: SourceDevice[];
@@ -108,6 +115,7 @@ function groupBy<T, K>(items: T[], key: (item: T) => K): Map<K, T[]> {
 }
 
 export function buildBackup(source: BackupSource, now: Date = new Date()): BackupData {
+  const packsByProduct = groupBy(source.packs, (pack) => pack.productId);
   const batchesByProduct = groupBy(source.batches, (batch) => batch.productId);
   const movementsByProduct = groupBy(source.movements, (movement) => movement.productId);
   const assignmentsByDevice = groupBy(source.assignments, (assignment) => assignment.deviceId);
@@ -130,6 +138,7 @@ export function buildBackup(source: BackupSource, now: Date = new Date()): Backu
       note: product.note,
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,
+      packs: (packsByProduct.get(id) ?? []).map((pack) => ({ unit: pack.unit, size: pack.size, barcode: pack.barcode })),
       batches: (batchesByProduct.get(id) ?? [])
         .filter((batch) => batch.quantity > 0)
         .map((batch) => ({
@@ -144,6 +153,8 @@ export function buildBackup(source: BackupSource, now: Date = new Date()): Backu
         expiryDate: movement.expiryDate,
         happenedAt: movement.happenedAt,
         note: movement.note,
+        inputQty: movement.inputQty,
+        inputUnit: movement.inputUnit,
       })),
     })),
     devices: source.devices.map(({ id, ...device }) => ({
@@ -292,8 +303,23 @@ function parseProduct(raw: unknown, index: number, exportedAt: string): BackupPr
       expiryDate: optDate(movement.expiryDate, at, '过期日期'),
       happenedAt: movement.happenedAt,
       note: optText(movement.note, at, '备注'),
+      inputQty: optNumber(movement.inputQty, at, '输入数量', 0, 1e9),
+      inputUnit: optText(movement.inputUnit, at, '输入单位'),
     };
   });
+
+  const unit = optText(raw.unit, where, '单位') ?? '件';
+  const packs: PackUnit[] = list(raw.packs, where, '包装规格').map((pack, packIndex) => {
+    const at = `${where}的第 ${packIndex + 1} 个包装规格`;
+    if (!isObj(pack)) fail(at, '格式不对');
+    return {
+      unit: reqText(pack.unit, at, '包装单位'),
+      size: optNumber(pack.size, at, '换算数量', 0, 1e9) ?? fail(at, '缺少换算数量'),
+      barcode: optText(pack.barcode, at, '条码'),
+    };
+  });
+  const packError = validatePacks(unit, packs);
+  if (packError) fail(where, packError);
 
   return {
     kind: raw.kind,
@@ -301,13 +327,14 @@ function parseProduct(raw: unknown, index: number, exportedAt: string): BackupPr
     name,
     brand: optText(raw.brand, where, '品牌'),
     spec: optText(raw.spec, where, '规格'),
-    unit: optText(raw.unit, where, '单位') ?? '件',
+    unit,
     location: optText(raw.location, where, '存放位置'),
     lowStockThreshold: optNumber(raw.lowStockThreshold, where, '库存下限', 0, 1e9),
     expiryLeadDays: optNumber(raw.expiryLeadDays, where, '到期提前天数', 0, 365, true),
     note: optText(raw.note, where, '备注'),
     createdAt: timestamp(raw.createdAt, exportedAt),
     updatedAt: timestamp(raw.updatedAt, exportedAt),
+    packs,
     batches,
     movements,
   };
@@ -373,12 +400,19 @@ export function parseBackup(text: string): ParseResult {
     const products = list(root.products, '', '物品').map((raw, index) => parseProduct(raw, index, exportedAt));
     const devices = list(root.devices, '', '设备').map((raw, index) => parseDevice(raw, index, exportedAt));
 
+    // 物品条码和包装条码在整份备份里都不能重复
     const barcodeOwner = new Map<string, string>();
     for (const product of products) {
-      if (!product.barcode) continue;
-      const owner = barcodeOwner.get(product.barcode);
-      if (owner) fail('', `条码 ${product.barcode} 同时出现在「${owner}」和「${product.name}」`);
-      barcodeOwner.set(product.barcode, product.name);
+      const codes: [string | null, string][] = [
+        [product.barcode, `「${product.name}」`],
+        ...product.packs.map((pack): [string | null, string] => [pack.barcode, `「${product.name}」的${pack.unit}`]),
+      ];
+      for (const [code, label] of codes) {
+        if (!code) continue;
+        const owner = barcodeOwner.get(code);
+        if (owner) fail('', `条码 ${code} 同时出现在${owner}和${label}`);
+        barcodeOwner.set(code, label);
+      }
     }
 
     const data: BackupData = {

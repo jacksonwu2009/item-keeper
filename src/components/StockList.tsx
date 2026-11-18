@@ -5,9 +5,10 @@ import { useCallback, useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { DEFAULT_SETTINGS, getSettings } from '../db/settings';
-import { listProducts, type StockProductSummary } from '../db/stock';
+import { listAllPacks, listProducts, type StockProductSummary } from '../db/stock';
 import { useFocusData } from '../hooks/useFocusData';
 import { todayStr } from '../lib/dates';
+import { formatBreakdown, type PackUnit } from '../lib/packs';
 import { expiryStatus, isLowStock } from '../lib/status';
 import { formatQty, KIND_LABEL, type StockKind } from '../lib/stock';
 import { colors, font, radius } from '../theme';
@@ -18,12 +19,19 @@ type Filter = 'all' | 'attention' | 'low';
 export function StockList({ kind }: { kind: StockKind }) {
   const db = useSQLiteContext();
   const loader = useCallback(async () => {
-    const [products, settings] = await Promise.all([listProducts(db, kind), getSettings(db)]);
-    return { products, settings };
+    const [products, settings, allPacks] = await Promise.all([listProducts(db, kind), getSettings(db), listAllPacks(db)]);
+    const packsByProduct = new Map<number, PackUnit[]>();
+    for (const pack of allPacks) {
+      const list = packsByProduct.get(pack.productId) ?? [];
+      list.push(pack);
+      packsByProduct.set(pack.productId, list);
+    }
+    return { products, settings, packsByProduct };
   }, [db, kind]);
-  const [{ products, settings }, , loaded] = useFocusData(loader, {
+  const [{ products, settings, packsByProduct }, , loaded] = useFocusData(loader, {
     products: [] as StockProductSummary[],
     settings: DEFAULT_SETTINGS,
+    packsByProduct: new Map<number, PackUnit[]>(),
   });
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
@@ -37,6 +45,7 @@ export function StockList({ kind }: { kind: StockKind }) {
         product,
         expiry: expiryStatus(product.nearestExpiry, today, product.expiryLeadDays ?? settings.expiryLeadDays),
         low: isLowStock(product.totalQty, product.lowStockThreshold),
+        breakdown: formatBreakdown(product.totalQty, product.unit, packsByProduct.get(product.id) ?? []),
       }))
       .filter(({ product, expiry, low }) => {
         if (keyword) {
@@ -56,7 +65,7 @@ export function StockList({ kind }: { kind: StockKind }) {
           row.expiry?.level === 'expired' ? 0 : row.expiry?.level === 'soon' ? 1 : row.low ? 2 : 3;
         return rank(a) - rank(b) || a.product.name.localeCompare(b.product.name, 'zh');
       });
-  }, [products, query, filter, today, settings.expiryLeadDays]);
+  }, [products, query, filter, today, settings.expiryLeadDays, packsByProduct]);
 
   const scan = () => router.push({ pathname: '/scan', params: { kind } });
   const addManually = () => router.push({ pathname: '/stock/new', params: { kind } });
@@ -114,7 +123,7 @@ export function StockList({ kind }: { kind: StockKind }) {
           <Empty icon="search-outline" title="没有符合条件的" text="换个关键词或筛选条件试试。" />
         )
       }
-      renderItem={({ item: { product, expiry, low } }) => (
+      renderItem={({ item: { product, expiry, low, breakdown } }) => (
         <Pressable
           accessibilityRole="button"
           onPress={() => router.push({ pathname: '/stock/[id]', params: { id: String(product.id) } })}
@@ -142,6 +151,7 @@ export function StockList({ kind }: { kind: StockKind }) {
               {formatQty(product.totalQty)}
             </Text>
             <Text style={listStyles.unit}>{product.unit}</Text>
+            {breakdown ? <Text style={listStyles.breakdown}>{breakdown}</Text> : null}
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.faint} />
         </Pressable>
@@ -177,4 +187,5 @@ const listStyles = StyleSheet.create({
   qtyBox: { alignItems: 'flex-end', minWidth: 44 },
   qty: { fontSize: 22, fontWeight: '700', color: colors.ink, fontVariant: ['tabular-nums'] },
   unit: { fontSize: font.tiny + 1, color: colors.muted },
+  breakdown: { fontSize: font.tiny + 1, color: colors.accent, fontWeight: '600' },
 });

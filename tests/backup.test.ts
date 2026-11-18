@@ -38,14 +38,33 @@ const source: BackupSource = {
       updatedAt: '2026-11-01T01:00:00.000Z',
     },
   ],
+  packs: [{ productId: 1, unit: '箱', size: 12, barcode: '16901234567899' }],
   batches: [
     { productId: 1, quantity: 6, expiryDate: '2026-11-25', addedOn: '2026-11-18', note: null },
     { productId: 1, quantity: 0, expiryDate: '2026-11-20', addedOn: '2026-11-10', note: null },
     { productId: 2, quantity: 10, expiryDate: null, addedOn: '2026-11-01', note: null },
   ],
   movements: [
-    { productId: 1, type: 'in', delta: 6, expiryDate: '2026-11-25', happenedAt: '2026-11-18T01:00:00.000Z', note: null },
-    { productId: 2, type: 'out', delta: -2, expiryDate: null, happenedAt: '2026-11-17T01:00:00.000Z', note: '用掉' },
+    {
+      productId: 1,
+      type: 'in',
+      delta: 12,
+      expiryDate: '2026-11-25',
+      happenedAt: '2026-11-18T01:00:00.000Z',
+      note: null,
+      inputQty: 1,
+      inputUnit: '箱',
+    },
+    {
+      productId: 2,
+      type: 'out',
+      delta: -2,
+      expiryDate: null,
+      happenedAt: '2026-11-17T01:00:00.000Z',
+      note: '用掉',
+      inputQty: 2,
+      inputUnit: '包',
+    },
   ],
   devices: [
     {
@@ -76,6 +95,9 @@ describe('备份导出', () => {
     assert.equal(data.products.length, 2);
     assert.equal(data.products[0].batches.length, 1);
     assert.equal(data.products[0].movements.length, 1);
+    assert.deepEqual(data.products[0].packs, [{ unit: '箱', size: 12, barcode: '16901234567899' }]);
+    assert.deepEqual(data.products[1].packs, []);
+    assert.equal(data.products[0].movements[0].inputUnit, '箱');
     assert.equal(data.products[1].movements[0].note, '用掉');
     assert.equal(data.devices[0].assignments.length, 2);
     assert.equal('id' in data.products[0], false);
@@ -131,6 +153,9 @@ describe('备份导入校验', () => {
     ['类别不对', (data) => (data.products[1].kind = 'tool'), /抽纸.*类别/],
     ['缺名称', (data) => (data.products[0].name = ' '), /第 1 个物品：缺少名称/],
     ['条码重复', (data) => (data.products[1].barcode = '6901234567892'), /条码 6901234567892 同时出现/],
+    ['包装条码和别的物品条码重复', (data) => (data.products[1].barcode = '16901234567899'), /同时出现在「纯牛奶」的箱和「抽纸」/],
+    ['包装和最小单位同名', (data) => (data.products[0].packs[0].unit = '盒'), /不能和最小单位「盒」同名/],
+    ['包装换算数量为 0', (data) => (data.products[0].packs[0].size = 0), /大于 0/],
     ['退还早于领取', (data) => (data.devices[0].assignments[1].returnedOn = '2026-08-01'), /退还日期早于领取日期/],
     ['借出比总数多', (data) => (data.devices[0].quantity = 1, data.devices[0].assignments[1].returnedOn = null), /比总数 1 件还多/],
     ['数量是负数', (data) => (data.products[0].batches[0].quantity = -1), /数量「-1」不对/],
@@ -150,6 +175,23 @@ describe('备份导入校验', () => {
     const result = parseBackup('hello');
     assert.equal(result.ok, false);
     if (!result.ok) assert.match(result.error, /不是 JSON/);
+  });
+
+  it('第 1 版备份（没有包装规格和输入单位）也能导入', () => {
+    const data = exported();
+    data.format = 1;
+    for (const product of data.products) {
+      delete product.packs;
+      for (const movement of product.movements) {
+        delete movement.inputQty;
+        delete movement.inputUnit;
+      }
+    }
+    const result = parseBackup(JSON.stringify(data));
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.deepEqual(result.data.products[0].packs, []);
+    assert.equal(result.data.products[0].movements[0].inputUnit, null);
   });
 
   it('带 BOM 的文件也能读', () => {

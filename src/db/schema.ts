@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 export const DATABASE_NAME = 'item-keeper.db';
-const DATABASE_VERSION = 2;
+const DATABASE_VERSION = 3;
 
 /**
  * 表结构
@@ -9,6 +9,7 @@ const DATABASE_VERSION = 2;
  * - stock_batch：同一商品不同批次（各自的数量和过期日期）
  * - device / device_assignment：设备及每次领用、退还记录
  * - stock_movement：出入库流水（v2 起）
+ * - stock_pack：包装规格，如「1 箱 = 24 瓶」，可带自己的条码（v3 起）
  * - setting：键值设置
  */
 export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
@@ -90,6 +91,25 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
         note TEXT
       );
       CREATE INDEX ix_stock_movement_product ON stock_movement(product_id, happened_at);
+    `);
+  }
+
+  if (currentVersion < 3) {
+    // 库存一律按 stock_product.unit（最小单位）记；包装规格只用于入库出库时换算和显示。
+    // stock_movement 记下当时输入的数量和单位（如「2 箱」），delta 仍是最小单位。
+    await db.execAsync(`
+      CREATE TABLE stock_pack (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id INTEGER NOT NULL REFERENCES stock_product(id) ON DELETE CASCADE,
+        unit TEXT NOT NULL,
+        size REAL NOT NULL CHECK (size > 0),
+        barcode TEXT,
+        sort INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX ix_stock_pack_product ON stock_pack(product_id);
+      CREATE UNIQUE INDEX ux_stock_pack_barcode ON stock_pack(barcode) WHERE barcode IS NOT NULL;
+      ALTER TABLE stock_movement ADD COLUMN input_qty REAL;
+      ALTER TABLE stock_movement ADD COLUMN input_unit TEXT;
     `);
   }
 

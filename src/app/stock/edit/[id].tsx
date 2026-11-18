@@ -5,18 +5,21 @@ import { useEffect, useState } from 'react';
 import { StockProductForm } from '../../../components/StockProductForm';
 import { Empty, Screen } from '../../../components/ui';
 import { getSettings, type AppSettings } from '../../../db/settings';
-import { findProductByBarcode, getProduct, updateProduct, type StockProduct } from '../../../db/stock';
+import { getProduct, listPacks, updateProduct, type StockProduct } from '../../../db/stock';
+import type { PackUnit } from '../../../lib/packs';
 import { rescheduleReminders } from '../../../lib/notifications';
 
 export default function EditStockScreen() {
   const db = useSQLiteContext();
   const { id } = useLocalSearchParams<{ id: string }>();
   const productId = Number(id);
-  const [state, setState] = useState<{ product: StockProduct | null; settings: AppSettings } | null>(null);
+  const [state, setState] = useState<{ product: StockProduct | null; packs: PackUnit[]; settings: AppSettings } | null>(
+    null,
+  );
 
   useEffect(() => {
-    Promise.all([getProduct(db, productId), getSettings(db)])
-      .then(([product, settings]) => setState({ product, settings }))
+    Promise.all([getProduct(db, productId), listPacks(db, productId), getSettings(db)])
+      .then(([product, packs, settings]) => setState({ product, packs, settings }))
       .catch(() => undefined);
   }, [db, productId]);
 
@@ -32,15 +35,12 @@ export default function EditStockScreen() {
   const product = state.product;
   return (
     <StockProductForm
-      initial={product}
+      initial={{ ...product, packs: state.packs }}
       settings={state.settings}
       withFirstBatch={false}
       submitLabel="保存修改"
       onSubmit={async (input) => {
-        if (input.barcode && input.barcode !== product.barcode) {
-          const existing = await findProductByBarcode(db, input.barcode);
-          if (existing && existing.id !== product.id) throw new Error(`这个条码已经给「${existing.name}」用了`);
-        }
+        // 条码（含包装条码）和别的物品冲突时 updateProduct 会抛出给用户看的错误
         await updateProduct(db, product.id, input);
         rescheduleReminders(db).catch(() => undefined);
         router.back();

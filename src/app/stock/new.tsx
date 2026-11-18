@@ -5,7 +5,7 @@ import { Alert } from 'react-native';
 
 import { StockProductForm } from '../../components/StockProductForm';
 import { getSettings, type AppSettings } from '../../db/settings';
-import { createProduct, findProductByBarcode } from '../../db/stock';
+import { createProduct, findByBarcode } from '../../db/stock';
 import { rescheduleReminders } from '../../lib/notifications';
 import { isStockKind, KIND_LABEL } from '../../lib/stock';
 
@@ -32,14 +32,19 @@ export default function NewStockScreen() {
         submitLabel="保存"
         onSubmit={async (input, firstBatch) => {
           if (input.barcode) {
-            const existing = await findProductByBarcode(db, input.barcode);
-            if (existing) {
-              Alert.alert('这个条码已经录过', `「${existing.name}」用的就是这个条码，直接去它那里入库吧。`, [
+            const match = await findByBarcode(db, input.barcode);
+            if (match) {
+              const existing = match.product;
+              const whose = match.pack ? `「${existing.name}」的${match.pack.unit}` : `「${existing.name}」`;
+              Alert.alert('这个条码已经录过', `${whose}用的就是这个条码，直接去它那里入库吧。`, [
                 { text: '取消', style: 'cancel' },
                 {
                   text: '打开',
                   onPress: () =>
-                    router.replace({ pathname: '/stock/[id]', params: { id: String(existing.id), scanned: '1' } }),
+                    router.replace({
+                      pathname: '/stock/[id]',
+                      params: { id: String(existing.id), scanned: '1', ...(match.pack ? { unit: match.pack.unit } : {}) },
+                    }),
                 },
               ]);
               return;

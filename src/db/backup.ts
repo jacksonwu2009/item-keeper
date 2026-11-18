@@ -6,7 +6,7 @@ import type { MovementType } from './stock';
 
 /** 把手机上的全部数据读出来，组装成备份。 */
 export async function collectBackup(db: SQLiteDatabase): Promise<BackupData> {
-  const [settings, products, batches, movements, devices, assignments] = await Promise.all([
+  const [settings, products, packs, batches, movements, devices, assignments] = await Promise.all([
     getSettings(db),
     db.getAllAsync<{
       id: number;
@@ -28,6 +28,9 @@ export async function collectBackup(db: SQLiteDatabase): Promise<BackupData> {
               note, created_at AS createdAt, updated_at AS updatedAt
          FROM stock_product ORDER BY id`,
     ),
+    db.getAllAsync<{ productId: number; unit: string; size: number; barcode: string | null }>(
+      'SELECT product_id AS productId, unit, size, barcode FROM stock_pack ORDER BY product_id, sort, id',
+    ),
     db.getAllAsync<{ productId: number; quantity: number; expiryDate: string | null; addedOn: string; note: string | null }>(
       `SELECT product_id AS productId, quantity, expiry_date AS expiryDate, added_on AS addedOn, note
          FROM stock_batch ORDER BY id`,
@@ -39,8 +42,11 @@ export async function collectBackup(db: SQLiteDatabase): Promise<BackupData> {
       expiryDate: string | null;
       happenedAt: string;
       note: string | null;
+      inputQty: number | null;
+      inputUnit: string | null;
     }>(
-      `SELECT product_id AS productId, type, delta, expiry_date AS expiryDate, happened_at AS happenedAt, note
+      `SELECT product_id AS productId, type, delta, expiry_date AS expiryDate, happened_at AS happenedAt, note,
+              input_qty AS inputQty, input_unit AS inputUnit
          FROM stock_movement ORDER BY id`,
     ),
     db.getAllAsync<{
@@ -70,7 +76,7 @@ export async function collectBackup(db: SQLiteDatabase): Promise<BackupData> {
          FROM device_assignment ORDER BY id`,
     ),
   ]);
-  return buildBackup({ settings, products, batches, movements, devices, assignments });
+  return buildBackup({ settings, products, packs, batches, movements, devices, assignments });
 }
 
 /** 用备份里的数据替换手机上的全部数据（一个事务里完成，失败就整体回滚）。 */
@@ -78,6 +84,7 @@ export async function replaceAllData(db: SQLiteDatabase, data: BackupData): Prom
   await db.withTransactionAsync(async () => {
     await db.execAsync(`
       DELETE FROM stock_movement;
+      DELETE FROM stock_pack;
       DELETE FROM stock_batch;
       DELETE FROM stock_product;
       DELETE FROM device_assignment;
@@ -106,6 +113,16 @@ export async function replaceAllData(db: SQLiteDatabase, data: BackupData): Prom
         ],
       );
       const productId = result.lastInsertRowId;
+      let sort = 0;
+      for (const pack of product.packs) {
+        await db.runAsync('INSERT INTO stock_pack (product_id, unit, size, barcode, sort) VALUES (?, ?, ?, ?, ?)', [
+          productId,
+          pack.unit,
+          pack.size,
+          pack.barcode,
+          sort++,
+        ]);
+      }
       for (const batch of product.batches) {
         await db.runAsync(
           'INSERT INTO stock_batch (product_id, quantity, expiry_date, added_on, note) VALUES (?, ?, ?, ?, ?)',
@@ -114,9 +131,18 @@ export async function replaceAllData(db: SQLiteDatabase, data: BackupData): Prom
       }
       for (const movement of product.movements) {
         await db.runAsync(
-          `INSERT INTO stock_movement (product_id, type, delta, expiry_date, happened_at, note)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          [productId, movement.type, movement.delta, movement.expiryDate, movement.happenedAt, movement.note],
+          `INSERT INTO stock_movement (product_id, type, delta, expiry_date, happened_at, note, input_qty, input_unit)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            productId,
+            movement.type,
+            movement.delta,
+            movement.expiryDate,
+            movement.happenedAt,
+            movement.note,
+            movement.inputQty,
+            movement.inputUnit,
+          ],
         );
       }
     }
