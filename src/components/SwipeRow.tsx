@@ -51,6 +51,8 @@ export function SwipeRow({
       friction={2}
       rightThreshold={40}
       overshootRight={false}
+      // 只响应向左滑（删除）；向右滑交给外层，用来切换标签
+      dragOffsetFromLeft={10000}
       containerStyle={rounded ? swipeStyles.roundedContainer : undefined}
       renderRightActions={() => (
         <Pressable
