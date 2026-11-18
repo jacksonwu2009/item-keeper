@@ -2,13 +2,14 @@
   "expo": {
     "name": "物品管家",
     "slug": "item-keeper",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.itemkeeper.app"
+      "bundleIdentifier": "com.itemkeeper.app",
+      "buildNumber": "2"
     },
     "android": {
       "adaptiveIcon": {
@@ -22,7 +23,7 @@
         "android.permission.CAMERA"
       ],
       "package": "com.itemkeeper.app",
-      "versionCode": 1
+      "versionCode": 2
     },
     "web": {
       "favicon": "./assets/favicon.png"
