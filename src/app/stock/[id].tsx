@@ -216,13 +216,13 @@ export default function StockDetailScreen() {
             <Text style={detailStyles.sub}>没有库存了。买回来后点「入库」记一下。</Text>
           </Card>
         ) : (
-          <Card style={detailStyles.batchCard}>
-            {batches.map((batch, index) => {
+          <View style={detailStyles.batchList}>
+            <Text style={detailStyles.batchHint}>点一批调整数量和过期日期，向左滑删除</Text>
+            {batches.map((batch) => {
               const status = expiryStatus(batch.expiryDate, today, leadDays);
               return (
                 <SwipeRow
                   key={batch.id}
-                  rounded={false}
                   accessibilityLabel={`${batch.expiryDate ? `${formatDate(batch.expiryDate)} 到期` : '没记过期日期'}，${formatQty(batch.quantity)} ${product.unit}`}
                   onPress={() => openSheet({ type: 'batch', batch })}
                   onLongPress={() => openSheet({ type: 'batch', batch })}
@@ -232,23 +232,26 @@ export default function StockDetailScreen() {
                       `${batch.expiryDate ? `${formatDate(batch.expiryDate)} 到期的` : ''}一批（${formatQty(batch.quantity)} ${product.unit}）`,
                     )
                   }
-                  style={[detailStyles.batchRow, index > 0 && detailStyles.batchDivider]}
+                  style={detailStyles.batchItem}
                   pressedStyle={{ backgroundColor: colors.surfaceSunken }}
                 >
-                  <View style={detailStyles.flex}>
+                  {/* 和列表一样：左边文字和标签，右边只放数量，左滑出来的「删除」只盖住数量 */}
+                  <View style={detailStyles.batchMain}>
                     <Text style={detailStyles.batchDate}>
                       {batch.expiryDate ? `${formatDate(batch.expiryDate)} 到期` : '没记过期日期'}
                     </Text>
-                    <Text style={detailStyles.batchMeta}>{formatDate(batch.addedOn)} 入库</Text>
+                    <View style={detailStyles.batchMetaRow}>
+                      {status ? <Chip text={status.text} tone={status.level === 'fine' ? 'neutral' : status.tone} /> : null}
+                      <Text style={detailStyles.batchMeta}>{formatDate(batch.addedOn)} 入库</Text>
+                    </View>
                   </View>
-                  {status ? <Chip text={status.text} tone={status.level === 'fine' ? 'neutral' : status.tone} /> : null}
                   <Text style={detailStyles.batchQty}>
                     {formatQty(batch.quantity)} {product.unit}
                   </Text>
                 </SwipeRow>
               );
             })}
-          </Card>
+          </View>
         )}
 
         <SectionTitle title="出入库记录" />
@@ -665,6 +668,22 @@ const detailStyles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   batchDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line },
+  // 批次：每一批一张卡片，和外面列表的一行一样，左滑删除的样子也一样
+  batchList: { gap: 8 },
+  batchHint: { fontSize: font.small, color: colors.faint, textAlign: 'center' },
+  batchItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.line,
+  },
+  batchMain: { flex: 1, gap: 4, minWidth: 0 },
+  batchMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   batchDate: { fontSize: font.body, color: colors.ink, fontWeight: '500' },
   batchMeta: { fontSize: font.small, color: colors.faint, marginTop: 2 },
   batchQty: {

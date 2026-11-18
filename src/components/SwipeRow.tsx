@@ -34,7 +34,6 @@ export function SwipeRow({
   onDelete,
   style,
   pressedStyle,
-  rounded = true,
   accessibilityLabel,
 }: {
   children: ReactNode;
@@ -43,8 +42,6 @@ export function SwipeRow({
   onDelete: () => void;
   style?: StyleProp<ViewStyle>;
   pressedStyle?: StyleProp<ViewStyle>;
-  /** 整行是独立卡片时圆角（列表）；在卡片里的一行时不圆角（批次） */
-  rounded?: boolean;
   accessibilityLabel?: string;
 }) {
   /** 删除按钮露出来多少：0 = 收起，ACTION_WIDTH = 完全露出 */
@@ -99,7 +96,9 @@ export function SwipeRow({
     },
   });
 
+  // 收起时完全隐藏：只靠移出右边界的话，像素取整后会露出一条细红线
   const panelStyle = useAnimatedStyle(() => ({
+    opacity: reveal.get() > 0.5 ? 1 : 0,
     transform: [{ translateX: ACTION_WIDTH - reveal.get() }],
   }));
 
@@ -125,7 +124,7 @@ export function SwipeRow({
   }
 
   return (
-    <View style={[swipeStyles.container, rounded && swipeStyles.rounded]}>
+    <View style={swipeStyles.container}>
       <GestureDetector gesture={pan}>
         <View collapsable={false}>
           <GesturePressable
@@ -187,9 +186,8 @@ export function UndoBar({ text, onUndo }: { text: string; onUndo: () => void }) 
 }
 
 const swipeStyles = StyleSheet.create({
-  // 收起时删除按钮停在右边界外，靠 overflow 藏起来
-  container: { overflow: 'hidden' },
-  rounded: { borderRadius: radius.md },
+  // 每一行都是一张圆角卡片；收起时删除按钮停在右边界外，靠 overflow 和透明度藏起来
+  container: { overflow: 'hidden', borderRadius: radius.md },
   panel: {
     position: 'absolute',
     top: 0,
