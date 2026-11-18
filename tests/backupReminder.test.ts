@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { backupMessage, backupStatus, countsAsBackup, planBackupReminders } from '../src/lib/backupReminder';
+import { ALL_SCOPES } from '../src/lib/backup';
+import {
+  backupMessage,
+  backupStatus,
+  countsAsBackup,
+  FULL_BACKUP_SCOPE,
+  planBackupReminders,
+} from '../src/lib/backupReminder';
 
 /** 本地时间 */
 function at(year: number, month: number, day: number, hour = 10, minute = 0): Date {
@@ -11,10 +18,13 @@ function at(year: number, month: number, day: number, hour = 10, minute = 0): Da
 const time = { reminderHour: 9, reminderMinute: 0 };
 
 describe('备份提醒', () => {
-  it('三类都导出才算备份', () => {
-    assert.equal(countsAsBackup(['food', 'daily', 'devices']), true);
-    assert.equal(countsAsBackup(['food', 'daily', 'devices', 'settings']), true);
-    assert.equal(countsAsBackup(['food', 'settings']), false);
+  it('分类、办公点都全选才算备份', () => {
+    assert.deepEqual([...FULL_BACKUP_SCOPE], ALL_SCOPES);
+    assert.equal(countsAsBackup(['food', 'daily', 'devices', 'settings'], true), true);
+    // 只导出一部分办公点（汇总手机只导出北京）不算
+    assert.equal(countsAsBackup(['food', 'daily', 'devices', 'settings'], false), false);
+    assert.equal(countsAsBackup(['food', 'daily', 'devices'], true), false);
+    assert.equal(countsAsBackup(['food', 'settings'], true), false);
   });
 
   it('上次导出后满 60 天提醒，按本地日期算', () => {

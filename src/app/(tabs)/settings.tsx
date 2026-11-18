@@ -49,7 +49,7 @@ function describeReplaced(scope: readonly BackupScope[], counts: Counts): string
 
 /** 「上次备份：11月18日 15:20（3 天前）」；没导出过写明 */
 function describeLastExport(lastExportAt: string | null): string {
-  if (!lastExportAt) return '上次备份：还没导出过（食品、日用品、设备都勾上导出一次就算）。';
+  if (!lastExportAt) return '上次备份：还没导出过（分类、办公点都全选，点「导出全部」导出一次就算）。';
   const days = diffDays(todayStr(), toDateStr(new Date(lastExportAt)));
   return `上次备份：${formatDateTime(lastExportAt)}${days > 0 ? `（${days} 天前）` : ''}。`;
 }
@@ -299,7 +299,7 @@ export default function SettingsScreen() {
             step={10}
             suffix="天"
           />
-          <Text style={setStyles.hint}>填 0 不提醒。导出时食品、日用品、设备三类都勾上才算备份过。</Text>
+          <Text style={setStyles.hint}>填 0 不提醒。在「导入导出」里分类、办公点都全选，点「导出全部」导出才算备份过。</Text>
         </View>
       </Card>
 

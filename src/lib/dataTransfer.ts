@@ -45,8 +45,8 @@ export async function exportBackup(
     UTI: 'public.json',
     dialogTitle: '保存或发送备份文件',
   });
-  // 三类都导出了才算备份过，备份提醒从今天重新算（分享面板被取消也没法知道，按导出过算）
-  if (countsAsBackup(scope)) {
+  // 分类、办公点都全选才算备份过，备份提醒从今天重新算（分享面板被取消也没法知道，按导出过算）
+  if (countsAsBackup(scope, officeIds === null)) {
     await setLastExportAt(db, new Date().toISOString());
     rescheduleReminders(db).catch(() => undefined);
   }

@@ -1,10 +1,11 @@
 /**
  * 备份提醒：超过 N 天没导出备份就提醒。纯函数，有单测。
- * - 「备份过」指导出时食品、日用品、设备三类都勾上（办公点不限，每台手机只管自己的办公点也算）。
+ * - 「备份过」指用「导出全部」导出：分类、办公点都全选，手机上的东西一样不落。
  * - 从没导出过的，从最早录入东西的那天算起；手机上什么都没有就不提醒。
  * - 到了日子在提醒页显示，并在提醒时间发通知；没导出就每 7 天再提醒一次（最多先排 4 条）。
  */
 
+// 只引类型：backup → db/settings → 这里，引值会绕成循环依赖
 import type { BackupScope } from './backup';
 import { addDays, dateStrToLocalDate, diffDays, toDateStr, todayStr } from './dates';
 import type { PlannedReminder } from './reminderPlan';
@@ -14,9 +15,12 @@ export const BACKUP_REPEAT_DAYS = 7;
 /** iOS 每个 App 最多挂 64 条本地通知：到期提醒用 56 条，备份提醒留 4 条 */
 export const BACKUP_REMINDER_SLOTS = 4;
 
-/** 这次导出算不算一次完整备份 */
-export function countsAsBackup(scope: readonly BackupScope[]): boolean {
-  return scope.includes('food') && scope.includes('daily') && scope.includes('devices');
+/** 全部分类，和 backup.ts 的 ALL_SCOPES 一致（单测里核对） */
+export const FULL_BACKUP_SCOPE: readonly BackupScope[] = ['food', 'daily', 'devices', 'settings'];
+
+/** 这次导出算不算一次完整备份：分类全选，办公点也全选（allOffices） */
+export function countsAsBackup(scope: readonly BackupScope[], allOffices: boolean): boolean {
+  return allOffices && FULL_BACKUP_SCOPE.every((item) => scope.includes(item));
 }
 
 export type BackupStatus = {

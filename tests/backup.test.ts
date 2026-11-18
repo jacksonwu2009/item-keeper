@@ -219,43 +219,6 @@ describe('备份导入校验', () => {
     if (!result.ok) assert.match(result.error, /不是 JSON/);
   });
 
-  it('1.3.x 导出的格式 5 还能导入，价格和发票号当作没填', () => {
-    const data = exported();
-    data.format = 5;
-    for (const product of data.products) {
-      for (const movement of product.movements) {
-        delete movement.unitPrice;
-        delete movement.totalPrice;
-      }
-    }
-    for (const device of data.devices) delete device.invoiceNo;
-    const result = parseBackup(JSON.stringify(data));
-    assert.equal(result.ok, true);
-    if (result.ok) {
-      assert.equal(result.data.products[0].movements[0].unitPrice, null);
-      assert.equal(result.data.devices[0].invoiceNo, null);
-    }
-  });
-
-  it('1.5.0 以前的备份：电脑型号里的芯片、内存、硬盘拆出来；1.5.0 的不拆', () => {
-    const legacy = exported();
-    legacy.format = 6;
-    legacy.devices[0].model = 'M3 Pro 18G/512G';
-    for (const field of ['chip', 'memory', 'storage']) delete legacy.devices[0][field];
-    const result = parseBackup(JSON.stringify(legacy));
-    assert.equal(result.ok, true);
-    if (result.ok) {
-      const device = result.data.devices[0];
-      assert.deepEqual([device.model, device.chip, device.memory, device.storage], [null, 'M3 Pro', '18G', '512G']);
-    }
-    const current = exported();
-    current.devices[0].model = 'M3 Pro';
-    for (const field of ['chip', 'memory', 'storage']) current.devices[0][field] = null;
-    const kept = parseBackup(JSON.stringify(current));
-    assert.equal(kept.ok, true);
-    if (kept.ok) assert.deepEqual([kept.data.devices[0].model, kept.data.devices[0].chip], ['M3 Pro', null]);
-  });
-
   it('价格和发票号随备份往返', () => {
     const result = parseBackup(JSON.stringify(exported()));
     assert.equal(result.ok, true);
@@ -273,13 +236,13 @@ describe('备份导入校验', () => {
     if (!rejected.ok) assert.match(rejected.error, /总价/);
   });
 
-  it('1.2.0 以前的旧版备份直接拒绝', () => {
-    for (const format of [1, 2, 3, 4]) {
+  it('旧版本的备份直接拒绝', () => {
+    for (const format of [1, 2, 3, 4, 5, 6]) {
       const data = exported();
       data.format = format;
       const result = parseBackup(JSON.stringify(data));
       assert.equal(result.ok, false);
-      if (!result.ok) assert.match(result.error, /1\.2\.0 以前.*不支持/);
+      if (!result.ok) assert.match(result.error, /旧版本.*不支持/);
     }
   });
 
