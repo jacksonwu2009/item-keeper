@@ -42,6 +42,7 @@ export function DeviceForm({
   const [quantity, setQuantity] = useState<number | null>(initial?.quantity ?? 1);
   const [note, setNote] = useState(initial?.note ?? '');
   const [purchaseDate, setPurchaseDate] = useState<string | null>(initial?.purchaseDate ?? null);
+  const [invoiceNo, setInvoiceNo] = useState(initial?.invoiceNo ?? '');
   const [warrantyMode, setWarrantyMode] = useState<WarrantyMode>(initial?.warrantyUntil ? 'date' : 'none');
   const [warrantyAmount, setWarrantyAmount] = useState<number | null>(1);
   const [warrantyUnit, setWarrantyUnit] = useState<WarrantyUnit>('year');
@@ -114,6 +115,7 @@ export function DeviceForm({
         note,
         purchaseDate,
         warrantyUntil,
+        invoiceNo,
         accessories: accessoryList,
       });
     } catch (error) {
@@ -174,6 +176,13 @@ export function DeviceForm({
           onChange={setPurchaseDate}
           clearable
           placeholder="可不填"
+        />
+        <Field
+          label="发票号"
+          value={invoiceNo}
+          onChangeText={setInvoiceNo}
+          placeholder="可不填"
+          autoCapitalize="characters"
         />
         <View style={formStyles.group}>
           <Label>保修</Label>

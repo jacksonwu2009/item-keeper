@@ -308,6 +308,12 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
 .sec { font-size: 10.5px; font-weight: 700; color: var(--app-muted); letter-spacing: 0.06em; margin-top: 2px; }
 .tabbar { display: grid; grid-template-columns: repeat(5, 1fr); background: var(--app-surface); border-top: 1px solid var(--app-line); margin: 4px -12px -16px; padding: 7px 0 9px; border-radius: 0 0 20px 20px; text-align: center; font-size: 10px; color: var(--app-faint); }
 .tabbar .on { color: var(--app-accent); font-weight: 700; }
+/* 向左滑开的一行：行本身不动，红色「删除」从右边盖住数量那一块 */
+.app-row.swiped { position: relative; overflow: hidden; }
+.app-del { position: absolute; top: 0; right: 0; bottom: 0; width: 64px; background: var(--app-danger); color: #FFFFFF; font-weight: 700; font-size: 12px; display: grid; place-items: center; }
+/* 并排的两个输入框（单价 / 总价） */
+.pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; }
+.pair > div { display: grid; gap: 4px; min-width: 0; }
 </style>
 
 <header class="masthead">
@@ -321,7 +327,7 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
         <rect x="23.5" y="26.5" width="9" height="2.4" rx="1.2" fill="#0D6B5E"/>
         <rect x="22.5" y="32" width="11" height="6.5" rx="1.3" fill="#F2B140"/>
       </svg>
-      <div class="brand-meta">物品管家 · 1.3.0 · 安卓 / iPhone</div>
+      <div class="brand-meta">物品管家 · 1.4.0 · 安卓 / iPhone</div>
     </div>
     <h1>物品管家使用指南</h1>
     <p class="lede">用手机管三类东西：食品、日用品、设备。扫条码就能录入，库存和过期日期记在手机上，快到期、快用完会按时提醒；电脑和配件记下谁领走、哪天还回来。</p>
@@ -388,17 +394,38 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
         <div><dt>提醒</dt><dd>打开 App 先看这里：已过期、快到期、库存不足、借出中的设备都列在一页，点哪条就进到哪件东西。</dd></div>
         <div><dt>食品</dt><dd>食品清单。扫码入库、手动添加、搜索，按「快到期 / 库存不足」筛选。</dd></div>
         <div><dt>日用品</dt><dd>纸巾、洗衣液、电池这类。用法和食品一样，过期日期可以不记。</dd></div>
-        <div><dt>设备</dt><dd>电脑和配件。记型号、序列号、数量，登记谁领走、哪天退还；可以按使用人查看。</dd></div>
+        <div><dt>设备</dt><dd>电脑和配件。记型号、序列号、发票号、数量，登记谁领走、哪天退还；可以按使用人查看。</dd></div>
         <div><dt>设置</dt><dd>办公点、提醒规则、通知权限、导入导出。</dd></div>
       </dl>
       <p class="muted">除了点底部标签，也可以在页面上<b>左右滑动</b>切到相邻的标签。有多个办公点时，前四个标签页右上角会出现办公点切换，比如「北京 ▾」，点开可以换办公点或看全部办公点。</p>
-      <h3>列表里的手势</h3>
-      <ul class="points">
-        <li><b>点一下</b>：打开详情。</li>
-        <li><b>长按</b>：直接进编辑。</li>
-        <li><b>向左滑</b>：露出红色「删除」，点了就删。底部会出现 5 秒「撤销」，删错了点它就回来。</li>
-        <li>在一行上向右滑、或在空白处左右滑，是切换标签。</li>
-      </ul>
+      <div class="with-figure">
+        <div style="display:grid;gap:18px">
+          <h3>列表里的手势</h3>
+          <ul class="points">
+            <li><b>点一下</b>：打开详情。</li>
+            <li><b>长按</b>：直接进编辑。</li>
+            <li><b>向左滑</b>：这一行不动，红色「删除」从右边滑出来，盖住右侧的数量，名称和标签照常看得见。点「删除」就删，底部会出现 5 秒「撤销」，删错了点它就回来。</li>
+            <li>滑开以后，点一下这一行、或在这一行上向右滑，就收回去。同一时间只有一行是滑开的，滑开另一行时，上一行自动收回。</li>
+            <li>在没滑开的一行上向右滑、或在空白处左右滑，是切换标签。</li>
+          </ul>
+        </div>
+        <figure class="phone">
+          <div class="screen" aria-label="向左滑开一行的界面示意">
+            <div class="app-title">食品 <small>共 2 种</small></div>
+            <div class="app-row">
+              <div><div class="n">面包</div><div class="m">放在 储物柜</div></div>
+              <div class="app-qty"><b>2</b><span>袋</span></div>
+            </div>
+            <div class="app-row swiped">
+              <div><div class="n">纯牛奶</div><div class="m">250ml×12 · 放在 冰箱</div><div class="chips"><span class="chip warn">库存不足</span></div></div>
+              <div class="app-qty"><b>0</b><span>盒</span></div>
+              <div class="app-del" aria-hidden="true">删除</div>
+            </div>
+            <div class="tabbar"><span>提醒</span><span class="on">食品</span><span>日用品</span><span>设备</span><span>设置</span></div>
+          </div>
+          <figcaption>界面示意：「纯牛奶」向左滑开后，红色「删除」盖住右边的数量。</figcaption>
+        </figure>
+      </div>
     </section>
 
     <section id="stock">
@@ -410,7 +437,7 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
           <ol class="steps">
             <li><div>在「食品」或「日用品」页点 <b>扫码入库</b>，把包装上的条码放进取景框。</div></li>
             <li><div><b>没录过的条码</b>会进新增页，App 会联网查商品名并自动填上，查不到就自己填名称。填过一次，以后再扫这个码就直接认出来。</div></li>
-            <li><div>填这次买了多少、过期日期，点 <b>保存</b>。</div></li>
+            <li><div>填这次买了多少、过期日期，单价或总价也可以填上（选填，建议填），点 <b>保存</b>。</div></li>
             <li><div><b>录过的条码</b>会直接打开这件东西，问你这次是买回来（入库）还是用掉（出库）。</div></li>
           </ol>
           <p class="muted">没有条码的东西点 <b>手动添加</b>。扫不出来时，扫码页下方可以手动输入条码数字，比如 <span class="mono">6901234567892</span>。</p>
@@ -459,11 +486,24 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
       <h2>买回来点入库，用掉点出库</h2>
       <p>在物品详情页（列表里点进去，或者扫一下它的条码）：</p>
       <ul class="points">
-        <li><b>入库</b>：填数量和这一批的过期日期。过期日期和已有的某一批相同，就合并到那一批。</li>
+        <li><b>入库</b>：填数量和这一批的过期日期，单价和总价选填。过期日期和已有的某一批相同，数量就合并到那一批。</li>
         <li><b>出库 / 用掉</b>：填数量，选原因（用掉、过期丢弃、坏了、送人、其他）。<b>先扣最早到期的那一批</b>，不用自己挑。想全部清掉点「全部用完」。</li>
         <li><b>批次</b>：同一样东西买了几次、过期日期不同，会分成几批显示。点某一批可以改数量、改日期；向左滑可以删掉这一批，同样能撤销。</li>
-        <li><b>出入库记录</b>：每次入库、出库、改批次都会记一条，写着时间、加减多少和原因，在详情页最下面。</li>
+        <li><b>出入库记录</b>：每次入库、出库、改批次都会记一条，写着时间、加减多少和原因；入库那条还写着这次的单价和总价。</li>
+        <li><b>上次进价</b>：详情页「信息」里显示最近一次填了价格的入库是多少钱。</li>
       </ul>
+      <h3>记进价：单价和总价</h3>
+      <ul class="points">
+        <li>都可以不填，建议填上，以后能查到每次买的价格。</li>
+        <li><b>填了单价</b>，按数量自动算出总价；<b>填了总价</b>，按数量自动算出单价。改了数量，另一个跟着重新算。</li>
+        <li>单价按这次选的单位算：按箱入库就是每箱多少钱。把单位从瓶换成箱，单价跟着换算，比如每瓶 2 变成每箱 48。</li>
+        <li>同一样东西再入库时，单价默认填上一次入库的价（按这次的单位换算）；价格变了直接改。</li>
+        <li>每次入库的价格只记在那一条入库记录上，这次改了价，以前的记录不变。</li>
+        <li>只记数字，不带货币符号。新建物品时的「这次入库」也可以填价格。</li>
+      </ul>
+      <div class="equation" aria-label="价格换算示例">
+        <span>单价 2.50</span><span class="eq">×</span><span>12 瓶</span><span class="eq">=</span><span>总价 30.00</span>
+      </div>
     </section>
 
     <section id="units">
@@ -476,6 +516,7 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
             <li><div>物品详情页点 <b>编辑</b>，在「包装规格」里点 <b>+ 按箱</b>，填「1 箱 = 24 瓶」。还有一提 6 瓶的，再加一条「1 提 = 6 瓶」。</div></li>
             <li><div>箱子外面的条码和单瓶的通常不一样，可以在这一条里扫进箱子的条码。以后扫箱子，App 直接认出是这件东西，入库默认按箱。</div></li>
             <li><div>入库时选「箱」填 2，下面会显示 <b>= 48 瓶</b>；平时拿一瓶，出库选「瓶」填 1。</div></li>
+            <li><div>按箱入库时单价也按箱算，比如每箱 48，总价自动算出 96；改成按瓶填，单价自动变成每瓶 2。</div></li>
           </ol>
           <div class="equation" aria-label="换算示例">
             <span>2 箱</span><span class="eq">+</span><span>2 瓶</span><span class="eq">=</span><span>50 瓶</span>
@@ -495,10 +536,15 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
               <div class="lbl">过期日期</div>
               <div class="choice"><span class="on">选到期日</span><span>生产日期+保质期</span><span>不记录</span></div>
               <div class="input" style="font-family:var(--font-body)">2027年7月20日</div>
+              <div class="pair">
+                <div><div class="lbl">单价（每箱）</div><div class="input">48</div></div>
+                <div><div class="lbl">总价</div><div class="input">96</div></div>
+              </div>
+              <div class="hint">选填。已按上次进价填好，可以改</div>
               <div class="app-btn">确认入库</div>
             </div>
           </div>
-          <figcaption>界面示意：整箱入库，自动换算成瓶。</figcaption>
+          <figcaption>界面示意：整箱入库，自动换算成瓶；单价按箱算，总价自动算出。</figcaption>
         </figure>
       </div>
     </section>
@@ -574,7 +620,7 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
       <h2>设备领用与退还</h2>
       <ol class="steps">
         <li><div><b>登记设备</b>：「设备」页点 <b>新增设备</b>，选类别（笔记本、显示器、键盘、鼠标……），填名称、型号、数量。序列号可以手填，也可以点旁边的按钮扫机身上的条码。多台同款建议分开登记，各记各的序列号。</div></li>
-        <li><div><b>购买与保修</b>：填购买日期；保修可以填年限（比如 3 年，自动按购买日期算出到期日），也可以直接选保修到期日。</div></li>
+        <li><div><b>购买与保修</b>：填购买日期和发票号（发票号单独一栏，可以不填）；保修可以填年限（比如 3 年，自动按购买日期算出到期日），也可以直接选保修到期日。</div></li>
         <li><div><b>配件</b>：把随设备一起领走、一起退还的东西记上，比如「充电器 ×1、扩展坞 ×1」，常见配件点一下就能加。数量按每件设备配几个填。</div></li>
         <li><div><b>登记领用</b>：进设备详情点 <b>登记领用</b>，填使用人、数量、领取日期（默认今天）。用过的人名下次可以直接点选。面板上方会列出要一起交给对方的配件。</div></li>
         <li><div><b>退还</b>：在「正在使用」里找到那条记录点 <b>退还</b>，选退还日期。面板会提示核对配件。领了 2 件只还 1 件的，填退还数量，剩下的继续算在他名下。</div></li>
@@ -582,6 +628,7 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
       <ul class="points">
         <li>详情页上方显示 <b>总数 / 借出 / 在库</b> 和保修状态，全部借出时不能再登记领用。</li>
         <li>保修剩 30 天以内或已过保的设备，在列表里会标出来。</li>
+        <li>发票号显示在设备详情的「信息」里；设备页的搜索也能按发票号找。</li>
         <li>单独借出的备用鼠标、键盘这类，建议另外登记成一件设备，按数量领用和退还。</li>
         <li>每条领用记录都留着，点开可以改人名、日期，登记错了也能删。</li>
         <li>设备页切到 <b>按使用人</b>，能看到每个人手上有哪些设备、领了多少天。</li>
@@ -635,6 +682,8 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
       </div>
       <ul class="points">
         <li><b>换手机</b>：旧手机全部导出，新手机全部导入。</li>
+        <li><b>价格和发票号</b>：导出的文件里带着每次入库的单价、总价和设备的发票号，导入后照样能看到。</li>
+        <li><b>新旧版本</b>：1.3.x 导出的文件可以导入 1.4.0，只是没有价格和发票号；1.4.0 导出的文件不能导入 1.3.x，App 会提示先升级，对方装上新版本再导入。</li>
       </ul>
     </section>
 
@@ -663,7 +712,7 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
         </details>
         <details>
           <summary>删错了能恢复吗</summary>
-          <div><p>删除物品、设备、批次不能撤销，只有「导入」可以撤销。建议隔一段时间导出一份全部数据存起来。</p></div>
+          <div><p>在列表里向左滑删掉的物品、设备、批次，5 秒内点底部的「撤销」就能回来；过了 5 秒，或者在详情页点「删除」确认的，就不能恢复了。导入可以在设置里撤销。建议隔一段时间导出一份全部数据存起来。</p></div>
         </details>
         <details>
           <summary>同一个条码能不能录两次</summary>
@@ -675,5 +724,5 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
 </div>
 
 <footer>
-  <div class="wrap">物品管家 1.3.0 · 本指南更新于 2026 年 11 月 18 日 · 界面示意中的物品和数量均为示例</div>
+  <div class="wrap">物品管家 1.4.0 · 本指南更新于 2026 年 11 月 18 日 · 界面示意中的物品和数量均为示例</div>
 </footer>

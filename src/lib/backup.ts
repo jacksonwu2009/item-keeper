@@ -16,11 +16,15 @@ import { validateAccessories, type Accessory } from './warranty';
 
 export const BACKUP_APP = 'item-keeper';
 /**
- * 备份格式版本号。1.2.0 起为 5（含办公点、分类范围、包装规格、设备保修和配件）；
+ * 备份格式版本号。
+ * - 5：1.2.0 起（含办公点、分类范围、包装规格、设备保修和配件）
+ * - 6：1.4.0 起，入库记录多了单价、总价，设备多了发票号；读 5 时这几项当作没填
  * 更早的版本没有正式使用过，不再兼容，导入时直接提示。
  * 以后改格式要升这个号：旧版 App 读到新号会拒绝，免得它按自己的理解把数据替换掉。
  */
-export const BACKUP_FORMAT = 5;
+export const BACKUP_FORMAT = 6;
+/** 还能导入的最老格式 */
+export const MIN_BACKUP_FORMAT = 5;
 export const OFFICE_NAME_LIMIT = 20;
 
 export type BackupScope = 'food' | 'daily' | 'devices' | 'settings';
@@ -52,6 +56,9 @@ export type BackupMovement = {
   note: string | null;
   inputQty: number | null;
   inputUnit: string | null;
+  /** 入库单价（按 inputUnit 计）和总价，没填为 null */
+  unitPrice: number | null;
+  totalPrice: number | null;
 };
 
 export type BackupProduct = {
@@ -93,6 +100,7 @@ export type BackupDevice = {
   note: string | null;
   purchaseDate: string | null;
   warrantyUntil: string | null;
+  invoiceNo: string | null;
   /** 每件设备配的配件 */
   accessories: Accessory[];
   createdAt: string;
@@ -223,6 +231,8 @@ export function buildBackup(
         note: movement.note,
         inputQty: movement.inputQty,
         inputUnit: movement.inputUnit,
+        unitPrice: movement.unitPrice,
+        totalPrice: movement.totalPrice,
       })),
     })),
     devices: (included.includes('devices') ? source.devices : [])
@@ -237,6 +247,7 @@ export function buildBackup(
       note: device.note,
       purchaseDate: device.purchaseDate,
       warrantyUntil: device.warrantyUntil,
+      invoiceNo: device.invoiceNo,
       accessories: (accessoriesByDevice.get(id) ?? []).map((accessory) => ({
         name: accessory.name,
         quantity: accessory.quantity,
@@ -433,6 +444,8 @@ function parseProduct(raw: unknown, index: number, exportedAt: string, offices: 
       note: optText(movement.note, at, '备注'),
       inputQty: optNumber(movement.inputQty, at, '输入数量', 0, 1e9),
       inputUnit: optText(movement.inputUnit, at, '输入单位'),
+      unitPrice: optNumber(movement.unitPrice, at, '单价', 0, 1e9),
+      totalPrice: optNumber(movement.totalPrice, at, '总价', 0, 1e12),
     };
   });
 
@@ -520,6 +533,7 @@ function parseDevice(raw: unknown, index: number, exportedAt: string, offices: s
     note: optText(raw.note, where, '备注'),
     purchaseDate,
     warrantyUntil,
+    invoiceNo: optText(raw.invoiceNo, where, '发票号'),
     accessories,
     createdAt: timestamp(raw.createdAt, exportedAt),
     updatedAt: timestamp(raw.updatedAt, exportedAt),
@@ -542,7 +556,7 @@ export function parseBackup(text: string): ParseResult {
     const format = typeof root.format === 'number' ? root.format : 0;
     if (format < 1) fail('', '备份文件缺少版本号，可能已损坏');
     if (format > BACKUP_FORMAT) fail('', '这个备份来自更新版本的 App，请先升级 App 再导入');
-    if (format < BACKUP_FORMAT) fail('', '这是 1.2.0 以前的 App 导出的备份，现在不支持了，请用新版 App 重新导出');
+    if (format < MIN_BACKUP_FORMAT) fail('', '这是 1.2.0 以前的 App 导出的备份，现在不支持了，请用新版 App 重新导出');
     const exportedAt = timestamp(root.exportedAt, `${todayStr()}T00:00:00.000Z`);
 
     const rawScope = list(root.scope, '', '分类');

@@ -66,6 +66,8 @@ const source: BackupSource = {
       note: null,
       inputQty: 1,
       inputUnit: '箱',
+      unitPrice: 36,
+      totalPrice: 36,
     },
     {
       productId: 2,
@@ -76,6 +78,8 @@ const source: BackupSource = {
       note: '用掉',
       inputQty: 2,
       inputUnit: '包',
+      unitPrice: null,
+      totalPrice: null,
     },
   ],
   devices: [
@@ -90,6 +94,7 @@ const source: BackupSource = {
       note: null,
       purchaseDate: '2026-10-01',
       warrantyUntil: '2027-09-30',
+      invoiceNo: '044031900111',
       createdAt: '2026-10-01T01:00:00.000Z',
       updatedAt: '2026-10-01T01:00:00.000Z',
     },
@@ -209,6 +214,41 @@ describe('备份导入校验', () => {
     const result = parseBackup('hello');
     assert.equal(result.ok, false);
     if (!result.ok) assert.match(result.error, /不是 JSON/);
+  });
+
+  it('1.3.x 导出的格式 5 还能导入，价格和发票号当作没填', () => {
+    const data = exported();
+    data.format = 5;
+    for (const product of data.products) {
+      for (const movement of product.movements) {
+        delete movement.unitPrice;
+        delete movement.totalPrice;
+      }
+    }
+    for (const device of data.devices) delete device.invoiceNo;
+    const result = parseBackup(JSON.stringify(data));
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.data.products[0].movements[0].unitPrice, null);
+      assert.equal(result.data.devices[0].invoiceNo, null);
+    }
+  });
+
+  it('价格和发票号随备份往返', () => {
+    const result = parseBackup(JSON.stringify(exported()));
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.deepEqual(
+        [result.data.products[0].movements[0].unitPrice, result.data.products[0].movements[0].totalPrice],
+        [36, 36],
+      );
+      assert.equal(result.data.devices[0].invoiceNo, '044031900111');
+    }
+    const bad = exported();
+    bad.products[0].movements[0].totalPrice = -1;
+    const rejected = parseBackup(JSON.stringify(bad));
+    assert.equal(rejected.ok, false);
+    if (!rejected.ok) assert.match(rejected.error, /总价/);
   });
 
   it('1.2.0 以前的旧版备份直接拒绝', () => {

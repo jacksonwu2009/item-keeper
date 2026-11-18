@@ -15,6 +15,7 @@ import { migrateDbIfNeeded } from '../src/db/schema';
 import {
   createProduct,
   findByBarcode,
+  getLastPurchasePrice,
   listBatches,
   listMovements,
   listProducts,
@@ -138,6 +139,7 @@ describe('数据层（真实 SQLite）', () => {
       note: null,
       purchaseDate: '2026-10-01',
       warrantyUntil: '2027-09-30',
+      invoiceNo: ' 044031900111 ',
       accessories: [{ name: '充电器', quantity: 1 }],
     });
     await issueDevice(db, deviceId, { person: '张三', quantity: 2, issuedOn: '2026-10-02', returnedOn: null, note: null });
@@ -146,7 +148,45 @@ describe('数据层（真实 SQLite）', () => {
     const [device] = await listDevices(db, 1);
     assert.equal(device.outQty, 1);
     assert.equal(device.warrantyUntil, '2027-09-30');
+    assert.equal(device.invoiceNo, '044031900111');
     assert.equal((await listDevices(db, 99)).length, 0);
+  });
+
+  it('入库价格记在每条入库记录上，下次默认用上一次的价', async () => {
+    const db = await openDb();
+    const id = await createProduct(db, product({ packs: [{ unit: '箱', size: 24, barcode: null }] }), {
+      quantity: 48,
+      expiryDate: '2027-01-31',
+      entry: { qty: 2, unit: '箱' },
+      price: { unitPrice: 48, totalPrice: 96 },
+    });
+    let last = await getLastPurchasePrice(db, id);
+    assert.deepEqual(last && [last.perBaseUnit, last.unitPrice, last.unit], [2, 48, '箱']);
+
+    // 这次涨价，按瓶进；同一过期日期合并到原批次，但价格各记各的
+    await stockIn(db, id, {
+      quantity: 6,
+      expiryDate: '2027-01-31',
+      entry: { qty: 6, unit: '瓶' },
+      price: { unitPrice: 2.5, totalPrice: 15 },
+    });
+    // 没填价格的入库、出库不影响「上次进价」
+    await stockIn(db, id, { quantity: 1, expiryDate: null, entry: { qty: 1, unit: '瓶' } });
+    await stockOut(db, id, 3, '用掉', { qty: 3, unit: '瓶' });
+    last = await getLastPurchasePrice(db, id);
+    assert.deepEqual(last && [last.perBaseUnit, last.unitPrice, last.unit], [2.5, 2.5, '瓶']);
+
+    const movements = await listMovements(db, id);
+    assert.deepEqual(
+      movements.map((movement) => [movement.type, movement.delta, movement.unitPrice, movement.totalPrice]),
+      [
+        ['out', -3, null, null],
+        ['in', 1, null, null],
+        ['in', 6, 2.5, 15],
+        ['in', 48, 48, 96],
+      ],
+    );
+    assert.equal(await getLastPurchasePrice(db, 999), null);
   });
 
   it('只能删空的办公点', async () => {
@@ -163,7 +203,12 @@ describe('手机之间按办公点传数据（真实 SQLite）', () => {
   async function beijingPhone() {
     const db = await openDb();
     await db.runAsync("UPDATE office SET name = '北京' WHERE id = 1");
-    await createProduct(db, product({ barcode: '690' }), { quantity: 12, expiryDate: '2027-01-31' });
+    await createProduct(db, product({ barcode: '690' }), {
+      quantity: 12,
+      expiryDate: '2027-01-31',
+      entry: { qty: 12, unit: '瓶' },
+      price: { unitPrice: 3, totalPrice: 36 },
+    });
     await createProduct(db, product({ kind: 'daily', name: '抽纸', unit: '包', barcode: '777' }), {
       quantity: 10,
       expiryDate: null,
@@ -178,6 +223,7 @@ describe('手机之间按办公点传数据（真实 SQLite）', () => {
       note: null,
       purchaseDate: null,
       warrantyUntil: null,
+      invoiceNo: 'FP-2026-001',
       accessories: [{ name: '电源线', quantity: 1 }],
     });
     return db;
@@ -205,6 +251,11 @@ describe('手机之间按办公点传数据（真实 SQLite）', () => {
     const [cola] = await listProducts(hq, 'food', beijing.id);
     assert.equal(cola.name, '可乐');
     assert.equal(cola.totalQty, 12);
+    assert.deepEqual(
+      (await listMovements(hq, cola.id)).map((movement) => [movement.unitPrice, movement.totalPrice]),
+      [[3, 36]],
+    );
+    assert.equal((await getLastPurchasePrice(hq, cola.id))?.perBaseUnit, 3);
     assert.equal((await listProducts(hq, 'food', 1))[0].name, '总部的咖啡');
   });
 
@@ -236,6 +287,15 @@ describe('手机之间按办公点传数据（真实 SQLite）', () => {
       /「北京」：条码 690 在备份的「可乐」和手机上日用品里的「洗衣液」重复/,
     );
     assert.equal((await listProducts(hq, 'food', 1)).length, 0);
+  });
+
+  it('设备的发票号随备份导入', async () => {
+    const source = await beijingPhone();
+    const hq = await openDb();
+    await replaceData(hq, await collectBackup(source, ['devices'], [1]), { scope: ['devices'], offices: ['北京'] });
+    const beijing = (await listOffices(hq)).find((office) => office.name === '北京')!;
+    const [monitor] = await listDevices(hq, beijing.id);
+    assert.equal(monitor.invoiceNo, 'FP-2026-001');
   });
 
   it('撤销：换回导入前的全部数据（含办公点）', async () => {

@@ -18,12 +18,14 @@ import {
   Sheet,
 } from '../../components/ui';
 import { NumberField } from '../../components/NumberField';
+import { PriceFields } from '../../components/PriceFields';
 import { SwipeRow, UndoBar } from '../../components/SwipeRow';
 import { UnitQtyField } from '../../components/UnitQtyField';
 import { DEFAULT_SETTINGS, getSettings } from '../../db/settings';
 import {
   deleteBatch,
   deleteProduct,
+  getLastPurchasePrice,
   getProduct,
   listBatches,
   listMovements,
@@ -32,6 +34,7 @@ import {
   stockOut,
   updateBatch,
   type EntryQty,
+  type LastPurchasePrice,
   type StockBatch,
   type StockMovement,
   type StockProduct,
@@ -39,9 +42,17 @@ import {
 import { useFocusData } from '../../hooks/useFocusData';
 import { useOffice } from '../../hooks/useOffice';
 import { usePendingDelete } from '../../hooks/usePendingDelete';
-import { formatDate, formatDateTime, todayStr } from '../../lib/dates';
+import { formatDate, formatDateTime, formatShortDate, toDateStr, todayStr } from '../../lib/dates';
 import { rescheduleReminders } from '../../lib/notifications';
 import { describePacks, formatBreakdown, toBaseQty, type PackUnit } from '../../lib/packs';
+import {
+  convertPriceUnit,
+  defaultPriceDraft,
+  derivePrice,
+  formatPrice,
+  type EntryPrice,
+  type PriceDraft,
+} from '../../lib/price';
 import { expiryStatus, isLowStock } from '../../lib/status';
 import { formatQty, KIND_LABEL, parseQty, roundQty } from '../../lib/stock';
 import { colors, font, radius } from '../../theme';
@@ -60,14 +71,15 @@ export default function StockDetailScreen() {
   const [message, setMessage] = useState<string | null>(null);
 
   const loader = useCallback(async () => {
-    const [product, batches, movements, packs, settings] = await Promise.all([
+    const [product, batches, movements, packs, settings, lastPrice] = await Promise.all([
       getProduct(db, productId),
       listBatches(db, productId),
       listMovements(db, productId, 100),
       listPacks(db, productId),
       getSettings(db),
+      getLastPurchasePrice(db, productId),
     ]);
-    return { product, batches, movements, packs, settings };
+    return { product, batches, movements, packs, settings, lastPrice };
   }, [db, productId]);
   const [data, reload, loaded] = useFocusData(loader, {
     product: null as StockProduct | null,
@@ -75,8 +87,9 @@ export default function StockDetailScreen() {
     movements: [] as StockMovement[],
     packs: [] as PackUnit[],
     settings: DEFAULT_SETTINGS,
+    lastPrice: null as LastPurchasePrice | null,
   });
-  const { product, movements, packs, settings } = data;
+  const { product, movements, packs, settings, lastPrice } = data;
   const [showAllMovements, setShowAllMovements] = useState(false);
   const batchDeletion = usePendingDelete<number>(
     (batchId) => deleteBatch(db, batchId),
@@ -269,6 +282,10 @@ export default function StockDetailScreen() {
             .map((pack) => (
               <InfoRow key={pack.unit} label={`${pack.unit}的条码`} value={pack.barcode ?? ''} />
             ))}
+          <InfoRow
+            label="上次进价"
+            value={lastPrice ? `每${lastPrice.unit} ${formatPrice(lastPrice.unitPrice)}（${purchaseDay(lastPrice.happenedAt)}）` : '没记录'}
+          />
           <InfoRow label="存放位置" value={product.location ?? '—'} />
           <InfoRow
             label="库存提醒"
@@ -308,11 +325,13 @@ export default function StockDetailScreen() {
             packs={packs}
             defaultUnit={scannedPack?.unit ?? product.unit}
             isFood={product.kind === 'food'}
+            lastPrice={lastPrice}
             onClose={() => setSheet(null)}
-            onSubmit={async (quantity, expiryDate, entry) => {
-              await stockIn(db, product.id, { quantity, expiryDate, entry });
+            onSubmit={async (quantity, expiryDate, entry, price) => {
+              await stockIn(db, product.id, { quantity, expiryDate, entry, price });
               const asEntered = entry.unit !== product.unit ? `${formatQty(entry.qty)} ${entry.unit}，` : '';
-              await afterChange(`已入库 ${asEntered}${formatQty(quantity)} ${product.unit}`);
+              const priceNote = price ? `，总价 ${formatPrice(price.totalPrice)}` : '';
+              await afterChange(`已入库 ${asEntered}${formatQty(quantity)} ${product.unit}${priceNote}`);
             }}
           />
         ) : null}
@@ -360,6 +379,21 @@ const OUT_REASONS = ['用掉', '过期丢弃', '坏了', '送人', '其他'];
 
 const MOVEMENT_LABEL: Record<StockMovement['type'], string> = { in: '入库', out: '出库', adjust: '调整' };
 
+/** 入库时间是 ISO（UTC），按手机本地日期显示 */
+function purchaseDay(happenedAt: string): string {
+  return formatShortDate(toDateStr(new Date(happenedAt)));
+}
+
+function describeMovementPrice(movement: StockMovement, unit: string): string | null {
+  if (movement.type !== 'in') return null;
+  const priceUnit = movement.inputUnit ?? unit;
+  const parts = [
+    movement.unitPrice !== null ? `单价 ${formatPrice(movement.unitPrice)}/${priceUnit}` : null,
+    movement.totalPrice !== null ? `总价 ${formatPrice(movement.totalPrice)}` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join('，') : null;
+}
+
 function MovementRow({ movement, unit, first }: { movement: StockMovement; unit: string; first: boolean }) {
   const positive = movement.delta > 0;
   const enteredInPack =
@@ -370,6 +404,7 @@ function MovementRow({ movement, unit, first }: { movement: StockMovement; unit:
     enteredInPack,
     movement.note,
     movement.type === 'in' && movement.expiryDate ? `${formatDate(movement.expiryDate)} 到期` : null,
+    describeMovementPrice(movement, unit),
   ]
     .filter(Boolean)
     .join(' · ');
@@ -400,6 +435,7 @@ function StockInSheet({
   packs,
   defaultUnit,
   isFood,
+  lastPrice,
   onClose,
   onSubmit,
 }: {
@@ -407,17 +443,30 @@ function StockInSheet({
   packs: PackUnit[];
   defaultUnit: string;
   isFood: boolean;
+  lastPrice: LastPurchasePrice | null;
   onClose: () => void;
-  onSubmit: (quantity: number, expiryDate: string | null, entry: EntryQty) => Promise<void>;
+  onSubmit: (quantity: number, expiryDate: string | null, entry: EntryQty, price: EntryPrice | null) => Promise<void>;
 }) {
+  /** 1 个这种单位等于多少最小单位（1 箱 = 24 瓶） */
+  const unitSize = (entry: string) => toBaseQty(1, entry, unit, packs) ?? 1;
   const [qtyText, setQtyText] = useState('1');
   const [entryUnit, setEntryUnit] = useState(defaultUnit);
+  // 同一物品默认用上一次的进价，换算成这次的单位
+  const [priceDraft, setPriceDraft] = useState<PriceDraft>(() =>
+    defaultPriceDraft(lastPrice?.perBaseUnit ?? null, unitSize(defaultUnit)),
+  );
   const [expiry, setExpiry] = useState<ExpiryValue>({ expiry: null, error: null });
   const [showErrors, setShowErrors] = useState(false);
   const [busy, setBusy] = useState(false);
   const qty = parseQty(qtyText);
   const baseQty = qty === null ? null : toBaseQty(qty, entryUnit, unit, packs);
   const qtyError = qty === null || qty <= 0 || baseQty === null ? '请填大于 0 的数量' : null;
+  const { price } = derivePrice(priceDraft, qty);
+
+  function changeUnit(next: string) {
+    setPriceDraft((draft) => convertPriceUnit(draft, unitSize(entryUnit), unitSize(next)));
+    setEntryUnit(next);
+  }
 
   return (
     <Sheet visible title="入库" onClose={onClose}>
@@ -428,9 +477,20 @@ function StockInSheet({
         qtyText={qtyText}
         onQtyText={setQtyText}
         unit={entryUnit}
-        onUnit={setEntryUnit}
+        onUnit={changeUnit}
         error={showErrors ? qtyError : null}
         autoFocus
+      />
+      <PriceFields
+        draft={priceDraft}
+        onChange={setPriceDraft}
+        qty={qty}
+        unit={entryUnit}
+        hint={
+          lastPrice
+            ? `已按上次进价填好（${purchaseDay(lastPrice.happenedAt)}，每${lastPrice.unit} ${formatPrice(lastPrice.unitPrice)}），价格变了直接改。`
+            : null
+        }
       />
       <ExpiryInput initialMode={isFood ? 'date' : 'none'} allowNone onChange={setExpiry} />
       {showErrors && expiry.error ? <Text style={detailStyles.error}>{expiry.error}</Text> : null}
@@ -443,7 +503,7 @@ function StockInSheet({
           if (qtyError || expiry.error || qty === null || baseQty === null) return;
           setBusy(true);
           try {
-            await onSubmit(baseQty, expiry.expiry, { qty, unit: entryUnit });
+            await onSubmit(baseQty, expiry.expiry, { qty, unit: entryUnit }, price);
           } finally {
             setBusy(false);
           }

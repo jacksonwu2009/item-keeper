@@ -64,9 +64,11 @@ export async function collectBackup(
       note: string | null;
       inputQty: number | null;
       inputUnit: string | null;
+      unitPrice: number | null;
+      totalPrice: number | null;
     }>(
       `SELECT product_id AS productId, type, delta, expiry_date AS expiryDate, happened_at AS happenedAt, note,
-              input_qty AS inputQty, input_unit AS inputUnit
+              input_qty AS inputQty, input_unit AS inputUnit, unit_price AS unitPrice, total_price AS totalPrice
          FROM stock_movement ORDER BY id`,
     ),
     db.getAllAsync<{
@@ -80,11 +82,12 @@ export async function collectBackup(
       note: string | null;
       purchaseDate: string | null;
       warrantyUntil: string | null;
+      invoiceNo: string | null;
       createdAt: string;
       updatedAt: string;
     }>(
       `SELECT id, office_id AS officeId, category, name, model, serial_no AS serialNo, quantity, note,
-              purchase_date AS purchaseDate, warranty_until AS warrantyUntil,
+              purchase_date AS purchaseDate, warranty_until AS warrantyUntil, invoice_no AS invoiceNo,
               created_at AS createdAt, updated_at AS updatedAt
          FROM device ORDER BY id`,
     ),
@@ -177,8 +180,9 @@ async function insertProduct(db: SQLiteDatabase, officeId: number, product: Back
   }
   for (const movement of product.movements) {
     await db.runAsync(
-      `INSERT INTO stock_movement (product_id, type, delta, expiry_date, happened_at, note, input_qty, input_unit)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO stock_movement
+         (product_id, type, delta, expiry_date, happened_at, note, input_qty, input_unit, unit_price, total_price)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         productId,
         movement.type,
@@ -188,6 +192,8 @@ async function insertProduct(db: SQLiteDatabase, officeId: number, product: Back
         movement.note,
         movement.inputQty,
         movement.inputUnit,
+        movement.type === 'in' ? movement.unitPrice : null,
+        movement.type === 'in' ? movement.totalPrice : null,
       ],
     );
   }
@@ -196,8 +202,9 @@ async function insertProduct(db: SQLiteDatabase, officeId: number, product: Back
 async function insertDevice(db: SQLiteDatabase, officeId: number, device: BackupDevice): Promise<void> {
   const result = await db.runAsync(
     `INSERT INTO device
-       (office_id, category, name, model, serial_no, quantity, note, purchase_date, warranty_until, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (office_id, category, name, model, serial_no, quantity, note, purchase_date, warranty_until, invoice_no,
+        created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       officeId,
       device.category,
@@ -208,6 +215,7 @@ async function insertDevice(db: SQLiteDatabase, officeId: number, device: Backup
       device.note,
       device.purchaseDate,
       device.warrantyUntil,
+      device.invoiceNo,
       device.createdAt,
       device.updatedAt,
     ],

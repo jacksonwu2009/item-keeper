@@ -2,6 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { todayStr } from '../lib/dates';
 import type { PackUnit } from '../lib/packs';
+import { perBaseUnitPrice, roundTotalPrice, roundUnitPrice, type EntryPrice } from '../lib/price';
 import { planConsumption, roundQty, type StockKind } from '../lib/stock';
 
 export type StockProduct = {
@@ -50,6 +51,9 @@ export type StockMovement = {
   /** 当时输入的数量和单位，如 2 箱；按最小单位输入时与 delta 相同 */
   inputQty: number | null;
   inputUnit: string | null;
+  /** 入库时填的单价（按 inputUnit 计，没有 inputUnit 时按最小单位）和总价；没填为 null */
+  unitPrice: number | null;
+  totalPrice: number | null;
 };
 
 /** 用户输入时用的数量和单位，记进流水里方便以后看「当时是按箱进的」。 */
@@ -77,6 +81,8 @@ export type BatchInput = {
   expiryDate: string | null;
   note?: string | null;
   entry?: EntryQty | null;
+  /** 入库价格，可不填 */
+  price?: EntryPrice | null;
 };
 
 export type BarcodeMatch = { product: StockProduct; pack: PackUnit | null };
@@ -92,7 +98,7 @@ const BATCH_COLUMNS = `
 
 const MOVEMENT_COLUMNS = `
   id, product_id AS productId, type, delta, expiry_date AS expiryDate, happened_at AS happenedAt, note,
-  input_qty AS inputQty, input_unit AS inputUnit`;
+  input_qty AS inputQty, input_unit AS inputUnit, unit_price AS unitPrice, total_price AS totalPrice`;
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -267,7 +273,16 @@ export async function createProduct(
     await savePacks(db, productId, input.packs);
     if (firstBatch && firstBatch.quantity > 0) {
       await insertBatch(db, productId, firstBatch);
-      await recordMovement(db, productId, 'in', firstBatch.quantity, firstBatch.expiryDate, firstBatch.note ?? null, firstBatch.entry);
+      await recordMovement(
+        db,
+        productId,
+        'in',
+        firstBatch.quantity,
+        firstBatch.expiryDate,
+        firstBatch.note ?? null,
+        firstBatch.entry,
+        firstBatch.price,
+      );
     }
   });
   return productId;
@@ -299,12 +314,27 @@ async function recordMovement(
   expiryDate: string | null,
   note: string | null,
   entry: EntryQty | null = null,
+  price: EntryPrice | null = null,
 ): Promise<void> {
   if (roundQty(delta) === 0 && type !== 'adjust') return;
+  // 只有入库记价格
+  const recordedPrice = type === 'in' ? price : null;
   await db.runAsync(
-    `INSERT INTO stock_movement (product_id, type, delta, expiry_date, happened_at, note, input_qty, input_unit)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [productId, type, roundQty(delta), expiryDate, nowIso(), emptyToNull(note), entry ? roundQty(entry.qty) : null, entry?.unit ?? null],
+    `INSERT INTO stock_movement
+       (product_id, type, delta, expiry_date, happened_at, note, input_qty, input_unit, unit_price, total_price)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      productId,
+      type,
+      roundQty(delta),
+      expiryDate,
+      nowIso(),
+      emptyToNull(note),
+      entry ? roundQty(entry.qty) : null,
+      entry?.unit ?? null,
+      recordedPrice ? roundUnitPrice(recordedPrice.unitPrice) : null,
+      recordedPrice ? roundTotalPrice(recordedPrice.totalPrice) : null,
+    ],
   );
 }
 
@@ -333,7 +363,7 @@ export async function stockIn(db: SQLiteDatabase, productId: number, batch: Batc
     } else {
       await insertBatch(db, productId, batch);
     }
-    await recordMovement(db, productId, 'in', batch.quantity, batch.expiryDate, batch.note ?? null, batch.entry);
+    await recordMovement(db, productId, 'in', batch.quantity, batch.expiryDate, batch.note ?? null, batch.entry, batch.price);
     await db.runAsync('UPDATE stock_product SET updated_at = ? WHERE id = ?', [nowIso(), productId]);
   });
 }
@@ -411,6 +441,43 @@ export async function listMovements(db: SQLiteDatabase, productId: number, limit
     `SELECT ${MOVEMENT_COLUMNS} FROM stock_movement WHERE product_id = ? ORDER BY happened_at DESC, id DESC LIMIT ?`,
     [productId, limit],
   );
+}
+
+export type LastPurchasePrice = {
+  /** 折成最小单位的进价（每瓶多少钱） */
+  perBaseUnit: number;
+  /** 当时填的单价和单位，用来显示「每箱 48.00」 */
+  unitPrice: number;
+  unit: string;
+  happenedAt: string;
+};
+
+/** 最近一次填了价格的入库；下次入库默认用这个价。 */
+export async function getLastPurchasePrice(db: SQLiteDatabase, productId: number): Promise<LastPurchasePrice | null> {
+  const row = await db.getFirstAsync<{
+    delta: number;
+    inputQty: number | null;
+    inputUnit: string | null;
+    unitPrice: number | null;
+    totalPrice: number | null;
+    happenedAt: string;
+    baseUnit: string;
+  }>(
+    `SELECT m.delta, m.input_qty AS inputQty, m.input_unit AS inputUnit, m.unit_price AS unitPrice,
+            m.total_price AS totalPrice, m.happened_at AS happenedAt, p.unit AS baseUnit
+       FROM stock_movement m JOIN stock_product p ON p.id = m.product_id
+      WHERE m.product_id = ? AND m.type = 'in' AND m.delta > 0
+        AND (m.unit_price IS NOT NULL OR m.total_price IS NOT NULL)
+      ORDER BY m.happened_at DESC, m.id DESC
+      LIMIT 1`,
+    [productId],
+  );
+  if (!row) return null;
+  const perBaseUnit = perBaseUnitPrice(row);
+  if (perBaseUnit === null) return null;
+  const enteredQty = row.inputQty !== null && row.inputQty > 0 ? row.inputQty : row.delta;
+  const unitPrice = row.unitPrice ?? roundUnitPrice((row.totalPrice ?? 0) / enteredQty);
+  return { perBaseUnit, unitPrice, unit: row.inputUnit ?? row.baseUnit, happenedAt: row.happenedAt };
 }
 
 export async function listLocations(db: SQLiteDatabase): Promise<string[]> {

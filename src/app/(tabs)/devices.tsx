@@ -59,7 +59,7 @@ export default function DevicesScreen() {
       if (filter === 'out' && device.outQty <= 0) return false;
       if (filter === 'in' && device.quantity - device.outQty <= 0) return false;
       if (!keyword) return true;
-      return [device.name, device.model, device.serialNo, device.category, device.holders]
+      return [device.name, device.model, device.serialNo, device.invoiceNo, device.category, device.holders]
         .filter(Boolean)
         .join(' ')
         .toLowerCase()

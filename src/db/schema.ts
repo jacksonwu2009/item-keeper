@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 export const DATABASE_NAME = 'item-keeper.db';
-const DATABASE_VERSION = 5;
+const DATABASE_VERSION = 6;
 
 /**
  * 表结构
@@ -12,6 +12,7 @@ const DATABASE_VERSION = 5;
  * - stock_pack：包装规格，如「1 箱 = 24 瓶」，可带自己的条码（v3 起）
  * - device.purchase_date / warranty_until、device_accessory：设备购买日期、保修到期日、随设备的配件（v4 起）
  * - office：办公点；stock_product、device 各有 office_id，条码只在同一办公点内不重复（v5 起）
+ * - stock_movement.unit_price / total_price：入库时填的单价（按入库单位）和总价，可不填；device.invoice_no：发票号（v6 起）
  * - setting：键值设置
  */
 export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
@@ -152,6 +153,14 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
       DROP INDEX IF EXISTS ux_stock_pack_barcode;
       CREATE INDEX ix_stock_pack_barcode ON stock_pack(barcode);
       CREATE INDEX ix_device_office ON device(office_id);
+    `);
+  }
+
+  if (currentVersion < 6) {
+    await db.execAsync(`
+      ALTER TABLE stock_movement ADD COLUMN unit_price REAL;
+      ALTER TABLE stock_movement ADD COLUMN total_price REAL;
+      ALTER TABLE device ADD COLUMN invoice_no TEXT;
     `);
   }
 

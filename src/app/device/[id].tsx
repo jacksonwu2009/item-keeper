@@ -192,6 +192,7 @@ export default function DeviceDetailScreen() {
         <InfoRow label="型号" value={device.model ?? '—'} />
         <InfoRow label="序列号" value={device.serialNo ?? '—'} />
         <InfoRow label="购买日期" value={formatDate(device.purchaseDate)} />
+        <InfoRow label="发票号" value={device.invoiceNo ?? '—'} />
         <InfoRow label="保修到期" value={device.warrantyUntil ? formatDate(device.warrantyUntil) : '没记录'} />
         <InfoRow label={device.quantity > 1 ? '配件（每件）' : '配件'} value={accessoryText ?? '没有'} />
         {device.note ? <InfoRow label="备注" value={device.note} /> : null}

@@ -7,6 +7,7 @@ import type { AppSettings } from '../db/settings';
 import { listLocations, type BatchInput, type StockProductInput } from '../db/stock';
 import { lookupBarcode, looksLikeProductBarcode } from '../lib/barcodeLookup';
 import { toBaseQty, validatePacks, type PackUnit } from '../lib/packs';
+import { convertPriceUnit, derivePrice, EMPTY_PRICE, type PriceDraft } from '../lib/price';
 import { takeScanResult, takeScanResultWithPrefix } from '../lib/scanHandoff';
 import { DEFAULT_UNITS, formatQty, KIND_LABEL, parseQty, type StockKind } from '../lib/stock';
 import { colors, font, radius } from '../theme';
@@ -14,6 +15,7 @@ import { useOffice } from '../hooks/useOffice';
 import { ExpiryInput, type ExpiryValue } from './ExpiryInput';
 import { NumberField } from './NumberField';
 import { OfficeChooser } from './OfficeSwitcher';
+import { PriceFields } from './PriceFields';
 import { Button, Card, ChoiceChips, Field, IconButton, Label, Screen, SectionTitle, Segmented } from './ui';
 import { UnitQtyField } from './UnitQtyField';
 
@@ -67,6 +69,7 @@ export function StockProductForm({
   const [packRows, setPackRows] = useState<PackRow[]>(() => (initial.packs ?? []).map(toPackRow));
   const [qtyText, setQtyText] = useState('1');
   const [entryUnit, setEntryUnit] = useState(initial.unit ?? '件');
+  const [priceDraft, setPriceDraft] = useState<PriceDraft>(EMPTY_PRICE);
   const [expiry, setExpiry] = useState<ExpiryValue>({ expiry: null, error: null });
   const [locations, setLocations] = useState<string[]>([]);
   // 新建时带着扫到的条码进来，并且还没有名称：自动查一次商品名
@@ -150,6 +153,19 @@ export function StockProductForm({
   const packError = validatePacks(baseUnit, packs);
   const usablePacks = packError ? [] : packs;
   const baseQty = qty === null ? null : toBaseQty(qty, entryUnit, baseUnit, usablePacks) ?? qty;
+  // 包装规格还在改、选的单位暂时无效时，按最小单位算（和保存时一致）
+  const effectiveEntryUnit = usablePacks.some((pack) => pack.unit === entryUnit) ? entryUnit : baseUnit;
+  const { price } = derivePrice(priceDraft, qty);
+
+  /** 1 个这种单位等于多少最小单位 */
+  function unitSize(entry: string): number {
+    return toBaseQty(1, entry, baseUnit, usablePacks) ?? 1;
+  }
+
+  function changeEntryUnit(next: string) {
+    setPriceDraft((draft) => convertPriceUnit(draft, unitSize(effectiveEntryUnit), unitSize(next)));
+    setEntryUnit(next);
+  }
 
   const errors = {
     name: name.trim() ? null : '请填写名称',
@@ -189,7 +205,8 @@ export function StockProductForm({
           ? {
               quantity: baseQty,
               expiryDate: expiry.expiry,
-              entry: { qty, unit: usablePacks.some((pack) => pack.unit === entryUnit) ? entryUnit : baseUnit },
+              entry: { qty, unit: effectiveEntryUnit },
+              price,
             }
           : null,
       );
@@ -352,9 +369,10 @@ export function StockProductForm({
               qtyText={qtyText}
               onQtyText={setQtyText}
               unit={entryUnit}
-              onUnit={setEntryUnit}
+              onUnit={changeEntryUnit}
               error={shown(errors.qty)}
             />
+            <PriceFields draft={priceDraft} onChange={setPriceDraft} qty={qty} unit={effectiveEntryUnit} />
             <ExpiryInput
               key={kind}
               initialMode={kind === 'food' ? 'date' : 'none'}

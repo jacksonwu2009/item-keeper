@@ -15,6 +15,8 @@ export type Device = {
   note: string | null;
   purchaseDate: string | null;
   warrantyUntil: string | null;
+  /** 发票号 */
+  invoiceNo: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -53,6 +55,8 @@ export type DeviceInput = {
   note: string | null;
   purchaseDate: string | null;
   warrantyUntil: string | null;
+  /** 发票号 */
+  invoiceNo: string | null;
   /** 每件设备配的配件 */
   accessories: Accessory[];
 };
@@ -67,7 +71,7 @@ export type AssignmentInput = {
 
 const DEVICE_COLUMNS = `
   d.id, d.office_id AS officeId, d.category, d.name, d.model, d.serial_no AS serialNo, d.quantity, d.note,
-  d.purchase_date AS purchaseDate, d.warranty_until AS warrantyUntil,
+  d.purchase_date AS purchaseDate, d.warranty_until AS warrantyUntil, d.invoice_no AS invoiceNo,
   d.created_at AS createdAt, d.updated_at AS updatedAt`;
 
 const ASSIGNMENT_COLUMNS = `
@@ -148,6 +152,7 @@ function deviceParams(input: DeviceInput) {
     emptyToNull(input.note),
     input.purchaseDate,
     input.warrantyUntil,
+    emptyToNull(input.invoiceNo),
   ];
 }
 
@@ -182,8 +187,9 @@ export async function createDevice(db: SQLiteDatabase, input: DeviceInput): Prom
     const now = nowIso();
     const result = await db.runAsync(
       `INSERT INTO device
-         (office_id, category, name, model, serial_no, quantity, note, purchase_date, warranty_until, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (office_id, category, name, model, serial_no, quantity, note, purchase_date, warranty_until, invoice_no,
+          created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [...deviceParams(input), now, now],
     );
     deviceId = result.lastInsertRowId;
@@ -196,7 +202,7 @@ export async function updateDevice(db: SQLiteDatabase, id: number, input: Device
   await db.withTransactionAsync(async () => {
     await db.runAsync(
       `UPDATE device SET office_id = ?, category = ?, name = ?, model = ?, serial_no = ?, quantity = ?, note = ?,
-              purchase_date = ?, warranty_until = ?, updated_at = ?
+              purchase_date = ?, warranty_until = ?, invoice_no = ?, updated_at = ?
         WHERE id = ?`,
       [...deviceParams(input), nowIso(), id],
     );
