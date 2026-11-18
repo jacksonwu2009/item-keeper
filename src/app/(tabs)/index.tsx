@@ -6,9 +6,10 @@ import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Button, Card, Chip, Screen, SectionTitle, type Tone } from '../../components/ui';
 import { listActiveAssignments, type ActiveAssignment } from '../../db/devices';
-import { DEFAULT_SETTINGS, getSettings } from '../../db/settings';
+import { DEFAULT_SETTINGS, getDataSince, getLastExportAt, getSettings } from '../../db/settings';
 import { useFocusData } from '../../hooks/useFocusData';
 import { useOffice } from '../../hooks/useOffice';
+import { backupMessage, backupStatus } from '../../lib/backupReminder';
 import { describeDaysLeft, diffDays, formatDate, formatShortDate, formatTime, todayStr } from '../../lib/dates';
 import {
   getPermissionState,
@@ -37,23 +38,33 @@ export default function RemindersScreen() {
   const officeFilter = office.filterId;
   const showOffice = office.multiple && officeFilter === null;
   const loader = useCallback(async () => {
-    const [settings, products, active, permission] = await Promise.all([
+    const [settings, products, active, permission, lastExportAt, dataSince] = await Promise.all([
       getSettings(db),
       loadPlanProducts(db, officeFilter),
       listActiveAssignments(db, officeFilter),
       getPermissionState().catch((): PermissionState => 'undetermined'),
+      getLastExportAt(db),
+      getDataSince(db),
     ]);
-    return { settings, products, active, permission };
+    return { settings, products, active, permission, lastExportAt, dataSince };
   }, [db, officeFilter]);
   const [data, reload, loaded] = useFocusData(loader, {
     settings: DEFAULT_SETTINGS,
     products: [] as PlanProduct[],
     active: [] as ActiveAssignment[],
     permission: 'granted' as PermissionState,
+    lastExportAt: null as string | null,
+    dataSince: null as string | null,
   });
   const { settings, products, active, permission } = data;
 
   const now = new Date();
+  const backup = backupStatus({
+    lastExportAt: data.lastExportAt,
+    dataSince: data.dataSince,
+    reminderDays: settings.backupReminderDays,
+    now,
+  });
   const today = todayStr(now);
   // 提醒页总是把该注意的都列出来，不受「关闭某类提醒」影响
   const status = statusForDay(products, { ...settings, expiryEnabled: true, lowStockEnabled: true }, today);
@@ -110,6 +121,18 @@ export default function RemindersScreen() {
             compact
             onPress={() => enableNotifications().catch(() => undefined)}
           />
+        </Card>
+      ) : null}
+
+      {loaded && backup?.due ? (
+        <Card style={dash.permission}>
+          <View style={dash.permissionRow}>
+            <Ionicons name="cloud-upload-outline" size={22} color={colors.warn} />
+            <Text style={dash.permissionText}>
+              {backupMessage(backup)}。数据只存在这台手机上，导出一份存到 iCloud 云盘或发给自己，手机丢了、换了也能找回来。
+            </Text>
+          </View>
+          <Button title="去导出" compact onPress={() => router.navigate('/settings')} />
         </Card>
       ) : null}
 

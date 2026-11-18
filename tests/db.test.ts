@@ -18,6 +18,7 @@ import {
   returnDevice,
 } from '../src/db/devices';
 import { splitLegacyDeviceModels } from '../src/db/schema';
+import { getDataSince, getLastExportAt, getSettings, setLastExportAt } from '../src/db/settings';
 import { createOffice, deleteOffice, listOffices } from '../src/db/offices';
 import {
   createProduct,
@@ -221,6 +222,24 @@ describe('数据层（真实 SQLite）', () => {
       ],
     );
     assert.equal(await getLastPurchasePrice(db, 999), null);
+  });
+
+  it('备份提醒：上次导出时间只在本机，导入别人的设置不会改它；最早录入时间', async () => {
+    const db = await openDb();
+    assert.equal(await getDataSince(db), null);
+    assert.equal(await getLastExportAt(db), null);
+    assert.equal((await getSettings(db)).backupReminderDays, 60);
+    await createProduct(db, product({}), null);
+    assert.match((await getDataSince(db)) ?? '', /^\d{4}-\d{2}-\d{2}T/);
+    await setLastExportAt(db, '2026-11-18T07:00:00.000Z');
+    const file = await collectBackup(db);
+    assert.equal(JSON.stringify(file).includes('lastExportAt'), false);
+    await replaceData(db, { ...file, settings: { ...file.settings, backupReminderDays: 30 } }, {
+      scope: ['settings'],
+      offices: [],
+    });
+    assert.equal((await getSettings(db)).backupReminderDays, 30);
+    assert.equal(await getLastExportAt(db), '2026-11-18T07:00:00.000Z');
   });
 
   it('只能删空的办公点', async () => {

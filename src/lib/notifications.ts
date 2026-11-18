@@ -4,8 +4,9 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { Platform } from 'react-native';
 
 import { listOffices } from '../db/offices';
-import { getSettings } from '../db/settings';
+import { getDataSince, getLastExportAt, getSettings } from '../db/settings';
 import { listAllBatches, listProducts } from '../db/stock';
+import { BACKUP_REMINDER_SLOTS, backupStatus, planBackupReminders } from './backupReminder';
 import { planReminders, type PlanProduct, type PlannedReminder } from './reminderPlan';
 
 const CHANNEL_ID = 'reminders';
@@ -90,8 +91,22 @@ export async function loadPlanProducts(db: SQLiteDatabase, officeId: number | nu
 }
 
 async function rescheduleNow(db: SQLiteDatabase): Promise<PlannedReminder[]> {
-  const [settings, products] = await Promise.all([getSettings(db), loadPlanProducts(db)]);
-  const plan = planReminders(products, settings, new Date());
+  const [settings, products, lastExportAt, dataSince] = await Promise.all([
+    getSettings(db),
+    loadPlanProducts(db),
+    getLastExportAt(db),
+    getDataSince(db),
+  ]);
+  const now = new Date();
+  // iOS 每个 App 最多挂 64 条本地通知：到期/库存提醒 56 条，备份提醒留 4 条
+  const backup = planBackupReminders(
+    backupStatus({ lastExportAt, dataSince, reminderDays: settings.backupReminderDays, now }),
+    settings,
+    now,
+  );
+  const plan = [...planReminders(products, settings, now, 60, 60 - BACKUP_REMINDER_SLOTS), ...backup].sort(
+    (left, right) => left.at.getTime() - right.at.getTime(),
+  );
   if ((await getPermissionState()) !== 'granted') return plan;
 
   await Notifications.cancelAllScheduledNotificationsAsync();

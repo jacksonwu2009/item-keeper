@@ -13,6 +13,7 @@ import * as Sharing from 'expo-sharing';
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { collectBackup, replaceData, restoreAll, type ImportChoice } from '../db/backup';
+import { setLastExportAt } from '../db/settings';
 import {
   ALL_SCOPES,
   backupFileName,
@@ -23,6 +24,7 @@ import {
   type BackupSummary,
   type ParseResult,
 } from './backup';
+import { countsAsBackup } from './backupReminder';
 import { rescheduleReminders } from './notifications';
 
 const UNDO_FILE_NAME = 'before-last-import.json';
@@ -43,6 +45,11 @@ export async function exportBackup(
     UTI: 'public.json',
     dialogTitle: '保存或发送备份文件',
   });
+  // 三类都导出了才算备份过，备份提醒从今天重新算（分享面板被取消也没法知道，按导出过算）
+  if (countsAsBackup(scope)) {
+    await setLastExportAt(db, new Date().toISOString());
+    rescheduleReminders(db).catch(() => undefined);
+  }
   return summarizeBackup(data);
 }
 

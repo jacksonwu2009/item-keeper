@@ -8,13 +8,13 @@ import { IntegerField } from '../../components/NumberField';
 import { OfficeManager } from '../../components/OfficeManager';
 import { Button, Card, Label, MultiChips, Screen, SectionTitle, Segmented, Sheet, SwitchRow } from '../../components/ui';
 import { listDevices } from '../../db/devices';
-import { DEFAULT_SETTINGS, getSettings, saveSettings, type AppSettings } from '../../db/settings';
+import { DEFAULT_SETTINGS, getLastExportAt, getSettings, saveSettings, type AppSettings } from '../../db/settings';
 import { listProducts } from '../../db/stock';
 import { listOpenStocktakeScopes } from '../../db/stocktake';
 import { useFocusData } from '../../hooks/useFocusData';
 import { useOffice } from '../../hooks/useOffice';
 import { ALL_SCOPES, SCOPE_LABEL, type BackupData, type BackupScope, type BackupSummary } from '../../lib/backup';
-import { formatDateTime } from '../../lib/dates';
+import { diffDays, formatDateTime, toDateStr, todayStr } from '../../lib/dates';
 import { exportBackup, importBackup, pickBackup, readUndoSnapshot, undoLastImport } from '../../lib/dataTransfer';
 import { stocktakesClearedByImport, type OpenStocktakeScope } from '../../lib/stocktake';
 import {
@@ -47,6 +47,13 @@ function describeReplaced(scope: readonly BackupScope[], counts: Counts): string
     .join('、');
 }
 
+/** 「上次备份：11月18日 15:20（3 天前）」；没导出过写明 */
+function describeLastExport(lastExportAt: string | null): string {
+  if (!lastExportAt) return '上次备份：还没导出过（食品、日用品、设备都勾上导出一次就算）。';
+  const days = diffDays(todayStr(), toDateStr(new Date(lastExportAt)));
+  return `上次备份：${formatDateTime(lastExportAt)}${days > 0 ? `（${days} 天前）` : ''}。`;
+}
+
 const EMPTY_COUNTS: Counts = { food: 0, daily: 0, devices: 0 };
 
 function addCounts(a: Counts, b: Counts): Counts {
@@ -67,13 +74,14 @@ export default function SettingsScreen() {
   const db = useSQLiteContext();
   const office = useOffice();
   const loader = useCallback(async () => {
-    const [settings, permission, products, devices, undo, openStocktakes] = await Promise.all([
+    const [settings, permission, products, devices, undo, openStocktakes, lastExportAt] = await Promise.all([
       getSettings(db),
       getPermissionState().catch((): PermissionState => 'undetermined'),
       listProducts(db),
       listDevices(db),
       readUndoSnapshot().catch(() => null),
       listOpenStocktakeScopes(db),
+      getLastExportAt(db),
     ]);
     // 每个办公点各有多少：导出、导入时按办公点显示
     const officeCounts: Record<number, Counts> = {};
@@ -92,6 +100,7 @@ export default function SettingsScreen() {
       officeCounts,
       undo: undo?.summary ?? null,
       openStocktakes,
+      lastExportAt,
     };
   }, [db]);
   const [data, reload] = useFocusData(loader, {
@@ -103,6 +112,7 @@ export default function SettingsScreen() {
     officeCounts: {} as Record<number, Counts>,
     undo: null as BackupSummary | null,
     openStocktakes: [] as OpenStocktakeScope[],
+    lastExportAt: null as string | null,
   });
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -148,6 +158,7 @@ export default function SettingsScreen() {
         text: `已生成备份（${where}${describeSummary(summary, summary.scope)}）。没存好的话可以再导一次。`,
         tone: 'ok',
       });
+      await reload();
     } catch (error) {
       setDataNotice({ text: error instanceof Error ? error.message : '导出失败，请重试', tone: 'error' });
     } finally {
@@ -278,6 +289,18 @@ export default function SettingsScreen() {
           minute={current.reminderMinute}
           onChange={(hour, minute) => update({ reminderHour: hour, reminderMinute: minute })}
         />
+        <View style={setStyles.group}>
+          <IntegerField
+            label="超过几天没导出备份就提醒"
+            value={current.backupReminderDays}
+            onChange={(value) => (value === null ? undefined : update({ backupReminderDays: value }))}
+            min={0}
+            max={365}
+            step={10}
+            suffix="天"
+          />
+          <Text style={setStyles.hint}>填 0 不提醒。导出时食品、日用品、设备三类都勾上才算备份过。</Text>
+        </View>
       </Card>
 
       <SectionTitle title="通知权限" />
@@ -337,6 +360,7 @@ export default function SettingsScreen() {
           数据只存在这台手机上。导出会生成一个文件（.json），用微信、TypeX、隔空投送等发给别的手机，对方在这里导入；换手机、备份也用它。
           {office.multiple ? '每个办公点由一台手机负责记，定期把自己办公点导出发给汇总的人，对方导入时只替换这个办公点。' : ''}
         </Text>
+        <Text style={setStyles.hint}>{describeLastExport(data.lastExportAt)}</Text>
         {office.multiple ? (
           <View style={setStyles.group}>
             <Label>导出哪些办公点</Label>
