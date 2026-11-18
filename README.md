@@ -35,16 +35,20 @@
    ```bash
    cd ~/code/item-keeper
    npm install
-   npx expo start            # 手机和电脑在同一 Wi-Fi
-   npx expo start --tunnel   # 不在同一网络时用这个
+   npx expo start                  # 手机和电脑在同一 Wi-Fi
+   npx expo start --tunnel ngrok   # 不在同一网络时用这个（要先 npm i -g @expo/ngrok）
    ```
 3. iPhone 用相机扫终端里的二维码，安卓用 Expo Go 扫，就能打开。
 
 扫码、本地通知、SQLite 在 Expo Go 里都能用。
 
-## 打成正式安装包
+## 打成安装包
 
-用 EAS 云端构建，本机不需要 Xcode / Android Studio（需要一个免费的 Expo 账号）：
+**安卓（本机打，不需要账号）**：装好 JDK 和 Android SDK 后运行 `scripts/build-android.sh`（脚本开头写了要装哪些），产物在 `dist/item-keeper-<版本>.apk`。用的是调试签名，只适合自己装，不能上架。
+
+**iOS** 要么用 Expo Go 试（见上一节），要么有苹果开发者账号后用 EAS 云端构建。
+
+用 EAS 云端构建（安卓 / iOS 都行，本机不需要 Xcode / Android Studio，需要一个免费的 Expo 账号）：
 
 ```bash
 npx eas-cli@latest login
