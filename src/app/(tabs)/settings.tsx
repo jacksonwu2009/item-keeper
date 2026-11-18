@@ -174,13 +174,17 @@ export default function SettingsScreen() {
     if (!pending) return;
     setBusy('import');
     try {
-      await importBackup(db, pending.data, { scope: importScope, offices: importOffices });
+      const { undoSaved } = await importBackup(db, pending.data, { scope: importScope, offices: importOffices });
       setPending(null);
       setSettings(null);
-      setDataNotice({
-        text: `已导入，没选的办公点和分类没动。导入前的数据留了一份，可以撤销。`,
-        tone: 'ok',
-      });
+      setDataNotice(
+        undoSaved
+          ? { text: '已导入，没选的办公点和分类没动。导入前的数据留了一份，可以撤销。', tone: 'ok' }
+          : {
+              text: '已导入，没选的办公点和分类没动。但导入前的数据没能留底（手机存储可能满了），这次撤销不了。',
+              tone: 'error',
+            },
+      );
       await Promise.all([reload(), office.reload()]);
     } catch (error) {
       setPending(null);
@@ -243,7 +247,7 @@ export default function SettingsScreen() {
           <IntegerField
             label="到期前几天开始提醒"
             value={current.expiryLeadDays}
-            onChange={(value) => update({ expiryLeadDays: value })}
+            onChange={(value) => (value === null ? undefined : update({ expiryLeadDays: value }))}
             min={0}
             max={90}
             suffix="天"
@@ -305,7 +309,7 @@ export default function SettingsScreen() {
           <IntegerField
             label="新物品默认库存下限"
             value={current.defaultLowStockThreshold}
-            onChange={(value) => update({ defaultLowStockThreshold: value })}
+            onChange={(value) => (value === null ? undefined : update({ defaultLowStockThreshold: value }))}
             min={0}
             max={99}
           />

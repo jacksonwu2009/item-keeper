@@ -63,15 +63,34 @@ export async function pickBackup(): Promise<PickedBackup | null> {
   return { fileName: asset.name, result: parseBackup(text) };
 }
 
-/** 用备份替换所选办公点、所选分类的数据；替换前先把手机上的全部数据留一份，用于撤销。 */
-export async function importBackup(db: SQLiteDatabase, data: BackupData, choice: ImportChoice): Promise<void> {
+/**
+ * 用备份替换所选办公点、所选分类的数据；替换前先把手机上的全部数据留一份，用于撤销。
+ * 返回留底有没有存上：数据已经换掉、但留底写盘失败（比如存储满了）时为 false，这次就撤销不了。
+ */
+export async function importBackup(
+  db: SQLiteDatabase,
+  data: BackupData,
+  choice: ImportChoice,
+): Promise<{ undoSaved: boolean }> {
   // 先在内存里留底，导入成功后才写盘：导入被拒（如条码冲突）时不会留下一份没意义的「撤销」
   const current = await collectBackup(db, ALL_SCOPES);
   await replaceData(db, data, choice);
-  const undoFile = new File(Paths.document, UNDO_FILE_NAME);
-  undoFile.create({ overwrite: true });
-  await undoFile.write(JSON.stringify(current));
+  let undoSaved = true;
+  try {
+    const undoFile = new File(Paths.document, UNDO_FILE_NAME);
+    undoFile.create({ overwrite: true });
+    await undoFile.write(JSON.stringify(current));
+  } catch {
+    undoSaved = false;
+    // 旧的留底是更早那次导入前的数据，留着会让「撤销」换回错的东西，删掉
+    try {
+      new File(Paths.document, UNDO_FILE_NAME).delete();
+    } catch {
+      // 本来就没有
+    }
+  }
   await rescheduleReminders(db).catch(() => undefined);
+  return { undoSaved };
 }
 
 /** 上次导入前留下的数据（没有就返回 null）。 */

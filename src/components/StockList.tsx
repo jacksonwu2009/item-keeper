@@ -49,8 +49,8 @@ export function StockList({ kind }: { kind: StockKind }) {
   const deletion = usePendingDelete<number>(
     (id) => deleteProduct(db, id),
     () => {
-      reload().catch(() => undefined);
       rescheduleReminders(db).catch(() => undefined);
+      return reload();
     },
   );
   const today = todayStr();

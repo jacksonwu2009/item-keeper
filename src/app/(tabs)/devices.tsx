@@ -35,7 +35,7 @@ export default function DevicesScreen() {
     ]);
     return { devices, active };
   }, [db, officeFilter]);
-  const [{ devices, active }, reload, loaded] = useFocusData(loader, {
+  const [{ devices: allDevices, active: allActive }, reload, loaded] = useFocusData(loader, {
     devices: [] as DeviceSummary[],
     active: [] as ActiveAssignment[],
   });
@@ -47,14 +47,15 @@ export default function DevicesScreen() {
 
   const deletion = usePendingDelete<number>(
     (id) => deleteDevice(db, id),
-    () => {
-      reload().catch(() => undefined);
-    },
+    () => reload(),
   );
+  // 等撤销的那台设备在两种视图、顶部统计里都先拿掉
+  const pendingId = deletion.pending?.key;
+  const devices = useMemo(() => allDevices.filter((device) => device.id !== pendingId), [allDevices, pendingId]);
+  const active = useMemo(() => allActive.filter((item) => item.deviceId !== pendingId), [allActive, pendingId]);
 
   const deviceSections = useMemo(() => {
     const matched = devices.filter((device) => {
-      if (device.id === deletion.pending?.key) return false;
       if (filter === 'out' && device.outQty <= 0) return false;
       if (filter === 'in' && device.quantity - device.outQty <= 0) return false;
       if (!keyword) return true;
@@ -71,7 +72,7 @@ export default function DevicesScreen() {
       groups.set(device.category, list);
     }
     return Array.from(groups, ([title, data]) => ({ title, data }));
-  }, [devices, filter, keyword, deletion.pending]);
+  }, [devices, filter, keyword]);
 
   const personSections = useMemo(() => {
     const groups = new Map<string, ActiveAssignment[]>();
@@ -140,47 +141,54 @@ export default function DevicesScreen() {
     />
   );
 
+  const undoBar = deletion.pending ? (
+    <UndoBar text={`已删除「${deletion.pending.label}」和它的领用记录`} onUndo={deletion.undo} />
+  ) : null;
+
   if (mode === 'person') {
     return (
-      <SectionList
-        style={deviceStyles.list}
-        contentContainerStyle={deviceStyles.content}
-        sections={personSections}
-        keyExtractor={(item) => String(item.id)}
-        ListHeaderComponent={header}
-        ListEmptyComponent={empty}
-        keyboardShouldPersistTaps="handled"
-        stickySectionHeadersEnabled={false}
-        renderSectionHeader={({ section }) => (
-          <Text style={deviceStyles.sectionTitle}>
-            {section.title} · {section.data.reduce((sum, item) => sum + item.quantity, 0)} 件
-          </Text>
-        )}
-        renderItem={({ item }) => (
-          <Pressable
-            onPress={() => router.push({ pathname: '/device/[id]', params: { id: String(item.deviceId) } })}
-            style={({ pressed }) => [deviceStyles.row, pressed && deviceStyles.rowPressed]}
-          >
-            <View style={deviceStyles.rowMain}>
-              <Text style={deviceStyles.name} numberOfLines={1}>
-                {item.deviceName}
-                {item.quantity > 1 ? ` ×${item.quantity}` : ''}
-              </Text>
-              <Text style={deviceStyles.meta} numberOfLines={1}>
-                {[showOffice && office.officeName(item.officeId), item.category, item.deviceModel]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </Text>
-            </View>
-            <View style={deviceStyles.dateBox}>
-              <Text style={deviceStyles.dateText}>{formatDate(item.issuedOn)} 领取</Text>
-              <Text style={deviceStyles.meta}>已用 {Math.max(0, diffDays(today, item.issuedOn))} 天</Text>
-            </View>
-          </Pressable>
-        )}
-        SectionSeparatorComponent={() => <View style={deviceStyles.sectionGap} />}
-        ItemSeparatorComponent={() => <View style={deviceStyles.separator} />}
-      />
+      <View style={deviceStyles.screen}>
+        <SectionList
+          style={deviceStyles.list}
+          contentContainerStyle={deviceStyles.content}
+          sections={personSections}
+          keyExtractor={(item) => String(item.id)}
+          ListHeaderComponent={header}
+          ListEmptyComponent={empty}
+          keyboardShouldPersistTaps="handled"
+          stickySectionHeadersEnabled={false}
+          renderSectionHeader={({ section }) => (
+            <Text style={deviceStyles.sectionTitle}>
+              {section.title} · {section.data.reduce((sum, item) => sum + item.quantity, 0)} 件
+            </Text>
+          )}
+          renderItem={({ item }) => (
+            <Pressable
+              onPress={() => router.push({ pathname: '/device/[id]', params: { id: String(item.deviceId) } })}
+              style={({ pressed }) => [deviceStyles.row, pressed && deviceStyles.rowPressed]}
+            >
+              <View style={deviceStyles.rowMain}>
+                <Text style={deviceStyles.name} numberOfLines={1}>
+                  {item.deviceName}
+                  {item.quantity > 1 ? ` ×${item.quantity}` : ''}
+                </Text>
+                <Text style={deviceStyles.meta} numberOfLines={1}>
+                  {[showOffice && office.officeName(item.officeId), item.category, item.deviceModel]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </Text>
+              </View>
+              <View style={deviceStyles.dateBox}>
+                <Text style={deviceStyles.dateText}>{formatDate(item.issuedOn)} 领取</Text>
+                <Text style={deviceStyles.meta}>已用 {Math.max(0, diffDays(today, item.issuedOn))} 天</Text>
+              </View>
+            </Pressable>
+          )}
+          SectionSeparatorComponent={() => <View style={deviceStyles.sectionGap} />}
+          ItemSeparatorComponent={() => <View style={deviceStyles.separator} />}
+        />
+        {undoBar}
+      </View>
     );
   }
 
@@ -243,9 +251,7 @@ export default function DevicesScreen() {
         SectionSeparatorComponent={() => <View style={deviceStyles.sectionGap} />}
         ItemSeparatorComponent={() => <View style={deviceStyles.separator} />}
       />
-      {deletion.pending ? (
-        <UndoBar text={`已删除「${deletion.pending.label}」和它的领用记录`} onUndo={deletion.undo} />
-      ) : null}
+      {undoBar}
     </View>
   );
 }

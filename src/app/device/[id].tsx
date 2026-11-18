@@ -289,7 +289,7 @@ function AssignmentSheet({
   onDelete?: () => Promise<void>;
 }) {
   const [person, setPerson] = useState(initial?.person ?? '');
-  const [quantity, setQuantity] = useState(initial?.quantity ?? 1);
+  const [quantity, setQuantity] = useState<number | null>(initial?.quantity ?? 1);
   const [issuedOn, setIssuedOn] = useState<string | null>(initial?.issuedOn ?? todayStr());
   const [returnedOn, setReturnedOn] = useState<string | null>(initial?.returnedOn ?? null);
   const [note, setNote] = useState(initial?.note ?? '');
@@ -299,6 +299,7 @@ function AssignmentSheet({
   async function submit() {
     setError(null);
     if (!person.trim()) return setError('请填写使用人');
+    if (quantity === null) return setError(`请填数量（1 到 ${Math.max(1, maxQuantity)}）`);
     if (!issuedOn) return setError('请选择领取日期');
     if (returnedOn && returnedOn < issuedOn) return setError('退还日期不能早于领取日期');
     setBusy(true);
@@ -322,7 +323,7 @@ function AssignmentSheet({
       {people.length ? (
         <ChoiceChips options={people.map((value) => ({ value, label: value }))} value={person} onChange={setPerson} />
       ) : null}
-      {maxQuantity > 1 || quantity > 1 ? (
+      {maxQuantity > 1 || (initial?.quantity ?? 1) > 1 ? (
         <IntegerField
           label="数量"
           value={quantity}
@@ -379,7 +380,7 @@ function ReturnSheet({
   onSubmit: (returnedOn: string, quantity: number) => Promise<void>;
 }) {
   const [returnedOn, setReturnedOn] = useState<string | null>(todayStr());
-  const [quantity, setQuantity] = useState(assignment.quantity);
+  const [quantity, setQuantity] = useState<number | null>(assignment.quantity);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -418,6 +419,7 @@ function ReturnSheet({
         onPress={async () => {
           setError(null);
           if (!returnedOn) return setError('请选择退还日期');
+          if (quantity === null) return setError(`请填退还数量（1 到 ${assignment.quantity}）`);
           setBusy(true);
           try {
             await onSubmit(returnedOn, quantity);

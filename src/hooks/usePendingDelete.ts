@@ -1,6 +1,8 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { notifyDataChanged } from '../lib/dataEvents';
+
 const UNDO_WINDOW_MS = 5000;
 
 type Pending<K> = { key: K; label: string };
@@ -11,7 +13,7 @@ type Pending<K> = { key: K; label: string };
  */
 export function usePendingDelete<K extends string | number>(
   commit: (key: K) => Promise<void>,
-  onCommitted?: () => void,
+  onCommitted?: () => void | Promise<void>,
 ) {
   const [pending, setPending] = useState<Pending<K> | null>(null);
   const pendingRef = useRef<Pending<K> | null>(null);
@@ -30,11 +32,14 @@ export function usePendingDelete<K extends string | number>(
     const item = pendingRef.current;
     if (!item) return;
     pendingRef.current = null;
-    setPending(null);
     try {
       await commitRef.current(item.key);
     } finally {
-      committedRef.current?.();
+      // 等列表按新数据重读完再取消隐藏，免得删掉的那行闪回来一下
+      await Promise.resolve(committedRef.current?.()).catch(() => undefined);
+      setPending((current) => (current?.key === item.key ? null : current));
+      // 离开页面时才提交的删除，回到的那一页早就读过数了，通知它重读
+      notifyDataChanged();
     }
   }, []);
 
@@ -68,5 +73,6 @@ export function usePendingDelete<K extends string | number>(
     ),
   );
 
-  return { pending, remove, undo };
+  /** 有等撤销的删除就马上执行掉；入库、出库这类要按最新数据算的操作之前调用。 */
+  return { pending, remove, undo, flush };
 }

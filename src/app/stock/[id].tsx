@@ -81,12 +81,20 @@ export default function StockDetailScreen() {
   const batchDeletion = usePendingDelete<number>(
     (batchId) => deleteBatch(db, batchId),
     () => {
-      reload().catch(() => undefined);
       rescheduleReminders(db).catch(() => undefined);
+      return reload();
     },
   );
   // 等撤销的那一批先从界面上拿掉，库存数字也跟着变
   const batches = data.batches.filter((batch) => batch.id !== batchDeletion.pending?.key);
+
+  /** 入库、出库、改批次都按数据库里的批次算：先把等撤销的删除真正执行掉，再打开面板。 */
+  function openSheet(next: Exclude<SheetState, null>) {
+    batchDeletion
+      .flush()
+      .catch(() => undefined)
+      .finally(() => setSheet(next));
+  }
 
   async function afterChange(note?: string) {
     setSheet(null);
@@ -174,14 +182,14 @@ export default function StockDetailScreen() {
             <Button
               title="入库"
               icon="add-circle-outline"
-              onPress={() => setSheet({ type: 'in' })}
+              onPress={() => openSheet({ type: 'in' })}
               style={detailStyles.flex}
             />
             <Button
               title="出库 / 用掉"
               icon="remove-circle-outline"
               variant="secondary"
-              onPress={() => setSheet({ type: 'out' })}
+              onPress={() => openSheet({ type: 'out' })}
               disabled={totalQty <= 0}
               style={detailStyles.flex}
             />
@@ -203,8 +211,8 @@ export default function StockDetailScreen() {
                   key={batch.id}
                   rounded={false}
                   accessibilityLabel={`${batch.expiryDate ? `${formatDate(batch.expiryDate)} 到期` : '没记过期日期'}，${formatQty(batch.quantity)} ${product.unit}`}
-                  onPress={() => setSheet({ type: 'batch', batch })}
-                  onLongPress={() => setSheet({ type: 'batch', batch })}
+                  onPress={() => openSheet({ type: 'batch', batch })}
+                  onLongPress={() => openSheet({ type: 'batch', batch })}
                   onDelete={() =>
                     batchDeletion.remove(
                       batch.id,

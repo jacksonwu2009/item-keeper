@@ -17,7 +17,7 @@ const SCAN_TARGET = 'device-form-serial';
 const ACCESSORY_SUGGESTIONS = ['充电器', '电源线', '鼠标', '键盘', '扩展坞', '数据线', '电脑包', '耳机'];
 
 type WarrantyMode = 'none' | 'period' | 'date';
-type AccessoryRow = { key: number; name: string; quantity: number };
+type AccessoryRow = { key: number; name: string; quantity: number | null };
 
 let accessoryKey = 0;
 
@@ -39,11 +39,11 @@ export function DeviceForm({
   const [name, setName] = useState(initial?.name ?? '');
   const [model, setModel] = useState(initial?.model ?? '');
   const [serialNo, setSerialNo] = useState(initial?.serialNo ?? '');
-  const [quantity, setQuantity] = useState(initial?.quantity ?? 1);
+  const [quantity, setQuantity] = useState<number | null>(initial?.quantity ?? 1);
   const [note, setNote] = useState(initial?.note ?? '');
   const [purchaseDate, setPurchaseDate] = useState<string | null>(initial?.purchaseDate ?? null);
   const [warrantyMode, setWarrantyMode] = useState<WarrantyMode>(initial?.warrantyUntil ? 'date' : 'none');
-  const [warrantyAmount, setWarrantyAmount] = useState(1);
+  const [warrantyAmount, setWarrantyAmount] = useState<number | null>(1);
   const [warrantyUnit, setWarrantyUnit] = useState<WarrantyUnit>('year');
   const [warrantyDate, setWarrantyDate] = useState<string | null>(initial?.warrantyUntil ?? null);
   const [accessories, setAccessories] = useState<AccessoryRow[]>(() =>
@@ -65,15 +65,19 @@ export function DeviceForm({
       ? null
       : warrantyMode === 'date'
         ? warrantyDate
-        : purchaseDate
+        : purchaseDate && warrantyAmount !== null
           ? warrantyEnd(purchaseDate, warrantyAmount, warrantyUnit)
           : null;
-  const accessoryList = accessories.map((row) => ({ name: row.name.trim(), quantity: row.quantity }));
+  // 数量框清空或超范围时是 null，按 0 交给校验，报「数量要是 1 到 9999」
+  const accessoryList = accessories.map((row) => ({ name: row.name.trim(), quantity: row.quantity ?? 0 }));
 
   const errors = {
     name: name.trim() ? null : '请填写名称',
+    quantity: quantity === null ? `请填数量（${Math.max(1, minQuantity)} 到 9999）` : null,
     warranty:
-      warrantyMode === 'period' && !purchaseDate
+      warrantyMode === 'period' && warrantyAmount === null
+        ? '请填保修期（1 到 120）'
+        : warrantyMode === 'period' && !purchaseDate
         ? '按保修期算需要先填购买日期'
         : warrantyMode === 'date' && !warrantyDate
           ? '请选择保修到期日'
@@ -106,7 +110,7 @@ export function DeviceForm({
         name,
         model,
         serialNo,
-        quantity,
+        quantity: quantity ?? 1,
         note,
         purchaseDate,
         warrantyUntil,
@@ -158,6 +162,7 @@ export function DeviceForm({
           max={9999}
           suffix="件"
           hint={minQuantity > 1 ? `目前借出 ${minQuantity} 件，数量不能比这个少` : undefined}
+          error={shown(errors.quantity)}
         />
       </Card>
 

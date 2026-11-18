@@ -128,26 +128,28 @@ function StepButton({
 }
 
 /**
- * 整数版，值是 number：输入合法时马上回调；清空或超出范围时先不回调，离开输入框后恢复成当前值。
+ * 整数版，值是 number | null：输入合法（在范围内）时回调这个数；清空或超出范围时回调 null，
+ * 由外层显示错误、不让保存，避免悄悄用上一个值。外层把值改成别的数时，输入框跟着变。
  */
 export function IntegerField({
   value,
   onChange,
   min = 0,
   max = 999999,
+  error,
   ...rest
-}: Omit<NumberFieldProps, 'value' | 'onChangeText' | 'decimals' | 'min' | 'max' | 'error' | 'onBlur'> & {
-  value: number;
-  onChange: (value: number) => void;
+}: Omit<NumberFieldProps, 'value' | 'onChangeText' | 'decimals' | 'min' | 'max'> & {
+  value: number | null;
+  onChange: (value: number | null) => void;
   min?: number;
   max?: number;
 }) {
-  const [text, setText] = useState(String(value));
+  const [text, setText] = useState(value === null ? '' : String(value));
   const [lastValue, setLastValue] = useState(value);
-  // 外部改了值（比如加减按钮、重置）时同步输入框
+  // 外部改了值（比如重置）时同步输入框；外部变成 null 是我们自己报的，不动输入框
   if (value !== lastValue) {
     setLastValue(value);
-    if (parseNumberText(text) !== value) setText(String(value));
+    if (value !== null && parseNumberText(text) !== value) setText(String(value));
   }
   const parsed = parseNumberText(text);
   const outOfRange = parsed !== null && (parsed < min || parsed > max);
@@ -155,18 +157,15 @@ export function IntegerField({
   return (
     <NumberField
       {...rest}
-      onBlur={() => {
-        if (parsed === null || outOfRange) setText(String(value));
-      }}
       value={text}
       decimals={0}
       min={min}
       max={max}
-      error={outOfRange ? `请填 ${min} 到 ${max} 之间的数` : null}
+      error={outOfRange ? `请填 ${min} 到 ${max} 之间的数` : error}
       onChangeText={(next) => {
         setText(next);
         const number = parseNumberText(next);
-        if (number !== null && number >= min && number <= max) onChange(number);
+        onChange(number !== null && number >= min && number <= max ? number : null);
       }}
     />
   );
