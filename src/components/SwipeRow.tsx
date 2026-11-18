@@ -2,13 +2,41 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useRef, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Pressable as GesturePressable } from 'react-native-gesture-handler';
 import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
+import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, font, radius } from '../theme';
 
+/** 同一时间只让一行露出「删除」：新的一行滑开时，把上一行收回去。 */
+let openRow: SwipeableMethods | null = null;
+
+/**
+ * 删除按钮一直垫在这一行下面，行滑开才露出来。
+ * 没滑开时把它隐藏，免得红色从圆角、细边框的缝里透出来。
+ */
+function DeleteAction({ progress, onPress }: { progress: SharedValue<number>; onPress: () => void }) {
+  const visible = useAnimatedStyle(() => ({ opacity: progress.value > 0.02 ? 1 : 0 }));
+  return (
+    <Animated.View style={[swipeStyles.deleteWrap, visible]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="删除"
+        onPress={onPress}
+        style={({ pressed }) => [swipeStyles.deleteAction, pressed && { opacity: 0.8 }]}
+      >
+        <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
+        <Text style={swipeStyles.deleteText}>删除</Text>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
 /**
  * 列表里的一行：点按打开，长按编辑，向左滑出现「删除」，点删除就删。
+ * 点按和长按用手势库自己的 Pressable：手指一开始横着滑，它就取消这次点按、长按，
+ * 不会滑到一半弹出编辑页，也不会一直保持按下的灰色。
  * 读屏用户可以从「操作」菜单里选编辑和删除。
  */
 export function SwipeRow({
@@ -35,6 +63,7 @@ export function SwipeRow({
 
   function remove() {
     swipeable.current?.close();
+    if (openRow === swipeable.current) openRow = null;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => undefined);
     onDelete();
   }
@@ -54,19 +83,16 @@ export function SwipeRow({
       // 只响应向左滑（删除）；向右滑交给外层，用来切换标签
       dragOffsetFromLeft={10000}
       containerStyle={rounded ? swipeStyles.roundedContainer : undefined}
-      renderRightActions={() => (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="删除"
-          onPress={remove}
-          style={({ pressed }) => [swipeStyles.deleteAction, pressed && { opacity: 0.8 }]}
-        >
-          <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
-          <Text style={swipeStyles.deleteText}>删除</Text>
-        </Pressable>
-      )}
+      onSwipeableWillOpen={() => {
+        if (openRow && openRow !== swipeable.current) openRow.close();
+        openRow = swipeable.current;
+      }}
+      onSwipeableClose={() => {
+        if (openRow === swipeable.current) openRow = null;
+      }}
+      renderRightActions={(progress) => <DeleteAction progress={progress} onPress={remove} />}
     >
-      <Pressable
+      <GesturePressable
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
         accessibilityHint="长按编辑，向左滑删除"
@@ -80,11 +106,11 @@ export function SwipeRow({
         }}
         onPress={onPress}
         onLongPress={onLongPress ? longPress : undefined}
-        delayLongPress={350}
+        delayLongPress={400}
         style={({ pressed }) => [style, pressed && pressedStyle]}
       >
         {children}
-      </Pressable>
+      </GesturePressable>
     </ReanimatedSwipeable>
   );
 }
@@ -109,8 +135,9 @@ export function UndoBar({ text, onUndo }: { text: string; onUndo: () => void }) 
 
 const swipeStyles = StyleSheet.create({
   roundedContainer: { borderRadius: radius.md, overflow: 'hidden' },
+  deleteWrap: { width: 84 },
   deleteAction: {
-    width: 84,
+    flex: 1,
     backgroundColor: colors.danger,
     alignItems: 'center',
     justifyContent: 'center',
