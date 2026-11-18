@@ -10,8 +10,10 @@ import { toBaseQty, validatePacks, type PackUnit } from '../lib/packs';
 import { takeScanResult, takeScanResultWithPrefix } from '../lib/scanHandoff';
 import { DEFAULT_UNITS, formatQty, KIND_LABEL, parseQty, type StockKind } from '../lib/stock';
 import { colors, font, radius } from '../theme';
+import { useOffice } from '../hooks/useOffice';
 import { ExpiryInput, type ExpiryValue } from './ExpiryInput';
 import { NumberField } from './NumberField';
+import { OfficeChooser } from './OfficeSwitcher';
 import { Button, Card, ChoiceChips, Field, IconButton, Label, Screen, SectionTitle, Segmented } from './ui';
 import { UnitQtyField } from './UnitQtyField';
 
@@ -42,6 +44,8 @@ export function StockProductForm({
   onSubmit: (input: StockProductInput, firstBatch: BatchInput | null) => Promise<void>;
 }) {
   const db = useSQLiteContext();
+  const office = useOffice();
+  const [officeId, setOfficeId] = useState(initial.officeId ?? office.defaultId);
   const [kind, setKind] = useState<StockKind>(initial.kind);
   const [barcode, setBarcode] = useState(initial.barcode ?? '');
   const [name, setName] = useState(initial.name ?? '');
@@ -168,6 +172,7 @@ export function StockProductForm({
     try {
       await onSubmit(
         {
+          officeId,
           kind,
           barcode: barcode.trim() || null,
           name,
@@ -211,6 +216,7 @@ export function StockProductForm({
         value={kind}
         onChange={setKind}
       />
+      <OfficeChooser value={officeId} onChange={setOfficeId} />
 
       <Card>
         <Field

@@ -5,6 +5,7 @@ import { Alert, Linking, StyleSheet, Text, View } from 'react-native';
 
 import { TimeField } from '../../components/DateField';
 import { IntegerField } from '../../components/NumberField';
+import { OfficeManager } from '../../components/OfficeManager';
 import { Button, Card, Label, MultiChips, Screen, SectionTitle, Segmented, Sheet, SwitchRow } from '../../components/ui';
 import { listDevices } from '../../db/devices';
 import { DEFAULT_SETTINGS, getSettings, saveSettings, type AppSettings } from '../../db/settings';
@@ -189,6 +190,9 @@ export default function SettingsScreen() {
 
   return (
     <Screen>
+      <SectionTitle title="办公点" />
+      <OfficeManager />
+
       <SectionTitle title="提醒" />
       <Card>
         <SwitchRow

@@ -25,6 +25,7 @@ import {
   type StockProduct,
 } from '../../db/stock';
 import { useFocusData } from '../../hooks/useFocusData';
+import { useOffice } from '../../hooks/useOffice';
 import { formatDate, formatDateTime, todayStr } from '../../lib/dates';
 import { rescheduleReminders } from '../../lib/notifications';
 import { describePacks, formatBreakdown, toBaseQty, type PackUnit } from '../../lib/packs';
@@ -36,6 +37,7 @@ type SheetState = { type: 'in' } | { type: 'out' } | { type: 'batch'; batch: Sto
 
 export default function StockDetailScreen() {
   const db = useSQLiteContext();
+  const office = useOffice();
   const params = useLocalSearchParams<{ id: string; scanned?: string; unit?: string }>();
   /** 扫的是整箱等包装上的条码时，入库默认按这个单位 */
   const scannedUnit = typeof params.unit === 'string' ? params.unit : null;
@@ -216,6 +218,7 @@ export default function StockDetailScreen() {
 
       <SectionTitle title="信息" />
       <Card>
+        {office.multiple ? <InfoRow label="办公点" value={office.officeName(product.officeId)} /> : null}
         <InfoRow label="条码" value={product.barcode ?? '—'} />
         <InfoRow label="包装规格" value={packs.length ? describePacks(product.unit, packs) : '—'} />
         {packs

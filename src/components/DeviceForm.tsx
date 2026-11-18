@@ -3,12 +3,14 @@ import { useCallback, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { DEVICE_CATEGORIES, type DeviceInput } from '../db/devices';
+import { useOffice } from '../hooks/useOffice';
 import { formatDate } from '../lib/dates';
 import { takeScanResult } from '../lib/scanHandoff';
 import { validateAccessories, warrantyEnd, type WarrantyUnit } from '../lib/warranty';
 import { colors, font, radius } from '../theme';
 import { DateField } from './DateField';
 import { IntegerField } from './NumberField';
+import { OfficeChooser } from './OfficeSwitcher';
 import { Button, Card, ChoiceChips, Field, IconButton, Label, Screen, SectionTitle, Segmented } from './ui';
 
 const SCAN_TARGET = 'device-form-serial';
@@ -31,6 +33,8 @@ export function DeviceForm({
   submitLabel: string;
   onSubmit: (input: DeviceInput) => Promise<void>;
 }) {
+  const office = useOffice();
+  const [officeId, setOfficeId] = useState(initial?.officeId ?? office.defaultId);
   const [category, setCategory] = useState(initial?.category ?? '笔记本');
   const [name, setName] = useState(initial?.name ?? '');
   const [model, setModel] = useState(initial?.model ?? '');
@@ -97,6 +101,7 @@ export function DeviceForm({
     setBusy(true);
     try {
       await onSubmit({
+        officeId,
         category,
         name,
         model,
@@ -116,6 +121,7 @@ export function DeviceForm({
 
   return (
     <Screen>
+      <OfficeChooser value={officeId} onChange={setOfficeId} />
       <Card>
         <View style={formStyles.group}>
           <Label>类别</Label>

@@ -6,6 +6,7 @@ export const DEVICE_CATEGORIES = ['笔记本', '台式机', '显示器', '键盘
 
 export type Device = {
   id: number;
+  officeId: number;
   category: string;
   name: string;
   model: string | null;
@@ -36,12 +37,14 @@ export type DeviceAssignment = {
 };
 
 export type ActiveAssignment = DeviceAssignment & {
+  officeId: number;
   deviceName: string;
   deviceModel: string | null;
   category: string;
 };
 
 export type DeviceInput = {
+  officeId: number;
   category: string;
   name: string;
   model: string | null;
@@ -63,7 +66,7 @@ export type AssignmentInput = {
 };
 
 const DEVICE_COLUMNS = `
-  d.id, d.category, d.name, d.model, d.serial_no AS serialNo, d.quantity, d.note,
+  d.id, d.office_id AS officeId, d.category, d.name, d.model, d.serial_no AS serialNo, d.quantity, d.note,
   d.purchase_date AS purchaseDate, d.warranty_until AS warrantyUntil,
   d.created_at AS createdAt, d.updated_at AS updatedAt`;
 
@@ -80,15 +83,18 @@ function emptyToNull(value: string | null | undefined): string | null {
   return trimmed ? trimmed : null;
 }
 
-export async function listDevices(db: SQLiteDatabase): Promise<DeviceSummary[]> {
+/** officeId 为 null 时列出所有办公点的。 */
+export async function listDevices(db: SQLiteDatabase, officeId: number | null = null): Promise<DeviceSummary[]> {
   return db.getAllAsync<DeviceSummary>(
     `SELECT ${DEVICE_COLUMNS},
             COALESCE(SUM(CASE WHEN a.returned_on IS NULL THEN a.quantity END), 0) AS outQty,
             GROUP_CONCAT(CASE WHEN a.returned_on IS NULL THEN a.person END, '、') AS holders
        FROM device d
        LEFT JOIN device_assignment a ON a.device_id = d.id
+      WHERE ? IS NULL OR d.office_id = ?
       GROUP BY d.id
       ORDER BY d.category, d.name COLLATE NOCASE`,
+    [officeId, officeId],
   );
 }
 
@@ -111,12 +117,16 @@ export async function getAssignment(db: SQLiteDatabase, id: number): Promise<Dev
   ]);
 }
 
-export async function listActiveAssignments(db: SQLiteDatabase): Promise<ActiveAssignment[]> {
+export async function listActiveAssignments(
+  db: SQLiteDatabase,
+  officeId: number | null = null,
+): Promise<ActiveAssignment[]> {
   return db.getAllAsync<ActiveAssignment>(
-    `SELECT ${ASSIGNMENT_COLUMNS}, d.name AS deviceName, d.model AS deviceModel, d.category
+    `SELECT ${ASSIGNMENT_COLUMNS}, d.name AS deviceName, d.model AS deviceModel, d.category, d.office_id AS officeId
        FROM device_assignment a JOIN device d ON d.id = a.device_id
-      WHERE a.returned_on IS NULL
+      WHERE a.returned_on IS NULL AND (? IS NULL OR d.office_id = ?)
       ORDER BY a.person, a.issued_on`,
+    [officeId, officeId],
   );
 }
 
@@ -129,6 +139,7 @@ export async function listPeople(db: SQLiteDatabase): Promise<string[]> {
 
 function deviceParams(input: DeviceInput) {
   return [
+    input.officeId,
     input.category.trim() || '其他',
     input.name.trim(),
     emptyToNull(input.model),
@@ -170,8 +181,9 @@ export async function createDevice(db: SQLiteDatabase, input: DeviceInput): Prom
   await db.withTransactionAsync(async () => {
     const now = nowIso();
     const result = await db.runAsync(
-      `INSERT INTO device (category, name, model, serial_no, quantity, note, purchase_date, warranty_until, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO device
+         (office_id, category, name, model, serial_no, quantity, note, purchase_date, warranty_until, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [...deviceParams(input), now, now],
     );
     deviceId = result.lastInsertRowId;
@@ -183,7 +195,7 @@ export async function createDevice(db: SQLiteDatabase, input: DeviceInput): Prom
 export async function updateDevice(db: SQLiteDatabase, id: number, input: DeviceInput): Promise<void> {
   await db.withTransactionAsync(async () => {
     await db.runAsync(
-      `UPDATE device SET category = ?, name = ?, model = ?, serial_no = ?, quantity = ?, note = ?,
+      `UPDATE device SET office_id = ?, category = ?, name = ?, model = ?, serial_no = ?, quantity = ?, note = ?,
               purchase_date = ?, warranty_until = ?, updated_at = ?
         WHERE id = ?`,
       [...deviceParams(input), nowIso(), id],

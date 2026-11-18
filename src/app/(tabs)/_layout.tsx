@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import type { ColorValue } from 'react-native';
 
+import { OfficeSwitcher } from '../../components/OfficeSwitcher';
 import type { IconName } from '../../components/ui';
 import { colors } from '../../theme';
 
@@ -23,13 +24,17 @@ export default function TabsLayout() {
         headerTitleStyle: { color: colors.ink, fontWeight: '700' },
         headerShadowVisible: false,
         sceneStyle: { backgroundColor: colors.bg },
+        headerRight: () => <OfficeSwitcher />,
       }}
     >
       <Tabs.Screen name="index" options={{ title: '提醒', tabBarIcon: tabIcon('notifications-outline') }} />
       <Tabs.Screen name="food" options={{ title: '食品', tabBarIcon: tabIcon('nutrition-outline') }} />
       <Tabs.Screen name="daily" options={{ title: '日用品', tabBarIcon: tabIcon('basket-outline') }} />
       <Tabs.Screen name="devices" options={{ title: '设备', tabBarIcon: tabIcon('laptop-outline') }} />
-      <Tabs.Screen name="settings" options={{ title: '设置', tabBarIcon: tabIcon('settings-outline') }} />
+      <Tabs.Screen
+        name="settings"
+        options={{ title: '设置', tabBarIcon: tabIcon('settings-outline'), headerRight: () => null }}
+      />
     </Tabs>
   );
 }

@@ -7,6 +7,7 @@ import { Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import { Button, Chip, Empty, Field, Segmented } from '../../components/ui';
 import { listActiveAssignments, listDevices, type ActiveAssignment, type DeviceSummary } from '../../db/devices';
 import { useFocusData } from '../../hooks/useFocusData';
+import { useOffice } from '../../hooks/useOffice';
 import { diffDays, formatDate, todayStr } from '../../lib/dates';
 import { warrantyStatus } from '../../lib/warranty';
 import { colors, font, radius } from '../../theme';
@@ -16,10 +17,16 @@ type Filter = 'all' | 'out' | 'in';
 
 export default function DevicesScreen() {
   const db = useSQLiteContext();
+  const office = useOffice();
+  const officeFilter = office.filterId;
+  const showOffice = office.multiple && officeFilter === null;
   const loader = useCallback(async () => {
-    const [devices, active] = await Promise.all([listDevices(db), listActiveAssignments(db)]);
+    const [devices, active] = await Promise.all([
+      listDevices(db, officeFilter),
+      listActiveAssignments(db, officeFilter),
+    ]);
     return { devices, active };
-  }, [db]);
+  }, [db, officeFilter]);
   const [{ devices, active }, , loaded] = useFocusData(loader, {
     devices: [] as DeviceSummary[],
     active: [] as ActiveAssignment[],
@@ -146,7 +153,9 @@ export default function DevicesScreen() {
                 {item.quantity > 1 ? ` ×${item.quantity}` : ''}
               </Text>
               <Text style={deviceStyles.meta} numberOfLines={1}>
-                {[item.category, item.deviceModel].filter(Boolean).join(' · ')}
+                {[showOffice && office.officeName(item.officeId), item.category, item.deviceModel]
+                  .filter(Boolean)
+                  .join(' · ')}
               </Text>
             </View>
             <View style={deviceStyles.dateBox}>
@@ -184,9 +193,11 @@ export default function DevicesScreen() {
               <Text style={deviceStyles.name} numberOfLines={1}>
                 {item.name}
               </Text>
-              {item.model || item.serialNo ? (
+              {showOffice || item.model || item.serialNo ? (
                 <Text style={deviceStyles.meta} numberOfLines={1}>
-                  {[item.model, item.serialNo && `SN ${item.serialNo}`].filter(Boolean).join(' · ')}
+                  {[showOffice && office.officeName(item.officeId), item.model, item.serialNo && `SN ${item.serialNo}`]
+                    .filter(Boolean)
+                    .join(' · ')}
                 </Text>
               ) : null}
               {item.holders ? (

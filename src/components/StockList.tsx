@@ -7,6 +7,7 @@ import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { DEFAULT_SETTINGS, getSettings } from '../db/settings';
 import { listAllPacks, listProducts, type StockProductSummary } from '../db/stock';
 import { useFocusData } from '../hooks/useFocusData';
+import { useOffice } from '../hooks/useOffice';
 import { todayStr } from '../lib/dates';
 import { formatBreakdown, type PackUnit } from '../lib/packs';
 import { expiryStatus, isLowStock } from '../lib/status';
@@ -18,8 +19,15 @@ type Filter = 'all' | 'attention' | 'low';
 
 export function StockList({ kind }: { kind: StockKind }) {
   const db = useSQLiteContext();
+  const office = useOffice();
+  const officeFilter = office.filterId;
+  const showOffice = office.multiple && officeFilter === null;
   const loader = useCallback(async () => {
-    const [products, settings, allPacks] = await Promise.all([listProducts(db, kind), getSettings(db), listAllPacks(db)]);
+    const [products, settings, allPacks] = await Promise.all([
+      listProducts(db, kind, officeFilter),
+      getSettings(db),
+      listAllPacks(db),
+    ]);
     const packsByProduct = new Map<number, PackUnit[]>();
     for (const pack of allPacks) {
       const list = packsByProduct.get(pack.productId) ?? [];
@@ -27,7 +35,7 @@ export function StockList({ kind }: { kind: StockKind }) {
       packsByProduct.set(pack.productId, list);
     }
     return { products, settings, packsByProduct };
-  }, [db, kind]);
+  }, [db, kind, officeFilter]);
   const [{ products, settings, packsByProduct }, , loaded] = useFocusData(loader, {
     products: [] as StockProductSummary[],
     settings: DEFAULT_SETTINGS,
@@ -133,9 +141,16 @@ export function StockList({ kind }: { kind: StockKind }) {
             <Text style={listStyles.name} numberOfLines={1}>
               {product.name}
             </Text>
-            {product.brand || product.spec || product.location ? (
+            {showOffice || product.brand || product.spec || product.location ? (
               <Text style={listStyles.meta} numberOfLines={1}>
-                {[product.brand, product.spec, product.location && `放在 ${product.location}`].filter(Boolean).join(' · ')}
+                {[
+                  showOffice && office.officeName(product.officeId),
+                  product.brand,
+                  product.spec,
+                  product.location && `放在 ${product.location}`,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
               </Text>
             ) : null}
             {expiry || low ? (

@@ -3,6 +3,7 @@ import { AndroidImportance, IosAuthorizationStatus } from 'expo-notifications';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { Platform } from 'react-native';
 
+import { listOffices } from '../db/offices';
 import { getSettings } from '../db/settings';
 import { listAllBatches, listProducts } from '../db/stock';
 import { planReminders, type PlanProduct, type PlannedReminder } from './reminderPlan';
@@ -58,8 +59,18 @@ export async function requestPermission(): Promise<PermissionState> {
   );
 }
 
-export async function loadPlanProducts(db: SQLiteDatabase): Promise<PlanProduct[]> {
-  const [products, batches] = await Promise.all([listProducts(db), listAllBatches(db)]);
+/**
+ * 读出算提醒要用的物品。officeId 为 null 时是所有办公点；
+ * 这时如果有不止一个办公点，名字前面加上办公点，通知里分得清是哪儿的东西。
+ */
+export async function loadPlanProducts(db: SQLiteDatabase, officeId: number | null = null): Promise<PlanProduct[]> {
+  const [products, batches, offices] = await Promise.all([
+    listProducts(db, undefined, officeId),
+    listAllBatches(db),
+    listOffices(db),
+  ]);
+  const prefix = officeId === null && offices.length > 1;
+  const officeNames = new Map(offices.map((office) => [office.id, office.name]));
   const byProduct = new Map<number, PlanProduct['batches']>();
   for (const batch of batches) {
     const list = byProduct.get(batch.productId) ?? [];
@@ -69,7 +80,7 @@ export async function loadPlanProducts(db: SQLiteDatabase): Promise<PlanProduct[
   return products.map((product) => ({
     id: product.id,
     kind: product.kind,
-    name: product.name,
+    name: prefix ? `${officeNames.get(product.officeId) ?? ''}·${product.name}` : product.name,
     unit: product.unit,
     totalQty: product.totalQty,
     lowStockThreshold: product.lowStockThreshold,

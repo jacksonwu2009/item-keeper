@@ -32,7 +32,7 @@ export default function NewStockScreen() {
         submitLabel="保存"
         onSubmit={async (input, firstBatch) => {
           if (input.barcode) {
-            const match = await findByBarcode(db, input.barcode);
+            const match = await findByBarcode(db, input.barcode, input.officeId);
             if (match) {
               const existing = match.product;
               const whose = match.pack ? `「${existing.name}」的${match.pack.unit}` : `「${existing.name}」`;

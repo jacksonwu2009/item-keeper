@@ -31,6 +31,7 @@ import {
   type DeviceAssignment,
 } from '../../db/devices';
 import { useFocusData } from '../../hooks/useFocusData';
+import { useOffice } from '../../hooks/useOffice';
 import { diffDays, formatDate, todayStr } from '../../lib/dates';
 import { describeAccessories, warrantyStatus, type Accessory } from '../../lib/warranty';
 import { colors, font, radius } from '../../theme';
@@ -43,6 +44,7 @@ type SheetState =
 
 export default function DeviceDetailScreen() {
   const db = useSQLiteContext();
+  const office = useOffice();
   const { id } = useLocalSearchParams<{ id: string }>();
   const deviceId = Number(id);
   const [sheet, setSheet] = useState<SheetState>(null);
@@ -185,6 +187,7 @@ export default function DeviceDetailScreen() {
 
       <SectionTitle title="信息" />
       <Card>
+        {office.multiple ? <InfoRow label="办公点" value={office.officeName(device.officeId)} /> : null}
         <InfoRow label="类别" value={device.category} />
         <InfoRow label="型号" value={device.model ?? '—'} />
         <InfoRow label="序列号" value={device.serialNo ?? '—'} />

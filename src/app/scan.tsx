@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '../components/ui';
 import { findByBarcode } from '../db/stock';
+import { useOffice } from '../hooks/useOffice';
 import { putScanResult } from '../lib/scanHandoff';
 import { isStockKind } from '../lib/stock';
 import { font, radius } from '../theme';
@@ -20,6 +21,7 @@ import { font, radius } from '../theme';
  */
 export default function ScanScreen() {
   const db = useSQLiteContext();
+  const office = useOffice();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ kind?: string; target?: string }>();
   const kind = isStockKind(params.kind) ? params.kind : 'food';
@@ -40,7 +42,8 @@ export default function ScanScreen() {
       router.back();
       return;
     }
-    const match = await findByBarcode(db, code);
+    // 只在当前办公点里认条码；看「全部办公点」时哪个办公点有就打开哪个
+    const match = await findByBarcode(db, code, office.filterId);
     if (match) {
       // 扫到的是整箱等包装上的条码时，带上包装单位，入库默认按这个单位
       router.replace({

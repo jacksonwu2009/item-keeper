@@ -6,6 +6,7 @@ import { planConsumption, roundQty, type StockKind } from '../lib/stock';
 
 export type StockProduct = {
   id: number;
+  officeId: number;
   kind: StockKind;
   barcode: string | null;
   name: string;
@@ -55,6 +56,7 @@ export type StockMovement = {
 export type EntryQty = { qty: number; unit: string };
 
 export type StockProductInput = {
+  officeId: number;
   kind: StockKind;
   barcode: string | null;
   name: string;
@@ -80,7 +82,7 @@ export type BatchInput = {
 export type BarcodeMatch = { product: StockProduct; pack: PackUnit | null };
 
 const PRODUCT_COLUMNS = `
-  p.id, p.kind, p.barcode, p.name, p.brand, p.spec, p.unit, p.location,
+  p.id, p.office_id AS officeId, p.kind, p.barcode, p.name, p.brand, p.spec, p.unit, p.location,
   p.low_stock_threshold AS lowStockThreshold,
   p.expiry_lead_days AS expiryLeadDays,
   p.note, p.created_at AS createdAt, p.updated_at AS updatedAt`;
@@ -101,9 +103,23 @@ function emptyToNull(value: string | null | undefined): string | null {
   return trimmed ? trimmed : null;
 }
 
-export async function listProducts(db: SQLiteDatabase, kind?: StockKind): Promise<StockProductSummary[]> {
-  const where = kind ? 'WHERE p.kind = ?' : '';
-  const params = kind ? [kind] : [];
+/** officeId 为 null 时列出所有办公点的。 */
+export async function listProducts(
+  db: SQLiteDatabase,
+  kind?: StockKind,
+  officeId: number | null = null,
+): Promise<StockProductSummary[]> {
+  const conditions: string[] = [];
+  const params: (string | number)[] = [];
+  if (kind) {
+    conditions.push('p.kind = ?');
+    params.push(kind);
+  }
+  if (officeId !== null) {
+    conditions.push('p.office_id = ?');
+    params.push(officeId);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   return db.getAllAsync<StockProductSummary>(
     `SELECT ${PRODUCT_COLUMNS},
             COALESCE(SUM(b.quantity), 0) AS totalQty,
@@ -122,35 +138,55 @@ export async function getProduct(db: SQLiteDatabase, id: number): Promise<StockP
   return db.getFirstAsync<StockProduct>(`SELECT ${PRODUCT_COLUMNS} FROM stock_product p WHERE p.id = ?`, [id]);
 }
 
-export async function findProductByBarcode(db: SQLiteDatabase, barcode: string): Promise<StockProduct | null> {
-  return db.getFirstAsync<StockProduct>(`SELECT ${PRODUCT_COLUMNS} FROM stock_product p WHERE p.barcode = ?`, [
-    barcode.trim(),
-  ]);
+/** officeId 为 null 时在所有办公点里找（取最早录入的一个）。 */
+export async function findProductByBarcode(
+  db: SQLiteDatabase,
+  barcode: string,
+  officeId: number | null = null,
+): Promise<StockProduct | null> {
+  return officeId === null
+    ? db.getFirstAsync<StockProduct>(`SELECT ${PRODUCT_COLUMNS} FROM stock_product p WHERE p.barcode = ? ORDER BY p.id`, [
+        barcode.trim(),
+      ])
+    : db.getFirstAsync<StockProduct>(
+        `SELECT ${PRODUCT_COLUMNS} FROM stock_product p WHERE p.barcode = ? AND p.office_id = ?`,
+        [barcode.trim(), officeId],
+      );
 }
 
-/** 按条码找物品：先找物品本身的条码，再找包装（整箱、整包）的条码。 */
-export async function findByBarcode(db: SQLiteDatabase, barcode: string): Promise<BarcodeMatch | null> {
+/**
+ * 按条码找物品：先找物品本身的条码，再找包装（整箱、整包）的条码。
+ * 条码只在同一办公点内唯一，所以要说明在哪个办公点找；null 表示所有办公点。
+ */
+export async function findByBarcode(
+  db: SQLiteDatabase,
+  barcode: string,
+  officeId: number | null = null,
+): Promise<BarcodeMatch | null> {
   const code = barcode.trim();
   if (!code) return null;
-  const product = await findProductByBarcode(db, code);
+  const product = await findProductByBarcode(db, code, officeId);
   if (product) return { product, pack: null };
   const pack = await db.getFirstAsync<PackUnit & { productId: number }>(
-    'SELECT product_id AS productId, unit, size, barcode FROM stock_pack WHERE barcode = ?',
-    [code],
+    `SELECT k.product_id AS productId, k.unit, k.size, k.barcode
+       FROM stock_pack k JOIN stock_product p ON p.id = k.product_id
+      WHERE k.barcode = ? AND (? IS NULL OR p.office_id = ?)
+      ORDER BY k.product_id`,
+    [code, officeId, officeId],
   );
   if (!pack) return null;
   const owner = await getProduct(db, pack.productId);
   return owner ? { product: owner, pack: { unit: pack.unit, size: pack.size, barcode: pack.barcode } } : null;
 }
 
-/** 物品条码和包装条码都不能和别的物品撞；撞了抛出给用户看的错误。 */
+/** 物品条码和包装条码不能和同一办公点里别的物品撞；撞了抛出给用户看的错误。 */
 async function assertBarcodesFree(db: SQLiteDatabase, input: StockProductInput, selfId: number | null): Promise<void> {
   const own = [input.barcode, ...input.packs.map((pack) => pack.barcode)]
     .map((code) => code?.trim())
     .filter((code): code is string => !!code);
   if (new Set(own).size !== own.length) throw new Error('物品条码和包装条码不能相同');
   for (const code of own) {
-    const match = await findByBarcode(db, code);
+    const match = await findByBarcode(db, code, input.officeId);
     if (match && match.product.id !== selfId) {
       throw new Error(`条码 ${code} 已经给「${match.product.name}」${match.pack ? `的${match.pack.unit}` : ''}用了`);
     }
@@ -198,6 +234,7 @@ export async function listAllBatches(db: SQLiteDatabase): Promise<StockBatch[]> 
 
 function productParams(input: StockProductInput) {
   return [
+    input.officeId,
     input.kind,
     emptyToNull(input.barcode),
     input.name.trim(),
@@ -222,8 +259,8 @@ export async function createProduct(
     const now = nowIso();
     const result = await db.runAsync(
       `INSERT INTO stock_product
-         (kind, barcode, name, brand, spec, unit, location, low_stock_threshold, expiry_lead_days, note, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (office_id, kind, barcode, name, brand, spec, unit, location, low_stock_threshold, expiry_lead_days, note, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [...productParams(input), now, now],
     );
     productId = result.lastInsertRowId;
@@ -241,7 +278,7 @@ export async function updateProduct(db: SQLiteDatabase, id: number, input: Stock
   await db.withTransactionAsync(async () => {
     await db.runAsync(
       `UPDATE stock_product
-          SET kind = ?, barcode = ?, name = ?, brand = ?, spec = ?, unit = ?, location = ?,
+          SET office_id = ?, kind = ?, barcode = ?, name = ?, brand = ?, spec = ?, unit = ?, location = ?,
               low_stock_threshold = ?, expiry_lead_days = ?, note = ?, updated_at = ?
         WHERE id = ?`,
       [...productParams(input), nowIso(), id],

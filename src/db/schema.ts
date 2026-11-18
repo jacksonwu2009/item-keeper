@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 export const DATABASE_NAME = 'item-keeper.db';
-const DATABASE_VERSION = 4;
+const DATABASE_VERSION = 5;
 
 /**
  * 表结构
@@ -11,6 +11,7 @@ const DATABASE_VERSION = 4;
  * - stock_movement：出入库流水（v2 起）
  * - stock_pack：包装规格，如「1 箱 = 24 瓶」，可带自己的条码（v3 起）
  * - device.purchase_date / warranty_until、device_accessory：设备购买日期、保修到期日、随设备的配件（v4 起）
+ * - office：办公点；stock_product、device 各有 office_id，条码只在同一办公点内不重复（v5 起）
  * - setting：键值设置
  */
 export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
@@ -127,6 +128,30 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
         sort INTEGER NOT NULL DEFAULT 0
       );
       CREATE INDEX ix_device_accessory_device ON device_accessory(device_id);
+    `);
+  }
+
+  if (currentVersion < 5) {
+    // 已有数据全部归到 1 号「默认办公点」，用户可以改名。
+    // office_id 不加 REFERENCES：SQLite 在开着外键时不允许给已有表加带非空默认值的外键列，删办公点前由应用检查是否为空。
+    // 包装条码原来全局唯一，改成普通索引，唯一性由应用按办公点检查。
+    await db.execAsync(`
+      CREATE TABLE office (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        sort INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      );
+      INSERT INTO office (id, name, sort, created_at)
+        VALUES (1, '默认办公点', 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+      ALTER TABLE stock_product ADD COLUMN office_id INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE device ADD COLUMN office_id INTEGER NOT NULL DEFAULT 1;
+      DROP INDEX IF EXISTS ux_stock_product_barcode;
+      CREATE UNIQUE INDEX ux_stock_product_office_barcode ON stock_product(office_id, barcode) WHERE barcode IS NOT NULL;
+      CREATE INDEX ix_stock_product_office ON stock_product(office_id, kind);
+      DROP INDEX IF EXISTS ux_stock_pack_barcode;
+      CREATE INDEX ix_stock_pack_barcode ON stock_pack(barcode);
+      CREATE INDEX ix_device_office ON device(office_id);
     `);
   }
 

@@ -8,6 +8,7 @@ import { Button, Card, Chip, Screen, SectionTitle, type Tone } from '../../compo
 import { listActiveAssignments, type ActiveAssignment } from '../../db/devices';
 import { DEFAULT_SETTINGS, getSettings } from '../../db/settings';
 import { useFocusData } from '../../hooks/useFocusData';
+import { useOffice } from '../../hooks/useOffice';
 import { describeDaysLeft, diffDays, formatDate, formatShortDate, formatTime, todayStr } from '../../lib/dates';
 import {
   getPermissionState,
@@ -32,15 +33,18 @@ function kindLabel(product: PlanProduct): string {
 
 export default function RemindersScreen() {
   const db = useSQLiteContext();
+  const office = useOffice();
+  const officeFilter = office.filterId;
+  const showOffice = office.multiple && officeFilter === null;
   const loader = useCallback(async () => {
     const [settings, products, active, permission] = await Promise.all([
       getSettings(db),
-      loadPlanProducts(db),
-      listActiveAssignments(db),
+      loadPlanProducts(db, officeFilter),
+      listActiveAssignments(db, officeFilter),
       getPermissionState().catch((): PermissionState => 'undetermined'),
     ]);
     return { settings, products, active, permission };
-  }, [db]);
+  }, [db, officeFilter]);
   const [data, reload, loaded] = useFocusData(loader, {
     settings: DEFAULT_SETTINGS,
     products: [] as PlanProduct[],
@@ -166,7 +170,14 @@ export default function RemindersScreen() {
                 key={item.id}
                 first={index === 0}
                 title={`${item.person} · ${item.deviceName}${item.quantity > 1 ? ` ×${item.quantity}` : ''}`}
-                subtitle={`${item.category}${item.deviceModel ? ` · ${item.deviceModel}` : ''} · ${formatDate(item.issuedOn)} 领取`}
+                subtitle={[
+                  showOffice && office.officeName(item.officeId),
+                  item.category,
+                  item.deviceModel,
+                  `${formatDate(item.issuedOn)} 领取`,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
                 chip={{ text: `${Math.max(0, diffDays(today, item.issuedOn))} 天`, tone: 'neutral' }}
                 onPress={() => router.push({ pathname: '/device/[id]', params: { id: String(item.deviceId) } })}
               />
