@@ -73,7 +73,13 @@
 
 **安卓（本机打，不需要账号）**：装好 JDK 和 Android SDK 后运行 `scripts/build-android.sh`（脚本开头写了要装哪些），产物在 `dist/item-keeper-<版本>.apk`。用的是调试签名，只适合自己装，不能上架。
 
-**iOS** 要么用 Expo Go 试（见上一节），要么有苹果开发者账号后用 EAS 云端构建。
+**iOS** 给同事日常用走 **TestFlight**：苹果官方的测试渠道，开发者账号上传后，同事用 TestFlight 这个 App 安装，自己人（内部测试员）测试不用审核；每个版本 90 天后过期，要重新上传。临时试用也可以用 Expo Go（见上一节）。
+
+上传 TestFlight 时注意：
+- 每次上传前把 `app.json` 的 `ios.buildNumber` 加 1（同一个版本号下构建号不能重复）。
+- 包名 `com.itemkeeper.app` 不要改，并且一直用同一个开发者账号上传。这样同事装新版本时是覆盖更新，数据保留；换了包名或账号会变成另一个 App，旧数据带不过去。
+- 版本过期后 App 打不开，但数据还在手机上，装上新上传的版本就能接着用（别让同事先删 App）。
+- 从 Expo Go 换到 TestFlight 版，数据不会自动过去，要在 Expo Go 里导出、TestFlight 版里导入。
 
 用 EAS 云端构建（安卓 / iOS 都行，本机不需要 Xcode / Android Studio，需要一个免费的 Expo 账号）：
 
@@ -81,7 +87,8 @@
 npx eas-cli@latest login
 npx eas-cli@latest build:configure          # 首次会问 iOS bundle id / 安卓包名
 npx eas-cli@latest build -p android --profile preview   # 出 apk，直接发给别人装
-npx eas-cli@latest build -p ios                          # 需要 Apple 开发者账号
+npx eas-cli@latest build -p ios --profile production     # 需要 Apple 开发者账号
+npx eas-cli@latest submit -p ios                         # 上传到 App Store Connect，在 TestFlight 里加测试员
 ```
 
 ## 开发

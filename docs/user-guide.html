@@ -340,7 +340,7 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
     <h1>物品管家使用指南</h1>
     <p class="lede">用手机管三类东西：食品、日用品、设备。扫条码就能录入，库存和过期日期记在手机上，快到期、快用完会按时提醒；电脑和配件记下谁领走、哪天还回来。还可以定期盘点，看进货和消耗的报表。</p>
     <ul class="facts">
-      <li><b>安装</b>安卓装 APK，iPhone 用 Expo Go</li>
+      <li><b>安装</b>安卓装 APK，iPhone 用 TestFlight（或 Expo Go 试用）</li>
       <li><b>数据</b>存在自己手机上，按办公点导出发给别人</li>
       <li><b>提醒</b>每天固定时间一条通知</li>
     </ul>
@@ -370,7 +370,7 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
     <section id="install">
       <p class="kicker">安装</p>
       <h2>先把 App 装到手机上</h2>
-      <p class="muted">安装包和 iPhone 用的地址都找管理员（发这份指南给你的人）要。</p>
+      <p class="muted">安卓安装包、Expo Go 地址找管理员（发这份指南给你的人）要；iPhone 的 TestFlight 版由负责打包的同事上传，测试邀请找对方要。</p>
       <div class="platforms">
         <div class="platform">
           <h3>安卓 <span class="badge">APK 安装包，约 41 MB</span></h3>
@@ -382,7 +382,16 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
           <p class="muted">只支持 64 位手机，近几年的安卓手机都可以。以后有新版本，直接装新的安装包覆盖，数据会保留。</p>
         </div>
         <div class="platform">
-          <h3>iPhone <span class="badge">通过 Expo Go 打开</span></h3>
+          <h3>iPhone <span class="badge">TestFlight，推荐</span></h3>
+          <ol class="steps">
+            <li><div>在 App Store 搜索并安装 <b>TestFlight</b>（苹果官方的测试 App，免费）。</div></li>
+            <li><div>找负责打包的同事要测试邀请：对方把你的 Apple ID 邮箱加进测试员，或者发一个邀请链接。用 iPhone 打开邮件里的 <b>View in TestFlight</b> 或链接，在 TestFlight 里点 <b>接受</b>。</div></li>
+            <li><div>点 <b>安装</b>。桌面上出现物品管家的图标，和普通 App 一样用，不用连谁的电脑。</div></li>
+          </ol>
+          <p class="muted">TestFlight 是苹果官方的测试渠道：开发者账号上传后，自己人测试不用审核。每个版本 90 天后过期，过期前负责打包的同事会上传新版本，TestFlight 提示更新时点 <b>更新</b> 就行，数据保留。过期了 App 会打不开，但数据还在手机上，装上新版本就能接着用；<b>别先删掉 App</b>，删了数据就没了。</p>
+        </div>
+        <div class="platform">
+          <h3>iPhone <span class="badge">通过 Expo Go 打开，临时试用</span></h3>
           <ol class="steps">
             <li><div>在 App Store 搜索并安装 <b>Expo Go</b>（免费）。</div></li>
             <li><div>打开 Expo Go，点 <b>Enter URL manually</b>，粘贴管理员给的地址，形如 <code>exp://xxxx.exp.direct</code>。</div></li>
@@ -393,7 +402,7 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
       </div>
       <div class="note" role="note">
         <svg viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M10 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm0 3.2a1 1 0 0 1 1 1V10a1 1 0 1 1-2 0V6.2a1 1 0 0 1 1-1Zm0 9.6a1.2 1.2 0 1 1 0-2.4 1.2 1.2 0 0 1 0 2.4Z"/></svg>
-        <p>iPhone 版每次打开都要连到管理员电脑上的服务。打不开时，多半是那台电脑关了或者地址换了，找管理员要新地址。</p>
+        <p>用 Expo Go 时，每次打开都要连到管理员电脑上的服务，打不开多半是那台电脑关了或者地址换了；TestFlight 版不需要。从 Expo Go 换到 TestFlight 时数据不会自动过去：先在 Expo Go 里 <b>设置 → 导入导出</b> 把三类都勾上导出一份，装好 TestFlight 版后在同一个地方导入。</p>
       </div>
     </section>
 
@@ -794,7 +803,7 @@ figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-a
         </details>
         <details>
           <summary>iPhone 上打不开</summary>
-          <div><p>iPhone 版要连管理员电脑上的服务。那台电脑关机、睡眠或者服务重启后地址变了，都会打不开，找管理员要新地址。Expo Go 提示版本不兼容时，先在 App Store 更新 Expo Go。</p></div>
+          <div><p><b>TestFlight 版</b>打不开、提示已过期：这个版本满 90 天了，打开 TestFlight 装最新的版本，数据还在，别删 App；TestFlight 里没有新版本就找负责打包的同事上传。</p><p><b>Expo Go 版</b>要连管理员电脑上的服务。那台电脑关机、睡眠或者服务重启后地址变了，都会打不开，找管理员要新地址。Expo Go 提示版本不兼容时，先在 App Store 更新 Expo Go。</p></div>
         </details>
         <details>
           <summary>几台手机能实时共用一份数据吗</summary>
