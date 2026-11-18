@@ -6,6 +6,7 @@ import { Alert, StyleSheet, Text, View } from 'react-native';
 import { createOffice, deleteOffice, OFFICE_NAME_MAX, renameOffice, type Office } from '../db/offices';
 import { useOffice } from '../hooks/useOffice';
 import { colors, font } from '../theme';
+import { PlaceNameSuggest } from './PlaceNameSuggest';
 import { Button, Card, Field, IconButton, Sheet } from './ui';
 
 /** 设置页里的办公点管理：添加、改名、删除（只能删空的）。 */
@@ -86,10 +87,12 @@ export function OfficeManager() {
         maxLength={OFFICE_NAME_MAX}
         right={<Button title="添加" compact disabled={!newName.trim()} onPress={() => add()} />}
       />
+      <PlaceNameSuggest existingNames={office.offices.map((item) => item.name)} onPick={setNewName} />
       {error ? <Text style={managerStyles.error}>{error}</Text> : null}
       {renaming ? (
         <RenameSheet
           office={renaming}
+          otherNames={office.offices.filter((item) => item.id !== renaming.id).map((item) => item.name)}
           onClose={() => setRenaming(null)}
           onSave={async (name) => {
             await renameOffice(db, renaming.id, name);
@@ -104,10 +107,12 @@ export function OfficeManager() {
 
 function RenameSheet({
   office,
+  otherNames,
   onClose,
   onSave,
 }: {
   office: Office;
+  otherNames: string[];
   onClose: () => void;
   onSave: (name: string) => Promise<void>;
 }) {
@@ -116,6 +121,7 @@ function RenameSheet({
   return (
     <Sheet visible title="办公点改名" onClose={onClose}>
       <Field label="名称" value={name} onChangeText={setName} maxLength={OFFICE_NAME_MAX} autoFocus error={error} />
+      <PlaceNameSuggest existingNames={otherNames} onPick={setName} />
       <Text style={managerStyles.hint}>别的手机按名称认办公点，改名后，从别的手机导过来的同名数据会对不上，记得让对方也改成一样的名字。</Text>
       <Button
         title="保存"
