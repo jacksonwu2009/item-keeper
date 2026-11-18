@@ -1,15 +1,17 @@
 import Constants from 'expo-constants';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
-import { Linking, Share, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, StyleSheet, Text, View } from 'react-native';
 
 import { TimeField } from '../../components/DateField';
-import { Button, Card, Label, Screen, SectionTitle, Segmented, Stepper, SwitchRow } from '../../components/ui';
-import { listAssignments, listDevices } from '../../db/devices';
+import { Button, Card, Label, Screen, SectionTitle, Segmented, Sheet, Stepper, SwitchRow } from '../../components/ui';
+import { listDevices } from '../../db/devices';
 import { DEFAULT_SETTINGS, getSettings, saveSettings, type AppSettings } from '../../db/settings';
-import { listBatches, listProducts } from '../../db/stock';
+import { listProducts } from '../../db/stock';
 import { useFocusData } from '../../hooks/useFocusData';
-import { todayStr } from '../../lib/dates';
+import type { BackupData, BackupSummary } from '../../lib/backup';
+import { formatDateTime } from '../../lib/dates';
+import { exportBackup, importBackup, pickBackup, readUndoSnapshot, undoLastImport } from '../../lib/dataTransfer';
 import {
   getPermissionState,
   requestPermission,
@@ -18,6 +20,13 @@ import {
   type PermissionState,
 } from '../../lib/notifications';
 import { colors, font } from '../../theme';
+
+function describeSummary(summary: Pick<BackupSummary, 'food' | 'daily' | 'devices'>): string {
+  return `食品 ${summary.food} 种、日用品 ${summary.daily} 种、设备 ${summary.devices} 种`;
+}
+
+type PendingImport = { fileName: string; data: BackupData; summary: BackupSummary };
+type DataNotice = { text: string; tone: 'ok' | 'error' };
 
 const REPEAT_OPTIONS = [
   { value: 1, label: '每天' },
@@ -29,11 +38,12 @@ const REPEAT_OPTIONS = [
 export default function SettingsScreen() {
   const db = useSQLiteContext();
   const loader = useCallback(async () => {
-    const [settings, permission, products, devices] = await Promise.all([
+    const [settings, permission, products, devices, undo] = await Promise.all([
       getSettings(db),
       getPermissionState().catch((): PermissionState => 'undetermined'),
       listProducts(db),
       listDevices(db),
+      readUndoSnapshot().catch(() => null),
     ]);
     return {
       settings,
@@ -41,6 +51,7 @@ export default function SettingsScreen() {
       foodCount: products.filter((product) => product.kind === 'food').length,
       dailyCount: products.filter((product) => product.kind === 'daily').length,
       deviceCount: devices.length,
+      undo: undo?.summary ?? null,
     };
   }, [db]);
   const [data, reload] = useFocusData(loader, {
@@ -49,9 +60,13 @@ export default function SettingsScreen() {
     foodCount: 0,
     dailyCount: 0,
     deviceCount: 0,
+    undo: null as BackupSummary | null,
   });
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [dataNotice, setDataNotice] = useState<DataNotice | null>(null);
+  const [busy, setBusy] = useState<'export' | 'pick' | 'import' | 'undo' | null>(null);
+  const [pending, setPending] = useState<PendingImport | null>(null);
   const current = settings ?? data.settings;
 
   async function update(patch: Partial<AppSettings>) {
@@ -67,21 +82,81 @@ export default function SettingsScreen() {
     await reload();
   }
 
-  async function exportBackup() {
-    const products = await listProducts(db);
-    const devices = await listDevices(db);
-    const backup = {
-      app: 'item-keeper',
-      exportedAt: new Date().toISOString(),
-      settings: current,
-      products: await Promise.all(
-        products.map(async (product) => ({ ...product, batches: await listBatches(db, product.id) })),
-      ),
-      devices: await Promise.all(
-        devices.map(async (device) => ({ ...device, assignments: await listAssignments(db, device.id) })),
-      ),
-    };
-    await Share.share({ title: `物品管家备份 ${todayStr()}`, message: JSON.stringify(backup, null, 2) });
+  async function runExport() {
+    setBusy('export');
+    setDataNotice(null);
+    try {
+      const summary = await exportBackup(db);
+      setDataNotice({ text: `已生成备份（${describeSummary(summary)}）。没存好的话可以再导一次。`, tone: 'ok' });
+    } catch (error) {
+      setDataNotice({ text: error instanceof Error ? error.message : '导出失败，请重试', tone: 'error' });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runPick() {
+    setBusy('pick');
+    setDataNotice(null);
+    try {
+      const picked = await pickBackup();
+      if (!picked) return;
+      if (!picked.result.ok) {
+        setDataNotice({ text: `没法导入「${picked.fileName}」：${picked.result.error}`, tone: 'error' });
+        return;
+      }
+      setPending({ fileName: picked.fileName, data: picked.result.data, summary: picked.result.summary });
+    } catch (error) {
+      setDataNotice({ text: error instanceof Error ? error.message : '选文件时出错了，请重试', tone: 'error' });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runImport() {
+    if (!pending) return;
+    setBusy('import');
+    try {
+      await importBackup(db, pending.data);
+      setPending(null);
+      setSettings(null);
+      setDataNotice({ text: `已导入（${describeSummary(pending.summary)}）。导入前的数据留了一份，可以撤销。`, tone: 'ok' });
+      await reload();
+    } catch (error) {
+      setPending(null);
+      setDataNotice({
+        text: `导入失败，手机上的数据没有改动。${error instanceof Error ? error.message : ''}`,
+        tone: 'error',
+      });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function confirmUndo() {
+    if (!data.undo) return;
+    Alert.alert('撤销上次导入？', `会换回导入前的数据（${describeSummary(data.undo)}），导入之后新记的东西会丢掉。`, [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '撤销导入',
+        style: 'destructive',
+        onPress: async () => {
+          setBusy('undo');
+          try {
+            const restored = await undoLastImport(db);
+            setSettings(null);
+            setDataNotice(
+              restored ? { text: '已换回导入前的数据。', tone: 'ok' } : { text: '找不到导入前的数据。', tone: 'error' },
+            );
+            await reload();
+          } catch {
+            setDataNotice({ text: '撤销失败，手机上的数据没有改动。', tone: 'error' });
+          } finally {
+            setBusy(null);
+          }
+        },
+      },
+    ]);
   }
 
   return (
@@ -179,16 +254,87 @@ export default function SettingsScreen() {
         />
       </Card>
 
-      <SectionTitle title="数据" />
+      <SectionTitle title="导入导出" />
       <Card>
         <Text style={setStyles.body}>
-          食品 {data.foodCount} 种 · 日用品 {data.dailyCount} 种 · 设备 {data.deviceCount} 种
+          现有：{describeSummary({ food: data.foodCount, daily: data.dailyCount, devices: data.deviceCount })}
         </Text>
-        <Text style={setStyles.hint}>数据只存在这台手机上。换手机或卸载前，先导出一份备份。</Text>
+        <Text style={setStyles.hint}>
+          数据只存在这台手机上。导出会生成一个备份文件（.json），可以存到「文件」、网盘或发给自己；换手机时在新手机上导入它。
+        </Text>
         <View style={setStyles.row}>
-          <Button title="导出备份" icon="share-outline" compact variant="secondary" onPress={() => exportBackup().catch(() => undefined)} />
+          <Button
+            title="导出备份"
+            icon="share-outline"
+            compact
+            loading={busy === 'export'}
+            disabled={busy !== null && busy !== 'export'}
+            onPress={() => runExport()}
+          />
+          <Button
+            title="从备份导入"
+            icon="download-outline"
+            compact
+            variant="secondary"
+            loading={busy === 'pick'}
+            disabled={busy !== null && busy !== 'pick'}
+            onPress={() => runPick()}
+          />
         </View>
+        {dataNotice ? (
+          <Text style={[setStyles.hint, { color: dataNotice.tone === 'ok' ? colors.ok : colors.danger }]}>
+            {dataNotice.text}
+          </Text>
+        ) : null}
+        {data.undo ? (
+          <View style={setStyles.undo}>
+            <Text style={setStyles.hint}>
+              {formatDateTime(data.undo.exportedAt)} 导入过一次备份，导入前的数据（{describeSummary(data.undo)}）还留着。
+            </Text>
+            <View style={setStyles.row}>
+              <Button
+                title="撤销上次导入"
+                icon="arrow-undo-outline"
+                compact
+                variant="ghost"
+                loading={busy === 'undo'}
+                disabled={busy !== null && busy !== 'undo'}
+                onPress={confirmUndo}
+              />
+            </View>
+          </View>
+        ) : null}
       </Card>
+
+      {pending ? (
+        <Sheet visible title="确认导入" onClose={() => (busy === 'import' ? undefined : setPending(null))}>
+          <Card>
+            <Text style={setStyles.body} numberOfLines={2}>
+              {pending.fileName}
+            </Text>
+            <Text style={setStyles.hint}>备份时间：{formatDateTime(pending.summary.exportedAt)}</Text>
+            <Text style={setStyles.body}>{describeSummary(pending.summary)}</Text>
+            <Text style={setStyles.hint}>
+              另有 {pending.summary.batches} 个批次、{pending.summary.movements} 条出入库记录、
+              {pending.summary.assignments} 条设备领用记录，以及提醒设置。
+            </Text>
+          </Card>
+          <Text style={setStyles.warning}>
+            导入会替换手机上现有的全部数据（{describeSummary({ food: data.foodCount, daily: data.dailyCount, devices: data.deviceCount })}）。
+            替换前会自动留一份，导错了可以在这里撤销。
+          </Text>
+          <View style={setStyles.row}>
+            <Button
+              title="取消"
+              variant="secondary"
+              style={setStyles.flex}
+              disabled={busy === 'import'}
+              onPress={() => setPending(null)}
+            />
+            <Button title="替换并导入" style={setStyles.flex} loading={busy === 'import'} onPress={() => runImport()} />
+          </View>
+        </Sheet>
+      ) : null}
 
       <Text style={setStyles.footer}>物品管家 {Constants.expoConfig?.version ?? ''}</Text>
     </Screen>
@@ -201,4 +347,7 @@ const setStyles = StyleSheet.create({
   body: { fontSize: font.body, color: colors.ink },
   hint: { fontSize: font.small, color: colors.faint, lineHeight: 18 },
   footer: { fontSize: font.small, color: colors.faint, textAlign: 'center', marginTop: 8 },
+  undo: { gap: 6, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line, paddingTop: 10 },
+  warning: { fontSize: font.small, color: colors.warn, lineHeight: 20 },
+  flex: { flex: 1 },
 });

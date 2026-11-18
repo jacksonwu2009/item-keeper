@@ -5,21 +5,23 @@ import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { DateField } from '../../components/DateField';
 import { ExpiryInput, type ExpiryValue } from '../../components/ExpiryInput';
-import { Button, Card, Chip, Empty, Field, InfoRow, Screen, SectionTitle, Sheet } from '../../components/ui';
+import { Button, Card, Chip, ChoiceChips, Empty, Field, InfoRow, Label, Screen, SectionTitle, Sheet } from '../../components/ui';
 import { DEFAULT_SETTINGS, getSettings } from '../../db/settings';
 import {
   deleteBatch,
   deleteProduct,
   getProduct,
   listBatches,
+  listMovements,
   stockIn,
   stockOut,
   updateBatch,
   type StockBatch,
+  type StockMovement,
   type StockProduct,
 } from '../../db/stock';
 import { useFocusData } from '../../hooks/useFocusData';
-import { formatDate, todayStr } from '../../lib/dates';
+import { formatDate, formatDateTime, todayStr } from '../../lib/dates';
 import { rescheduleReminders } from '../../lib/notifications';
 import { expiryStatus, isLowStock } from '../../lib/status';
 import { formatQty, KIND_LABEL, parseQty, roundQty } from '../../lib/stock';
@@ -36,19 +38,22 @@ export default function StockDetailScreen() {
   const [message, setMessage] = useState<string | null>(null);
 
   const loader = useCallback(async () => {
-    const [product, batches, settings] = await Promise.all([
+    const [product, batches, movements, settings] = await Promise.all([
       getProduct(db, productId),
       listBatches(db, productId),
+      listMovements(db, productId, 100),
       getSettings(db),
     ]);
-    return { product, batches, settings };
+    return { product, batches, movements, settings };
   }, [db, productId]);
   const [data, reload, loaded] = useFocusData(loader, {
     product: null as StockProduct | null,
     batches: [] as StockBatch[],
+    movements: [] as StockMovement[],
     settings: DEFAULT_SETTINGS,
   });
-  const { product, batches, settings } = data;
+  const { product, batches, movements, settings } = data;
+  const [showAllMovements, setShowAllMovements] = useState(false);
 
   async function afterChange(note?: string) {
     setSheet(null);
@@ -172,6 +177,27 @@ export default function StockDetailScreen() {
         </Card>
       )}
 
+      <SectionTitle title="出入库记录" />
+      {movements.length === 0 ? (
+        <Card>
+          <Text style={detailStyles.sub}>还没有记录。</Text>
+        </Card>
+      ) : (
+        <Card style={detailStyles.batchCard}>
+          {(showAllMovements ? movements : movements.slice(0, 8)).map((movement, index) => (
+            <MovementRow key={movement.id} movement={movement} unit={product.unit} first={index === 0} />
+          ))}
+          {movements.length > 8 ? (
+            <Button
+              title={showAllMovements ? '收起' : `查看全部 ${movements.length} 条`}
+              variant="ghost"
+              compact
+              onPress={() => setShowAllMovements((value) => !value)}
+            />
+          ) : null}
+        </Card>
+      )}
+
       <SectionTitle title="信息" />
       <Card>
         <InfoRow label="条码" value={product.barcode ?? '—'} />
@@ -214,8 +240,8 @@ export default function StockDetailScreen() {
         total={totalQty}
         firstBatch={batches[0] ?? null}
         onClose={() => setSheet(null)}
-        onSubmit={async (quantity) => {
-          const result = await stockOut(db, product.id, quantity);
+        onSubmit={async (quantity, reason) => {
+          const result = await stockOut(db, product.id, quantity, reason);
           await afterChange(
             result.shortfall > 0
               ? `只有 ${formatQty(result.consumed)} ${product.unit}，已全部出库`
@@ -239,6 +265,35 @@ export default function StockDetailScreen() {
         />
       ) : null}
     </Screen>
+  );
+}
+
+const OUT_REASONS = ['用掉', '过期丢弃', '坏了', '送人', '其他'];
+
+const MOVEMENT_LABEL: Record<StockMovement['type'], string> = { in: '入库', out: '出库', adjust: '调整' };
+
+function MovementRow({ movement, unit, first }: { movement: StockMovement; unit: string; first: boolean }) {
+  const positive = movement.delta > 0;
+  const detail = [
+    movement.note,
+    movement.type === 'in' && movement.expiryDate ? `${formatDate(movement.expiryDate)} 到期` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  return (
+    <View style={[detailStyles.batchRow, !first && detailStyles.batchDivider]}>
+      <View style={detailStyles.flex}>
+        <Text style={detailStyles.batchDate}>
+          {MOVEMENT_LABEL[movement.type]}
+          {detail ? <Text style={detailStyles.batchMeta}>  {detail}</Text> : null}
+        </Text>
+        <Text style={detailStyles.batchMeta}>{formatDateTime(movement.happenedAt)}</Text>
+      </View>
+      <Text style={[detailStyles.batchQty, { color: positive ? colors.ok : movement.delta < 0 ? colors.danger : colors.muted }]}>
+        {positive ? '+' : ''}
+        {formatQty(movement.delta)} {unit}
+      </Text>
+    </View>
   );
 }
 
@@ -308,9 +363,10 @@ function StockOutSheet({
   total: number;
   firstBatch: StockBatch | null;
   onClose: () => void;
-  onSubmit: (quantity: number) => Promise<void>;
+  onSubmit: (quantity: number, reason: string) => Promise<void>;
 }) {
   const [qtyText, setQtyText] = useState('1');
+  const [reason, setReason] = useState<string>(OUT_REASONS[0]);
   const [showErrors, setShowErrors] = useState(false);
   const [busy, setBusy] = useState(false);
   const qty = parseQty(qtyText);
@@ -318,6 +374,14 @@ function StockOutSheet({
 
   return (
     <Sheet visible={visible} title="出库 / 用掉" onClose={onClose}>
+      <View style={detailStyles.group}>
+        <Label>原因</Label>
+        <ChoiceChips
+          options={OUT_REASONS.map((value) => ({ value, label: value }))}
+          value={reason}
+          onChange={setReason}
+        />
+      </View>
       <Field
         label={`数量（${unit}）`}
         value={qtyText}
@@ -341,7 +405,7 @@ function StockOutSheet({
             if (qtyError || qty === null) return;
             setBusy(true);
             try {
-              await onSubmit(qty);
+              await onSubmit(qty, reason);
               setQtyText('1');
               setShowErrors(false);
             } finally {
@@ -429,4 +493,5 @@ const detailStyles = StyleSheet.create({
   },
   error: { fontSize: font.small, color: colors.danger },
   hintText: { fontSize: font.small, color: colors.faint },
+  group: { gap: 8 },
 });

@@ -1,13 +1,14 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 export const DATABASE_NAME = 'item-keeper.db';
-const DATABASE_VERSION = 1;
+const DATABASE_VERSION = 2;
 
 /**
  * 表结构
  * - stock_product：食品 / 日用品（kind 区分），一个条码对应一个商品
  * - stock_batch：同一商品不同批次（各自的数量和过期日期）
  * - device / device_assignment：设备及每次领用、退还记录
+ * - stock_movement：出入库流水（v2 起）
  * - setting：键值设置
  */
 export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
@@ -73,6 +74,22 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
       );
+    `);
+  }
+
+  if (currentVersion < 2) {
+    // delta：入库为正、出库为负；调整（改批次数量、删批次）按实际变化记正负
+    await db.execAsync(`
+      CREATE TABLE stock_movement (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id INTEGER NOT NULL REFERENCES stock_product(id) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('in', 'out', 'adjust')),
+        delta REAL NOT NULL,
+        expiry_date TEXT,
+        happened_at TEXT NOT NULL,
+        note TEXT
+      );
+      CREATE INDEX ix_stock_movement_product ON stock_movement(product_id, happened_at);
     `);
   }
 

@@ -1,0 +1,77 @@
+/**
+ * 导出 / 导入备份文件（会碰文件系统、系统分享和文件选择器）。
+ *
+ * - 导出：在缓存目录生成 JSON 文件，调起系统分享，用户自己选「存储到文件」、网盘或发给自己。
+ * - 导入：用户选一个备份文件，先完整校验；确认后用它替换手机上的全部数据。
+ *   替换前先把现有数据存一份在 App 自己的目录里，导错了可以撤销。
+ */
+
+import * as DocumentPicker from 'expo-document-picker';
+import { File, Paths } from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import type { SQLiteDatabase } from 'expo-sqlite';
+
+import { collectBackup, replaceAllData } from '../db/backup';
+import { backupFileName, parseBackup, summarizeBackup, type BackupData, type BackupSummary, type ParseResult } from './backup';
+import { rescheduleReminders } from './notifications';
+
+const UNDO_FILE_NAME = 'before-last-import.json';
+
+export async function exportBackup(db: SQLiteDatabase): Promise<BackupSummary> {
+  const data = await collectBackup(db);
+  const file = new File(Paths.cache, backupFileName());
+  file.create({ overwrite: true });
+  await file.write(JSON.stringify(data, null, 2));
+  if (!(await Sharing.isAvailableAsync())) throw new Error('这台手机不支持系统分享，没法把备份文件存出去');
+  await Sharing.shareAsync(file.uri, {
+    mimeType: 'application/json',
+    UTI: 'public.json',
+    dialogTitle: '保存或发送备份文件',
+  });
+  return summarizeBackup(data);
+}
+
+export type PickedBackup = { fileName: string; result: ParseResult };
+
+/** 让用户选一个备份文件并校验。用户取消时返回 null。 */
+export async function pickBackup(): Promise<PickedBackup | null> {
+  const picked = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true, multiple: false });
+  if (picked.canceled || !picked.assets?.length) return null;
+  const asset = picked.assets[0];
+  const file = new File(asset.uri);
+  let text: string;
+  try {
+    text = await file.text();
+  } catch {
+    return { fileName: asset.name, result: { ok: false, error: '读不了这个文件' } };
+  }
+  return { fileName: asset.name, result: parseBackup(text) };
+}
+
+/** 用备份替换现有数据；替换前先把现有数据留一份，用于撤销。 */
+export async function importBackup(db: SQLiteDatabase, data: BackupData): Promise<void> {
+  const current = await collectBackup(db);
+  const undoFile = new File(Paths.document, UNDO_FILE_NAME);
+  undoFile.create({ overwrite: true });
+  await undoFile.write(JSON.stringify(current));
+  await replaceAllData(db, data);
+  await rescheduleReminders(db).catch(() => undefined);
+}
+
+/** 上次导入前留下的数据（没有就返回 null）。 */
+export async function readUndoSnapshot(): Promise<{ data: BackupData; summary: BackupSummary } | null> {
+  const undoFile = new File(Paths.document, UNDO_FILE_NAME);
+  if (!undoFile.exists) return null;
+  const result = parseBackup(await undoFile.text());
+  return result.ok ? { data: result.data, summary: result.summary } : null;
+}
+
+/** 撤销上次导入：换回导入前的数据，然后删掉这份留底。 */
+export async function undoLastImport(db: SQLiteDatabase): Promise<boolean> {
+  const snapshot = await readUndoSnapshot();
+  if (!snapshot) return false;
+  await replaceAllData(db, snapshot.data);
+  new File(Paths.document, UNDO_FILE_NAME).delete();
+  await rescheduleReminders(db).catch(() => undefined);
+  return true;
+}

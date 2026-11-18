@@ -128,3 +128,12 @@ export function describeDaysLeft(daysLeft: number): string {
 export function formatTime(hour: number, minute: number): string {
   return `${pad2(hour)}:${pad2(minute)}`;
 }
+
+/** ISO 时间戳显示成本地的「11月18日 09:30」，不是今年的带上年份。 */
+export function formatDateTime(iso: string, now: Date = new Date()): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  const time = `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+  const day = `${date.getMonth() + 1}月${date.getDate()}日`;
+  return date.getFullYear() === now.getFullYear() ? `${day} ${time}` : `${date.getFullYear()}年${day} ${time}`;
+}

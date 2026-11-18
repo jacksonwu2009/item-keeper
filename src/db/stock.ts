@@ -34,6 +34,19 @@ export type StockBatch = {
   note: string | null;
 };
 
+export type MovementType = 'in' | 'out' | 'adjust';
+
+export type StockMovement = {
+  id: number;
+  productId: number;
+  type: MovementType;
+  /** 入库为正、出库为负 */
+  delta: number;
+  expiryDate: string | null;
+  happenedAt: string;
+  note: string | null;
+};
+
 export type StockProductInput = {
   kind: StockKind;
   barcode: string | null;
@@ -61,6 +74,9 @@ const PRODUCT_COLUMNS = `
 
 const BATCH_COLUMNS = `
   id, product_id AS productId, quantity, expiry_date AS expiryDate, added_on AS addedOn, note`;
+
+const MOVEMENT_COLUMNS = `
+  id, product_id AS productId, type, delta, expiry_date AS expiryDate, happened_at AS happenedAt, note`;
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -143,6 +159,7 @@ export async function createProduct(
     productId = result.lastInsertRowId;
     if (firstBatch && firstBatch.quantity > 0) {
       await insertBatch(db, productId, firstBatch);
+      await recordMovement(db, productId, 'in', firstBatch.quantity, firstBatch.expiryDate, firstBatch.note ?? null);
     }
   });
   return productId;
@@ -160,6 +177,21 @@ export async function updateProduct(db: SQLiteDatabase, id: number, input: Stock
 
 export async function deleteProduct(db: SQLiteDatabase, id: number): Promise<void> {
   await db.runAsync('DELETE FROM stock_product WHERE id = ?', [id]);
+}
+
+async function recordMovement(
+  db: SQLiteDatabase,
+  productId: number,
+  type: MovementType,
+  delta: number,
+  expiryDate: string | null,
+  note: string | null,
+): Promise<void> {
+  if (roundQty(delta) === 0 && type !== 'adjust') return;
+  await db.runAsync(
+    'INSERT INTO stock_movement (product_id, type, delta, expiry_date, happened_at, note) VALUES (?, ?, ?, ?, ?, ?)',
+    [productId, type, roundQty(delta), expiryDate, nowIso(), emptyToNull(note)],
+  );
 }
 
 async function insertBatch(db: SQLiteDatabase, productId: number, batch: BatchInput): Promise<void> {
@@ -187,15 +219,17 @@ export async function stockIn(db: SQLiteDatabase, productId: number, batch: Batc
     } else {
       await insertBatch(db, productId, batch);
     }
+    await recordMovement(db, productId, 'in', batch.quantity, batch.expiryDate, batch.note ?? null);
     await db.runAsync('UPDATE stock_product SET updated_at = ? WHERE id = ?', [nowIso(), productId]);
   });
 }
 
-/** 出库：先到期的批次先扣。返回实际扣掉的数量和不够扣的部分。 */
+/** 出库：先到期的批次先扣。返回实际扣掉的数量和不够扣的部分。note 是出库原因（用掉、过期丢弃……）。 */
 export async function stockOut(
   db: SQLiteDatabase,
   productId: number,
   amount: number,
+  note: string | null = null,
 ): Promise<{ consumed: number; shortfall: number }> {
   let outcome = { consumed: 0, shortfall: amount };
   await db.withTransactionAsync(async () => {
@@ -208,26 +242,57 @@ export async function stockOut(
         await db.runAsync('UPDATE stock_batch SET quantity = ? WHERE id = ?', [update.quantity, update.id]);
       }
     }
+    if (plan.consumed > 0) await recordMovement(db, productId, 'out', -plan.consumed, null, note);
     await db.runAsync('UPDATE stock_product SET updated_at = ? WHERE id = ?', [nowIso(), productId]);
     outcome = { consumed: plan.consumed, shortfall: plan.shortfall };
   });
   return outcome;
 }
 
+async function getBatch(db: SQLiteDatabase, batchId: number): Promise<StockBatch | null> {
+  return db.getFirstAsync<StockBatch>(`SELECT ${BATCH_COLUMNS} FROM stock_batch WHERE id = ?`, [batchId]);
+}
+
+/** 手动调整某一批的数量或过期日期，记一条「调整」流水。数量改成 0 等于删除。 */
 export async function updateBatch(db: SQLiteDatabase, batchId: number, batch: BatchInput): Promise<void> {
   if (!(batch.quantity > 0)) {
     await deleteBatch(db, batchId);
     return;
   }
-  await db.runAsync('UPDATE stock_batch SET quantity = ?, expiry_date = ? WHERE id = ?', [
-    roundQty(batch.quantity),
-    batch.expiryDate,
-    batchId,
-  ]);
+  await db.withTransactionAsync(async () => {
+    const before = await getBatch(db, batchId);
+    if (!before) return;
+    const quantity = roundQty(batch.quantity);
+    await db.runAsync('UPDATE stock_batch SET quantity = ?, expiry_date = ? WHERE id = ?', [
+      quantity,
+      batch.expiryDate,
+      batchId,
+    ]);
+    const changes: string[] = [];
+    if (quantity !== before.quantity) changes.push(`数量 ${before.quantity} → ${quantity}`);
+    if (batch.expiryDate !== before.expiryDate) {
+      changes.push(`过期日期 ${before.expiryDate ?? '无'} → ${batch.expiryDate ?? '无'}`);
+    }
+    if (changes.length) {
+      await recordMovement(db, before.productId, 'adjust', quantity - before.quantity, batch.expiryDate, changes.join('，'));
+    }
+  });
 }
 
 export async function deleteBatch(db: SQLiteDatabase, batchId: number): Promise<void> {
-  await db.runAsync('DELETE FROM stock_batch WHERE id = ?', [batchId]);
+  await db.withTransactionAsync(async () => {
+    const before = await getBatch(db, batchId);
+    if (!before) return;
+    await db.runAsync('DELETE FROM stock_batch WHERE id = ?', [batchId]);
+    await recordMovement(db, before.productId, 'adjust', -before.quantity, before.expiryDate, '删除这一批');
+  });
+}
+
+export async function listMovements(db: SQLiteDatabase, productId: number, limit = 50): Promise<StockMovement[]> {
+  return db.getAllAsync<StockMovement>(
+    `SELECT ${MOVEMENT_COLUMNS} FROM stock_movement WHERE product_id = ? ORDER BY happened_at DESC, id DESC LIMIT ?`,
+    [productId, limit],
+  );
 }
 
 export async function listLocations(db: SQLiteDatabase): Promise<string[]> {
