@@ -11,6 +11,7 @@ import { takeScanResult, takeScanResultWithPrefix } from '../lib/scanHandoff';
 import { DEFAULT_UNITS, formatQty, KIND_LABEL, parseQty, type StockKind } from '../lib/stock';
 import { colors, font, radius } from '../theme';
 import { ExpiryInput, type ExpiryValue } from './ExpiryInput';
+import { NumberField } from './NumberField';
 import { Button, Card, ChoiceChips, Field, IconButton, Label, Screen, SectionTitle, Segmented } from './ui';
 import { UnitQtyField } from './UnitQtyField';
 
@@ -280,11 +281,13 @@ export function StockProductForm({
               </View>
               <Text style={formStyles.packText}>=</Text>
               <View style={formStyles.packSize}>
-                <Field
+                <NumberField
                   value={row.sizeText}
                   onChangeText={(value) => updatePackRow(row.key, { sizeText: value })}
                   placeholder="24"
-                  keyboardType="decimal-pad"
+                  decimals={2}
+                  buttons={false}
+                  accessibilityLabel={`1 ${row.unit || '包装'}等于多少${baseUnit}`}
                 />
               </View>
               <Text style={formStyles.packText}>{baseUnit}</Text>
@@ -359,12 +362,13 @@ export function StockProductForm({
 
       <SectionTitle title="提醒" />
       <Card>
-        <Field
+        <NumberField
           label={`库存下限（${baseUnit}）`}
           value={lowStockText}
           onChangeText={setLowStockText}
-          keyboardType="decimal-pad"
-          placeholder="留空表示不提醒"
+          decimals={2}
+          suffix={baseUnit}
+          placeholder="留空不提醒"
           hint={
             usablePacks.length
               ? `库存 ≤ 这个数时提醒补货。按${baseUnit}算，比如想剩 1 ${usablePacks[0].unit}时提醒就填 ${formatQty(usablePacks[0].size)}`
@@ -372,12 +376,14 @@ export function StockProductForm({
           }
           error={shown(errors.lowStock)}
         />
-        <Field
+        <NumberField
           label="到期前几天提醒"
           value={leadText}
           onChangeText={setLeadText}
-          keyboardType="number-pad"
-          placeholder={`留空用默认设置（${settings.expiryLeadDays} 天）`}
+          max={365}
+          suffix="天"
+          placeholder={`默认 ${settings.expiryLeadDays}`}
+          hint="留空就用设置里的默认天数"
           error={shown(errors.lead)}
         />
       </Card>

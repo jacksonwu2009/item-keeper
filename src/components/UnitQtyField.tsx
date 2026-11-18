@@ -3,7 +3,8 @@ import { StyleSheet, Text, View } from 'react-native';
 import { toBaseQty, unitOptions, type PackUnit } from '../lib/packs';
 import { formatQty, parseQty } from '../lib/stock';
 import { colors, font } from '../theme';
-import { ChoiceChips, Field, Label } from './ui';
+import { NumberField } from './NumberField';
+import { ChoiceChips, Label } from './ui';
 
 /**
  * 数量 + 单位。物品设了包装规格（如 1 箱 = 24 瓶）时，可以按箱或按瓶填，
@@ -50,11 +51,13 @@ export function UnitQtyField({
           />
         </View>
       ) : null}
-      <Field
+      <NumberField
         label={`${label}（${current}）`}
         value={qtyText}
         onChangeText={onQtyText}
-        keyboardType="decimal-pad"
+        decimals={2}
+        max={1000000}
+        suffix={current}
         error={error}
         hint={conversion ?? hint}
         autoFocus={autoFocus}

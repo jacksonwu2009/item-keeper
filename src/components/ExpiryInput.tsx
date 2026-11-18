@@ -4,7 +4,8 @@ import { StyleSheet, Text, View } from 'react-native';
 import { expiryFromShelfLife, formatDate, todayStr, type ShelfLifeUnit } from '../lib/dates';
 import { colors, font } from '../theme';
 import { DateField } from './DateField';
-import { ChoiceChips, Field, Segmented } from './ui';
+import { NumberField } from './NumberField';
+import { ChoiceChips, Segmented } from './ui';
 
 export type ExpiryMode = 'date' | 'shelf' | 'none';
 
@@ -62,13 +63,13 @@ export function ExpiryInput({
       {mode === 'shelf' ? (
         <View style={expiryStyles.wrap}>
           <DateField label="生产日期" value={productionDate} onChange={setProductionDate} required />
-          <Field
+          <NumberField
             label="保质期"
             required
             value={shelfAmount}
             onChangeText={setShelfAmount}
-            keyboardType="number-pad"
-            maxLength={4}
+            min={1}
+            max={9999}
           />
           <ChoiceChips
             options={[

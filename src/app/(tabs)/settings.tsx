@@ -4,7 +4,8 @@ import { useCallback, useState } from 'react';
 import { Alert, Linking, StyleSheet, Text, View } from 'react-native';
 
 import { TimeField } from '../../components/DateField';
-import { Button, Card, Label, MultiChips, Screen, SectionTitle, Segmented, Sheet, Stepper, SwitchRow } from '../../components/ui';
+import { IntegerField } from '../../components/NumberField';
+import { Button, Card, Label, MultiChips, Screen, SectionTitle, Segmented, Sheet, SwitchRow } from '../../components/ui';
 import { listDevices } from '../../db/devices';
 import { DEFAULT_SETTINGS, getSettings, saveSettings, type AppSettings } from '../../db/settings';
 import { listProducts } from '../../db/stock';
@@ -203,8 +204,8 @@ export default function SettingsScreen() {
           onChange={(value) => update({ lowStockEnabled: value })}
         />
         <View style={setStyles.group}>
-          <Label>到期前几天开始提醒</Label>
-          <Stepper
+          <IntegerField
+            label="到期前几天开始提醒"
             value={current.expiryLeadDays}
             onChange={(value) => update({ expiryLeadDays: value })}
             min={0}
@@ -265,8 +266,8 @@ export default function SettingsScreen() {
       <SectionTitle title="录入" />
       <Card>
         <View style={setStyles.group}>
-          <Label>新物品默认库存下限</Label>
-          <Stepper
+          <IntegerField
+            label="新物品默认库存下限"
             value={current.defaultLowStockThreshold}
             onChange={(value) => update({ defaultLowStockThreshold: value })}
             min={0}

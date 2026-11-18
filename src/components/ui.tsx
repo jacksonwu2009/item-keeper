@@ -263,45 +263,6 @@ export function Segmented<T extends string | number>({
   );
 }
 
-export function Stepper({
-  value,
-  onChange,
-  min = 0,
-  max = 999,
-  suffix,
-}: {
-  value: number;
-  onChange: (value: number) => void;
-  min?: number;
-  max?: number;
-  suffix?: string;
-}) {
-  return (
-    <View style={styles.stepper}>
-      <Pressable
-        accessibilityLabel="减少"
-        onPress={() => onChange(Math.max(min, value - 1))}
-        style={styles.stepperButton}
-        hitSlop={6}
-      >
-        <Ionicons name="remove" size={18} color={value <= min ? colors.faint : colors.accent} />
-      </Pressable>
-      <Text style={styles.stepperValue}>
-        {value}
-        {suffix ? <Text style={styles.stepperSuffix}> {suffix}</Text> : null}
-      </Text>
-      <Pressable
-        accessibilityLabel="增加"
-        onPress={() => onChange(Math.min(max, value + 1))}
-        style={styles.stepperButton}
-        hitSlop={6}
-      >
-        <Ionicons name="add" size={18} color={value >= max ? colors.faint : colors.accent} />
-      </Pressable>
-    </View>
-  );
-}
-
 export function SectionTitle({ title, right }: { title: string; right?: ReactNode }) {
   return (
     <View style={styles.sectionTitleRow}>
@@ -476,25 +437,6 @@ export const styles = StyleSheet.create({
   segmentSelected: { backgroundColor: colors.surface },
   segmentText: { fontSize: font.small, color: colors.muted, fontWeight: '500' },
   segmentTextSelected: { color: colors.ink, fontWeight: '700' },
-  stepper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surface,
-  },
-  stepperButton: { paddingHorizontal: 14, paddingVertical: 10 },
-  stepperValue: {
-    minWidth: 56,
-    textAlign: 'center',
-    fontSize: font.heading,
-    fontWeight: '700',
-    color: colors.ink,
-    fontVariant: ['tabular-nums'],
-  },
-  stepperSuffix: { fontSize: font.small, fontWeight: '400', color: colors.muted },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
   sectionTitle: { fontSize: font.small, fontWeight: '700', color: colors.muted, letterSpacing: 0.6 },
   infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },

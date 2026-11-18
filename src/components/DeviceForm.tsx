@@ -5,7 +5,8 @@ import { Text, View } from 'react-native';
 import { DEVICE_CATEGORIES, type DeviceInput } from '../db/devices';
 import { takeScanResult } from '../lib/scanHandoff';
 import { colors, font } from '../theme';
-import { Button, Card, ChoiceChips, Field, IconButton, Label, Screen, Stepper } from './ui';
+import { IntegerField } from './NumberField';
+import { Button, Card, ChoiceChips, Field, IconButton, Label, Screen } from './ui';
 
 const SCAN_TARGET = 'device-form-serial';
 
@@ -85,13 +86,15 @@ export function DeviceForm({
             />
           }
         />
-        <View style={{ gap: 8 }}>
-          <Label>数量</Label>
-          <Stepper value={quantity} onChange={setQuantity} min={Math.max(1, minQuantity)} max={9999} suffix="件" />
-          {minQuantity > 1 ? (
-            <Text style={{ fontSize: font.small, color: colors.faint }}>目前借出 {minQuantity} 件，数量不能比这个少。</Text>
-          ) : null}
-        </View>
+        <IntegerField
+          label="数量"
+          value={quantity}
+          onChange={setQuantity}
+          min={Math.max(1, minQuantity)}
+          max={9999}
+          suffix="件"
+          hint={minQuantity > 1 ? `目前借出 ${minQuantity} 件，数量不能比这个少` : undefined}
+        />
         <Field label="备注" value={note} onChangeText={setNote} placeholder="购买日期、保修期、配件等" multiline />
       </Card>
       {submitError ? <Text style={{ fontSize: font.small, color: colors.danger }}>{submitError}</Text> : null}

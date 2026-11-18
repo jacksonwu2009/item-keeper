@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { DateField } from '../../components/DateField';
+import { IntegerField } from '../../components/NumberField';
 import {
   Button,
   Card,
@@ -12,11 +13,9 @@ import {
   Empty,
   Field,
   InfoRow,
-  Label,
   Screen,
   SectionTitle,
   Sheet,
-  Stepper,
 } from '../../components/ui';
 import {
   deleteAssignment,
@@ -295,10 +294,15 @@ function AssignmentSheet({
         <ChoiceChips options={people.map((value) => ({ value, label: value }))} value={person} onChange={setPerson} />
       ) : null}
       {maxQuantity > 1 || quantity > 1 ? (
-        <View style={{ gap: 8 }}>
-          <Label>数量</Label>
-          <Stepper value={quantity} onChange={setQuantity} min={1} max={Math.max(1, maxQuantity)} suffix="件" />
-        </View>
+        <IntegerField
+          label="数量"
+          value={quantity}
+          onChange={setQuantity}
+          min={1}
+          max={Math.max(1, maxQuantity)}
+          suffix="件"
+          hint={`最多 ${Math.max(1, maxQuantity)} 件`}
+        />
       ) : null}
       <DateField label="领取日期" required value={issuedOn} onChange={setIssuedOn} />
       {initial ? (
@@ -358,10 +362,15 @@ function ReturnSheet({
         minimumDate={assignment.issuedOn}
       />
       {assignment.quantity > 1 ? (
-        <View style={{ gap: 8 }}>
-          <Label>退还数量</Label>
-          <Stepper value={quantity} onChange={setQuantity} min={1} max={assignment.quantity} suffix="件" />
-        </View>
+        <IntegerField
+          label="退还数量"
+          value={quantity}
+          onChange={setQuantity}
+          min={1}
+          max={assignment.quantity}
+          suffix="件"
+          hint={`领了 ${assignment.quantity} 件，没还的继续算在名下`}
+        />
       ) : null}
       {error ? <Text style={deviceDetail.error}>{error}</Text> : null}
       <Button

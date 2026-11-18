@@ -5,7 +5,8 @@ import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { DateField } from '../../components/DateField';
 import { ExpiryInput, type ExpiryValue } from '../../components/ExpiryInput';
-import { Button, Card, Chip, ChoiceChips, Empty, Field, InfoRow, Label, Screen, SectionTitle, Sheet } from '../../components/ui';
+import { Button, Card, Chip, ChoiceChips, Empty, InfoRow, Label, Screen, SectionTitle, Sheet } from '../../components/ui';
+import { NumberField } from '../../components/NumberField';
 import { UnitQtyField } from '../../components/UnitQtyField';
 import { DEFAULT_SETTINGS, getSettings } from '../../db/settings';
 import {
@@ -486,13 +487,15 @@ function BatchSheet({
 
   return (
     <Sheet visible title="调整这一批" onClose={onClose}>
-      <Field
+      <NumberField
         label={`数量（${unit}）`}
         value={qtyText}
         onChangeText={setQtyText}
-        keyboardType="decimal-pad"
+        decimals={2}
+        max={1000000}
+        suffix={unit}
         hint="改成 0 等于删除这一批"
-        error={qty === null ? '请填数字' : null}
+        error={qty === null ? '请填数量' : null}
       />
       <DateField label="过期日期" value={expiryDate} onChange={setExpiryDate} clearable placeholder="没记过期日期" />
       <View style={detailStyles.actions}>
