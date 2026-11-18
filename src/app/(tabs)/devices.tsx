@@ -8,6 +8,7 @@ import { Button, Chip, Empty, Field, Segmented } from '../../components/ui';
 import { listActiveAssignments, listDevices, type ActiveAssignment, type DeviceSummary } from '../../db/devices';
 import { useFocusData } from '../../hooks/useFocusData';
 import { diffDays, formatDate, todayStr } from '../../lib/dates';
+import { warrantyStatus } from '../../lib/warranty';
 import { colors, font, radius } from '../../theme';
 
 type ListMode = 'device' | 'person';
@@ -173,6 +174,7 @@ export default function DevicesScreen() {
       renderSectionHeader={({ section }) => <Text style={deviceStyles.sectionTitle}>{section.title}</Text>}
       renderItem={({ item }) => {
         const available = item.quantity - item.outQty;
+        const warranty = warrantyStatus(item.warrantyUntil, today);
         return (
           <Pressable
             onPress={() => router.push({ pathname: '/device/[id]', params: { id: String(item.id) } })}
@@ -191,6 +193,9 @@ export default function DevicesScreen() {
                 <Text style={deviceStyles.holders} numberOfLines={1}>
                   使用人：{item.holders}
                 </Text>
+              ) : null}
+              {warranty && warranty.level !== 'ok' ? (
+                <Chip text={warranty.text} tone={warranty.level === 'expired' ? 'neutral' : 'warn'} />
               ) : null}
             </View>
             <View style={deviceStyles.countBox}>

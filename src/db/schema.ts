@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 export const DATABASE_NAME = 'item-keeper.db';
-const DATABASE_VERSION = 3;
+const DATABASE_VERSION = 4;
 
 /**
  * 表结构
@@ -10,6 +10,7 @@ const DATABASE_VERSION = 3;
  * - device / device_assignment：设备及每次领用、退还记录
  * - stock_movement：出入库流水（v2 起）
  * - stock_pack：包装规格，如「1 箱 = 24 瓶」，可带自己的条码（v3 起）
+ * - device.purchase_date / warranty_until、device_accessory：设备购买日期、保修到期日、随设备的配件（v4 起）
  * - setting：键值设置
  */
 export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
@@ -110,6 +111,22 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
       CREATE UNIQUE INDEX ux_stock_pack_barcode ON stock_pack(barcode) WHERE barcode IS NOT NULL;
       ALTER TABLE stock_movement ADD COLUMN input_qty REAL;
       ALTER TABLE stock_movement ADD COLUMN input_unit TEXT;
+    `);
+  }
+
+  if (currentVersion < 4) {
+    // 配件数量按「每件设备配几个」记；整机领用、退还时一起走
+    await db.execAsync(`
+      ALTER TABLE device ADD COLUMN purchase_date TEXT;
+      ALTER TABLE device ADD COLUMN warranty_until TEXT;
+      CREATE TABLE device_accessory (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        device_id INTEGER NOT NULL REFERENCES device(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity >= 1),
+        sort INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX ix_device_accessory_device ON device_accessory(device_id);
     `);
   }
 

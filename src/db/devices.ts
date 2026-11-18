@@ -1,5 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
+import type { Accessory } from '../lib/warranty';
+
 export const DEVICE_CATEGORIES = ['笔记本', '台式机', '显示器', '键盘', '鼠标', '耳机', '扩展坞', '充电器', '手机', '平板', '其他'];
 
 export type Device = {
@@ -10,6 +12,8 @@ export type Device = {
   serialNo: string | null;
   quantity: number;
   note: string | null;
+  purchaseDate: string | null;
+  warrantyUntil: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -44,6 +48,10 @@ export type DeviceInput = {
   serialNo: string | null;
   quantity: number;
   note: string | null;
+  purchaseDate: string | null;
+  warrantyUntil: string | null;
+  /** 每件设备配的配件 */
+  accessories: Accessory[];
 };
 
 export type AssignmentInput = {
@@ -56,6 +64,7 @@ export type AssignmentInput = {
 
 const DEVICE_COLUMNS = `
   d.id, d.category, d.name, d.model, d.serial_no AS serialNo, d.quantity, d.note,
+  d.purchase_date AS purchaseDate, d.warranty_until AS warrantyUntil,
   d.created_at AS createdAt, d.updated_at AS updatedAt`;
 
 const ASSIGNMENT_COLUMNS = `
@@ -126,25 +135,61 @@ function deviceParams(input: DeviceInput) {
     emptyToNull(input.serialNo),
     Math.max(1, Math.floor(input.quantity)),
     emptyToNull(input.note),
+    input.purchaseDate,
+    input.warrantyUntil,
   ];
 }
 
-export async function createDevice(db: SQLiteDatabase, input: DeviceInput): Promise<number> {
-  const now = nowIso();
-  const result = await db.runAsync(
-    `INSERT INTO device (category, name, model, serial_no, quantity, note, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [...deviceParams(input), now, now],
+export async function listAccessories(db: SQLiteDatabase, deviceId: number): Promise<Accessory[]> {
+  return db.getAllAsync<Accessory>('SELECT name, quantity FROM device_accessory WHERE device_id = ? ORDER BY sort, id', [
+    deviceId,
+  ]);
+}
+
+export async function listAllAccessories(db: SQLiteDatabase): Promise<(Accessory & { deviceId: number })[]> {
+  return db.getAllAsync<Accessory & { deviceId: number }>(
+    'SELECT device_id AS deviceId, name, quantity FROM device_accessory ORDER BY device_id, sort, id',
   );
-  return result.lastInsertRowId;
+}
+
+async function saveAccessories(db: SQLiteDatabase, deviceId: number, accessories: Accessory[]): Promise<void> {
+  await db.runAsync('DELETE FROM device_accessory WHERE device_id = ?', [deviceId]);
+  let sort = 0;
+  for (const item of accessories) {
+    await db.runAsync('INSERT INTO device_accessory (device_id, name, quantity, sort) VALUES (?, ?, ?, ?)', [
+      deviceId,
+      item.name.trim(),
+      Math.max(1, Math.floor(item.quantity)),
+      sort++,
+    ]);
+  }
+}
+
+export async function createDevice(db: SQLiteDatabase, input: DeviceInput): Promise<number> {
+  let deviceId = 0;
+  await db.withTransactionAsync(async () => {
+    const now = nowIso();
+    const result = await db.runAsync(
+      `INSERT INTO device (category, name, model, serial_no, quantity, note, purchase_date, warranty_until, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [...deviceParams(input), now, now],
+    );
+    deviceId = result.lastInsertRowId;
+    await saveAccessories(db, deviceId, input.accessories);
+  });
+  return deviceId;
 }
 
 export async function updateDevice(db: SQLiteDatabase, id: number, input: DeviceInput): Promise<void> {
-  await db.runAsync(
-    `UPDATE device SET category = ?, name = ?, model = ?, serial_no = ?, quantity = ?, note = ?, updated_at = ?
-      WHERE id = ?`,
-    [...deviceParams(input), nowIso(), id],
-  );
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `UPDATE device SET category = ?, name = ?, model = ?, serial_no = ?, quantity = ?, note = ?,
+              purchase_date = ?, warranty_until = ?, updated_at = ?
+        WHERE id = ?`,
+      [...deviceParams(input), nowIso(), id],
+    );
+    await saveAccessories(db, id, input.accessories);
+  });
 }
 
 export async function deleteDevice(db: SQLiteDatabase, id: number): Promise<void> {

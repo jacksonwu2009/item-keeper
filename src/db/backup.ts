@@ -17,7 +17,7 @@ export async function collectBackup(
   db: SQLiteDatabase,
   scope: readonly BackupScope[] = ALL_SCOPES,
 ): Promise<BackupData> {
-  const [settings, products, packs, batches, movements, devices, assignments] = await Promise.all([
+  const [settings, products, packs, batches, movements, devices, accessories, assignments] = await Promise.all([
     getSettings(db),
     db.getAllAsync<{
       id: number;
@@ -68,12 +68,18 @@ export async function collectBackup(
       serialNo: string | null;
       quantity: number;
       note: string | null;
+      purchaseDate: string | null;
+      warrantyUntil: string | null;
       createdAt: string;
       updatedAt: string;
     }>(
       `SELECT id, category, name, model, serial_no AS serialNo, quantity, note,
+              purchase_date AS purchaseDate, warranty_until AS warrantyUntil,
               created_at AS createdAt, updated_at AS updatedAt
          FROM device ORDER BY id`,
+    ),
+    db.getAllAsync<{ deviceId: number; name: string; quantity: number }>(
+      'SELECT device_id AS deviceId, name, quantity FROM device_accessory ORDER BY device_id, sort, id',
     ),
     db.getAllAsync<{
       deviceId: number;
@@ -87,7 +93,11 @@ export async function collectBackup(
          FROM device_assignment ORDER BY id`,
     ),
   ]);
-  return buildBackup({ settings, products, packs, batches, movements, devices, assignments }, new Date(), scope);
+  return buildBackup(
+    { settings, products, packs, batches, movements, devices, accessories, assignments },
+    new Date(),
+    scope,
+  );
 }
 
 /** 手机上保留下来（这次不替换）的物品及其全部条码，用来查条码冲突。 */
@@ -131,7 +141,7 @@ export async function replaceData(db: SQLiteDatabase, data: BackupData, scope: r
       await db.runAsync('DELETE FROM stock_product WHERE kind = ?', [kind]);
     }
     if (selected.includes('devices')) {
-      await db.execAsync('DELETE FROM device_assignment; DELETE FROM device;');
+      await db.execAsync('DELETE FROM device_assignment; DELETE FROM device_accessory; DELETE FROM device;');
     }
     if (selected.includes('settings')) {
       await db.execAsync('DELETE FROM setting;');
@@ -194,11 +204,31 @@ export async function replaceData(db: SQLiteDatabase, data: BackupData, scope: r
 
     for (const device of selected.includes('devices') ? data.devices : []) {
       const result = await db.runAsync(
-        `INSERT INTO device (category, name, model, serial_no, quantity, note, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [device.category, device.name, device.model, device.serialNo, device.quantity, device.note, device.createdAt, device.updatedAt],
+        `INSERT INTO device (category, name, model, serial_no, quantity, note, purchase_date, warranty_until, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          device.category,
+          device.name,
+          device.model,
+          device.serialNo,
+          device.quantity,
+          device.note,
+          device.purchaseDate,
+          device.warrantyUntil,
+          device.createdAt,
+          device.updatedAt,
+        ],
       );
       const deviceId = result.lastInsertRowId;
+      let accessorySort = 0;
+      for (const accessory of device.accessories) {
+        await db.runAsync('INSERT INTO device_accessory (device_id, name, quantity, sort) VALUES (?, ?, ?, ?)', [
+          deviceId,
+          accessory.name,
+          accessory.quantity,
+          accessorySort++,
+        ]);
+      }
       for (const assignment of device.assignments) {
         await db.runAsync(
           `INSERT INTO device_assignment (device_id, person, quantity, issued_on, returned_on, note)

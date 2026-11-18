@@ -81,9 +81,15 @@ const source: BackupSource = {
       serialNo: 'C02XYZ',
       quantity: 2,
       note: null,
+      purchaseDate: '2026-10-01',
+      warrantyUntil: '2027-09-30',
       createdAt: '2026-10-01T01:00:00.000Z',
       updatedAt: '2026-10-01T01:00:00.000Z',
     },
+  ],
+  accessories: [
+    { deviceId: 7, name: '充电器', quantity: 1 },
+    { deviceId: 7, name: '扩展坞', quantity: 1 },
   ],
   assignments: [
     { deviceId: 7, person: '张三', quantity: 1, issuedOn: '2026-10-02', returnedOn: null, note: '含充电器' },
@@ -106,6 +112,11 @@ describe('备份导出', () => {
     assert.equal(data.products[0].movements[0].inputUnit, '箱');
     assert.equal(data.products[1].movements[0].note, '用掉');
     assert.equal(data.devices[0].assignments.length, 2);
+    assert.equal(data.devices[0].warrantyUntil, '2027-09-30');
+    assert.deepEqual(
+      data.devices[0].accessories.map((item) => item.name),
+      ['充电器', '扩展坞'],
+    );
     assert.equal('id' in data.products[0], false);
   });
 
@@ -165,6 +176,8 @@ describe('备份导入校验', () => {
     ['退还早于领取', (data) => (data.devices[0].assignments[1].returnedOn = '2026-08-01'), /退还日期早于领取日期/],
     ['借出比总数多', (data) => (data.devices[0].quantity = 1, data.devices[0].assignments[1].returnedOn = null), /比总数 1 件还多/],
     ['数量是负数', (data) => (data.products[0].batches[0].quantity = -1), /数量「-1」不对/],
+    ['保修日期无效', (data) => (data.devices[0].warrantyUntil = '2027-02-30'), /保修到期日「2027-02-30」/],
+    ['配件重复', (data) => data.devices[0].accessories.push({ name: '充电器', quantity: 2 }), /配件「充电器」重复/],
   ];
   for (const [title, mutate, pattern] of rejects) {
     it(`拒绝：${title}`, () => {
@@ -238,6 +251,21 @@ describe('按分类导出导入', () => {
     assert.equal(result.summary.daily, 1);
     assert.equal(result.summary.food, 0);
     assert.equal(result.data.settings?.expiryLeadDays, 5);
+  });
+
+  it('第 3 版备份没有购买日期、保修和配件，导入后为空', () => {
+    const data = JSON.parse(JSON.stringify(buildBackup(source, at)));
+    data.format = 3;
+    for (const device of data.devices) {
+      delete device.purchaseDate;
+      delete device.warrantyUntil;
+      delete device.accessories;
+    }
+    const result = parseBackup(JSON.stringify(data));
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.data.devices[0].warrantyUntil, null);
+    assert.deepEqual(result.data.devices[0].accessories, []);
   });
 
   it('第 2 版备份没有 scope，当作全部分类', () => {

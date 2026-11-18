@@ -23,6 +23,7 @@ import {
   getDevice,
   issueDevice,
   listAssignments,
+  listAccessories,
   listPeople,
   returnDevice,
   updateAssignment,
@@ -31,6 +32,7 @@ import {
 } from '../../db/devices';
 import { useFocusData } from '../../hooks/useFocusData';
 import { diffDays, formatDate, todayStr } from '../../lib/dates';
+import { describeAccessories, warrantyStatus, type Accessory } from '../../lib/warranty';
 import { colors, font, radius } from '../../theme';
 
 type SheetState =
@@ -47,17 +49,19 @@ export default function DeviceDetailScreen() {
   const [message, setMessage] = useState<string | null>(null);
 
   const loader = useCallback(async () => {
-    const [device, assignments, people] = await Promise.all([
+    const [device, assignments, people, accessories] = await Promise.all([
       getDevice(db, deviceId),
       listAssignments(db, deviceId),
       listPeople(db),
+      listAccessories(db, deviceId),
     ]);
-    return { device, assignments, people };
+    return { device, assignments, people, accessories };
   }, [db, deviceId]);
-  const [{ device, assignments, people }, reload, loaded] = useFocusData(loader, {
+  const [{ device, assignments, people, accessories }, reload, loaded] = useFocusData(loader, {
     device: null as Device | null,
     assignments: [] as DeviceAssignment[],
     people: [] as string[],
+    accessories: [] as Accessory[],
   });
 
   async function afterChange(note: string) {
@@ -81,6 +85,8 @@ export default function DeviceDetailScreen() {
   const outQty = active.reduce((sum, assignment) => sum + assignment.quantity, 0);
   const available = device.quantity - outQty;
   const today = todayStr();
+  const warranty = warrantyStatus(device.warrantyUntil, today);
+  const accessoryText = accessories.length ? describeAccessories(accessories) : null;
 
   function confirmDelete() {
     if (!device) return;
@@ -104,6 +110,13 @@ export default function DeviceDetailScreen() {
         <Text style={deviceDetail.category}>{device.category}</Text>
         <Text style={deviceDetail.title}>{device.name}</Text>
         {device.model ? <Text style={deviceDetail.sub}>型号 {device.model}</Text> : null}
+        {warranty ? (
+          <Chip
+            text={warranty.text}
+            tone={warranty.level === 'expired' ? 'danger' : warranty.level === 'soon' ? 'warn' : 'ok'}
+            icon="shield-checkmark-outline"
+          />
+        ) : null}
         <View style={deviceDetail.counts}>
           <Count label="总数" value={device.quantity} />
           <Count label="借出" value={outQty} tone={outQty > 0 ? colors.info : undefined} />
@@ -175,6 +188,9 @@ export default function DeviceDetailScreen() {
         <InfoRow label="类别" value={device.category} />
         <InfoRow label="型号" value={device.model ?? '—'} />
         <InfoRow label="序列号" value={device.serialNo ?? '—'} />
+        <InfoRow label="购买日期" value={formatDate(device.purchaseDate)} />
+        <InfoRow label="保修到期" value={device.warrantyUntil ? formatDate(device.warrantyUntil) : '没记录'} />
+        <InfoRow label={device.quantity > 1 ? '配件（每件）' : '配件'} value={accessoryText ?? '没有'} />
         {device.note ? <InfoRow label="备注" value={device.note} /> : null}
       </Card>
 
@@ -194,6 +210,7 @@ export default function DeviceDetailScreen() {
           title="登记领用"
           people={people}
           maxQuantity={available}
+          accessoryText={accessoryText}
           onClose={() => setSheet(null)}
           onSubmit={async (input) => {
             await issueDevice(db, device.id, input);
@@ -221,6 +238,7 @@ export default function DeviceDetailScreen() {
       {sheet?.type === 'return' ? (
         <ReturnSheet
           assignment={sheet.assignment}
+          accessoryText={accessoryText}
           onClose={() => setSheet(null)}
           onSubmit={async (returnedOn, quantity) => {
             await returnDevice(db, sheet.assignment.id, returnedOn, quantity);
@@ -245,6 +263,7 @@ function AssignmentSheet({
   title,
   people,
   maxQuantity,
+  accessoryText,
   initial,
   onClose,
   onSubmit,
@@ -253,6 +272,8 @@ function AssignmentSheet({
   title: string;
   people: string[];
   maxQuantity: number;
+  /** 随设备一起领走的配件说明，领用时提示一下 */
+  accessoryText?: string | null;
   initial?: DeviceAssignment;
   onClose: () => void;
   onSubmit: (input: {
@@ -289,6 +310,11 @@ function AssignmentSheet({
 
   return (
     <Sheet visible title={title} onClose={onClose}>
+      {accessoryText && !initial ? (
+        <View style={deviceDetail.accessoryNote}>
+          <Text style={deviceDetail.accessoryNoteText}>随设备一起领走：{accessoryText}</Text>
+        </View>
+      ) : null}
       <Field label="使用人" required value={person} onChangeText={setPerson} placeholder="姓名或工号" />
       {people.length ? (
         <ChoiceChips options={people.map((value) => ({ value, label: value }))} value={person} onChange={setPerson} />
@@ -339,10 +365,13 @@ function AssignmentSheet({
 
 function ReturnSheet({
   assignment,
+  accessoryText,
   onClose,
   onSubmit,
 }: {
   assignment: DeviceAssignment;
+  /** 退还时提示核对的配件 */
+  accessoryText: string | null;
   onClose: () => void;
   onSubmit: (returnedOn: string, quantity: number) => Promise<void>;
 }) {
@@ -354,6 +383,13 @@ function ReturnSheet({
   return (
     <Sheet visible title={`${assignment.person} 退还`} onClose={onClose}>
       <Text style={deviceDetail.meta}>{formatDate(assignment.issuedOn)} 领取</Text>
+      {accessoryText ? (
+        <View style={deviceDetail.accessoryNote}>
+          <Text style={deviceDetail.accessoryNoteText}>
+            请核对配件{assignment.quantity > 1 ? '（每件）' : ''}：{accessoryText}
+          </Text>
+        </View>
+      ) : null}
       <DateField
         label="退还日期"
         required
@@ -418,4 +454,6 @@ const deviceDetail = StyleSheet.create({
   meta: { fontSize: font.small, color: colors.muted, marginTop: 2 },
   actions: { flexDirection: 'row', gap: 10 },
   error: { fontSize: font.small, color: colors.danger },
+  accessoryNote: { backgroundColor: colors.infoSoft, borderRadius: radius.sm, padding: 10 },
+  accessoryNoteText: { fontSize: font.small, color: colors.info, lineHeight: 19 },
 });

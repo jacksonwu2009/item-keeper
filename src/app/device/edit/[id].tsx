@@ -4,17 +4,18 @@ import { useEffect, useState } from 'react';
 
 import { DeviceForm } from '../../../components/DeviceForm';
 import { Empty, Screen } from '../../../components/ui';
-import { getDevice, outQuantity, updateDevice, type Device } from '../../../db/devices';
+import { getDevice, listAccessories, outQuantity, updateDevice, type Device } from '../../../db/devices';
+import type { Accessory } from '../../../lib/warranty';
 
 export default function EditDeviceScreen() {
   const db = useSQLiteContext();
   const { id } = useLocalSearchParams<{ id: string }>();
   const deviceId = Number(id);
-  const [state, setState] = useState<{ device: Device | null; out: number } | null>(null);
+  const [state, setState] = useState<{ device: Device | null; out: number; accessories: Accessory[] } | null>(null);
 
   useEffect(() => {
-    Promise.all([getDevice(db, deviceId), outQuantity(db, deviceId)])
-      .then(([device, out]) => setState({ device, out }))
+    Promise.all([getDevice(db, deviceId), outQuantity(db, deviceId), listAccessories(db, deviceId)])
+      .then(([device, out, accessories]) => setState({ device, out, accessories }))
       .catch(() => undefined);
   }, [db, deviceId]);
 
@@ -29,7 +30,7 @@ export default function EditDeviceScreen() {
 
   return (
     <DeviceForm
-      initial={state.device}
+      initial={{ ...state.device, accessories: state.accessories }}
       minQuantity={state.out}
       submitLabel="保存修改"
       onSubmit={async (input) => {

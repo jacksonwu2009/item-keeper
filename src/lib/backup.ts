@@ -11,14 +11,16 @@ import { DEFAULT_SETTINGS, type AppSettings } from '../db/settings';
 import { isValidDateStr, todayStr } from './dates';
 import { validatePacks, type PackUnit } from './packs';
 import { roundQty } from './stock';
+import { validateAccessories, type Accessory } from './warranty';
 
 export const BACKUP_APP = 'item-keeper';
 /**
  * 1：首版；2：加了包装规格 packs 和流水的 inputQty / inputUnit（读 1 版时这些取空）；
- * 3：加了 scope，可以只含部分分类（读 1、2 版时当作全部分类）。
+ * 3：加了 scope，可以只含部分分类（读 1、2 版时当作全部分类）；
+ * 4：设备加了 purchaseDate、warrantyUntil、accessories（读旧版时取空）。
  * 只含部分分类的文件必须让旧版 App 拒绝，否则旧版会当成全量备份把别的分类清空，所以升版本号。
  */
-export const BACKUP_FORMAT = 3;
+export const BACKUP_FORMAT = 4;
 
 export type BackupScope = 'food' | 'daily' | 'devices' | 'settings';
 export const ALL_SCOPES: BackupScope[] = ['food', 'daily', 'devices', 'settings'];
@@ -84,6 +86,10 @@ export type BackupDevice = {
   serialNo: string | null;
   quantity: number;
   note: string | null;
+  purchaseDate: string | null;
+  warrantyUntil: string | null;
+  /** 每件设备配的配件 */
+  accessories: Accessory[];
   createdAt: string;
   updatedAt: string;
   assignments: BackupAssignment[];
@@ -118,7 +124,8 @@ type SourceProduct = Omit<BackupProduct, 'batches' | 'movements' | 'packs'> & { 
 type SourcePack = PackUnit & { productId: number };
 type SourceBatch = BackupBatch & { productId: number };
 type SourceMovement = BackupMovement & { productId: number };
-type SourceDevice = Omit<BackupDevice, 'assignments'> & { id: number };
+type SourceDevice = Omit<BackupDevice, 'assignments' | 'accessories'> & { id: number };
+type SourceAccessory = Accessory & { deviceId: number };
 type SourceAssignment = BackupAssignment & { deviceId: number };
 
 export type BackupSource = {
@@ -128,6 +135,7 @@ export type BackupSource = {
   batches: SourceBatch[];
   movements: SourceMovement[];
   devices: SourceDevice[];
+  accessories: SourceAccessory[];
   assignments: SourceAssignment[];
 };
 
@@ -151,6 +159,7 @@ export function buildBackup(
   const batchesByProduct = groupBy(source.batches, (batch) => batch.productId);
   const movementsByProduct = groupBy(source.movements, (movement) => movement.productId);
   const assignmentsByDevice = groupBy(source.assignments, (assignment) => assignment.deviceId);
+  const accessoriesByDevice = groupBy(source.accessories, (accessory) => accessory.deviceId);
 
   return {
     app: BACKUP_APP,
@@ -199,6 +208,12 @@ export function buildBackup(
       serialNo: device.serialNo,
       quantity: device.quantity,
       note: device.note,
+      purchaseDate: device.purchaseDate,
+      warrantyUntil: device.warrantyUntil,
+      accessories: (accessoriesByDevice.get(id) ?? []).map((accessory) => ({
+        name: accessory.name,
+        quantity: accessory.quantity,
+      })),
       createdAt: device.createdAt,
       updatedAt: device.updatedAt,
       assignments: (assignmentsByDevice.get(id) ?? []).map((assignment) => ({
@@ -426,6 +441,19 @@ function parseDevice(raw: unknown, index: number, exportedAt: string): BackupDev
     .reduce((sum, assignment) => sum + assignment.quantity, 0);
   if (outQty > quantity) fail(where, `借出 ${outQty} 件，比总数 ${quantity} 件还多`);
 
+  const accessories: Accessory[] = list(raw.accessories, where, '配件').map((accessory, accessoryIndex) => {
+    const at = `${where}的第 ${accessoryIndex + 1} 个配件`;
+    if (!isObj(accessory)) fail(at, '格式不对');
+    return {
+      name: reqText(accessory.name, at, '名称'),
+      quantity: optNumber(accessory.quantity, at, '数量', 1, 9999, true) ?? 1,
+    };
+  });
+  const accessoryError = validateAccessories(accessories);
+  if (accessoryError) fail(where, accessoryError);
+  const purchaseDate = optDate(raw.purchaseDate, where, '购买日期');
+  const warrantyUntil = optDate(raw.warrantyUntil, where, '保修到期日');
+
   return {
     category: optText(raw.category, where, '类别') ?? '其他',
     name,
@@ -433,6 +461,9 @@ function parseDevice(raw: unknown, index: number, exportedAt: string): BackupDev
     serialNo: optText(raw.serialNo, where, '序列号'),
     quantity,
     note: optText(raw.note, where, '备注'),
+    purchaseDate,
+    warrantyUntil,
+    accessories,
     createdAt: timestamp(raw.createdAt, exportedAt),
     updatedAt: timestamp(raw.updatedAt, exportedAt),
     assignments,
