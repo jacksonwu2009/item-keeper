@@ -28,6 +28,10 @@ yarn-error.*
 
 # macOS
 .DS_Store
+
+# 使用指南里只给同事看的内容（同事名字、Expo Go 地址），不进仓库；见 scripts/render-guide.py
+*.local.json
+*.local.html
 *.pem
 
 # local env files
