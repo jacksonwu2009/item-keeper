@@ -1,11 +1,22 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-import { buildBackup, type BackupData } from '../lib/backup';
+import {
+  ALL_SCOPES,
+  buildBackup,
+  findBarcodeConflict,
+  normalizeScope,
+  type BackupData,
+  type BackupScope,
+  type KeptProduct,
+} from '../lib/backup';
 import { getSettings } from './settings';
 import type { MovementType } from './stock';
 
-/** 把手机上的全部数据读出来，组装成备份。 */
-export async function collectBackup(db: SQLiteDatabase): Promise<BackupData> {
+/** 把手机上的数据读出来，按所选分类组装成备份（默认全部）。 */
+export async function collectBackup(
+  db: SQLiteDatabase,
+  scope: readonly BackupScope[] = ALL_SCOPES,
+): Promise<BackupData> {
   const [settings, products, packs, batches, movements, devices, assignments] = await Promise.all([
     getSettings(db),
     db.getAllAsync<{
@@ -76,23 +87,57 @@ export async function collectBackup(db: SQLiteDatabase): Promise<BackupData> {
          FROM device_assignment ORDER BY id`,
     ),
   ]);
-  return buildBackup({ settings, products, packs, batches, movements, devices, assignments });
+  return buildBackup({ settings, products, packs, batches, movements, devices, assignments }, new Date(), scope);
 }
 
-/** 用备份里的数据替换手机上的全部数据（一个事务里完成，失败就整体回滚）。 */
-export async function replaceAllData(db: SQLiteDatabase, data: BackupData): Promise<void> {
-  await db.withTransactionAsync(async () => {
-    await db.execAsync(`
-      DELETE FROM stock_movement;
-      DELETE FROM stock_pack;
-      DELETE FROM stock_batch;
-      DELETE FROM stock_product;
-      DELETE FROM device_assignment;
-      DELETE FROM device;
-      DELETE FROM setting;
-    `);
+/** 手机上保留下来（这次不替换）的物品及其全部条码，用来查条码冲突。 */
+async function keptProducts(db: SQLiteDatabase, replacedKinds: string[]): Promise<KeptProduct[]> {
+  const rows = await db.getAllAsync<{ id: number; name: string; kind: 'food' | 'daily'; barcode: string | null }>(
+    'SELECT id, name, kind, barcode FROM stock_product',
+  );
+  const packs = await db.getAllAsync<{ productId: number; barcode: string }>(
+    'SELECT product_id AS productId, barcode FROM stock_pack WHERE barcode IS NOT NULL',
+  );
+  return rows
+    .filter((row) => !replacedKinds.includes(row.kind))
+    .map((row) => ({
+      name: row.name,
+      kind: row.kind,
+      barcodes: [row.barcode, ...packs.filter((pack) => pack.productId === row.id).map((pack) => pack.barcode)].filter(
+        (code): code is string => !!code,
+      ),
+    }));
+}
 
-    for (const product of data.products) {
+/**
+ * 用备份里的数据替换手机上所选分类的数据，没选的分类原样保留。
+ * 一个事务里完成，失败就整体回滚。scope 只能是备份里有的分类。
+ */
+export async function replaceData(db: SQLiteDatabase, data: BackupData, scope: readonly BackupScope[]): Promise<void> {
+  const selected = normalizeScope(scope).filter((item) => data.scope.includes(item));
+  if (!selected.length) throw new Error('没有选要导入的分类');
+  const kinds = selected.filter((item): item is 'food' | 'daily' => item === 'food' || item === 'daily');
+  const incoming = data.products.filter((product) => kinds.includes(product.kind));
+
+  const conflict = findBarcodeConflict(incoming, await keptProducts(db, kinds));
+  if (conflict) throw new Error(conflict);
+
+  await db.withTransactionAsync(async () => {
+    for (const kind of kinds) {
+      const owned = 'SELECT id FROM stock_product WHERE kind = ?';
+      await db.runAsync(`DELETE FROM stock_movement WHERE product_id IN (${owned})`, [kind]);
+      await db.runAsync(`DELETE FROM stock_pack WHERE product_id IN (${owned})`, [kind]);
+      await db.runAsync(`DELETE FROM stock_batch WHERE product_id IN (${owned})`, [kind]);
+      await db.runAsync('DELETE FROM stock_product WHERE kind = ?', [kind]);
+    }
+    if (selected.includes('devices')) {
+      await db.execAsync('DELETE FROM device_assignment; DELETE FROM device;');
+    }
+    if (selected.includes('settings')) {
+      await db.execAsync('DELETE FROM setting;');
+    }
+
+    for (const product of incoming) {
       const result = await db.runAsync(
         `INSERT INTO stock_product
            (kind, barcode, name, brand, spec, unit, location, low_stock_threshold, expiry_lead_days, note, created_at, updated_at)
@@ -147,7 +192,7 @@ export async function replaceAllData(db: SQLiteDatabase, data: BackupData): Prom
       }
     }
 
-    for (const device of data.devices) {
+    for (const device of selected.includes('devices') ? data.devices : []) {
       const result = await db.runAsync(
         `INSERT INTO device (category, name, model, serial_no, quantity, note, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -163,8 +208,10 @@ export async function replaceAllData(db: SQLiteDatabase, data: BackupData): Prom
       }
     }
 
-    for (const [key, value] of Object.entries(data.settings)) {
-      await db.runAsync('INSERT INTO setting (key, value) VALUES (?, ?)', [key, JSON.stringify(value)]);
+    if (selected.includes('settings') && data.settings) {
+      for (const [key, value] of Object.entries(data.settings)) {
+        await db.runAsync('INSERT INTO setting (key, value) VALUES (?, ?)', [key, JSON.stringify(value)]);
+      }
     }
   });
 }

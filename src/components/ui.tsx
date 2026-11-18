@@ -196,6 +196,44 @@ export function ChoiceChips<T extends string | number>({
   );
 }
 
+/** 可多选的标签，选中的带勾。 */
+export function MultiChips<T extends string>({
+  options,
+  values,
+  onChange,
+}: {
+  options: { value: T; label: string; disabled?: boolean }[];
+  values: T[];
+  onChange: (values: T[]) => void;
+}) {
+  return (
+    <View style={styles.choiceWrap}>
+      {options.map((option) => {
+        const selected = values.includes(option.value);
+        return (
+          <Pressable
+            key={option.value}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: selected, disabled: !!option.disabled }}
+            disabled={option.disabled}
+            onPress={() =>
+              onChange(selected ? values.filter((value) => value !== option.value) : [...values, option.value])
+            }
+            style={[styles.choice, styles.multiChoice, selected && styles.choiceSelected, option.disabled && styles.choiceDisabled]}
+          >
+            <Ionicons
+              name={selected ? 'checkbox' : 'square-outline'}
+              size={16}
+              color={selected ? colors.accentInk : colors.faint}
+            />
+            <Text style={[styles.choiceText, selected && styles.choiceTextSelected]}>{option.label}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 export function Segmented<T extends string | number>({
   options,
   value,
@@ -423,6 +461,8 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   choiceSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
+  multiChoice: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  choiceDisabled: { opacity: 0.4 },
   choiceText: { fontSize: font.small, color: colors.ink },
   choiceTextSelected: { color: colors.accentInk, fontWeight: '600' },
   segmented: {

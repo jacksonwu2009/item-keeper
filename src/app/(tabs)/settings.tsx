@@ -4,12 +4,12 @@ import { useCallback, useState } from 'react';
 import { Alert, Linking, StyleSheet, Text, View } from 'react-native';
 
 import { TimeField } from '../../components/DateField';
-import { Button, Card, Label, Screen, SectionTitle, Segmented, Sheet, Stepper, SwitchRow } from '../../components/ui';
+import { Button, Card, Label, MultiChips, Screen, SectionTitle, Segmented, Sheet, Stepper, SwitchRow } from '../../components/ui';
 import { listDevices } from '../../db/devices';
 import { DEFAULT_SETTINGS, getSettings, saveSettings, type AppSettings } from '../../db/settings';
 import { listProducts } from '../../db/stock';
 import { useFocusData } from '../../hooks/useFocusData';
-import type { BackupData, BackupSummary } from '../../lib/backup';
+import { ALL_SCOPES, SCOPE_LABEL, type BackupData, type BackupScope, type BackupSummary } from '../../lib/backup';
 import { formatDateTime } from '../../lib/dates';
 import { exportBackup, importBackup, pickBackup, readUndoSnapshot, undoLastImport } from '../../lib/dataTransfer';
 import {
@@ -21,8 +21,25 @@ import {
 } from '../../lib/notifications';
 import { colors, font } from '../../theme';
 
-function describeSummary(summary: Pick<BackupSummary, 'food' | 'daily' | 'devices'>): string {
-  return `食品 ${summary.food} 种、日用品 ${summary.daily} 种、设备 ${summary.devices} 种`;
+type Counts = Pick<BackupSummary, 'food' | 'daily' | 'devices'>;
+
+/** 某个分类的说法：「食品 3 种」「提醒设置」。 */
+function describeScopeItem(scope: BackupScope, counts: Counts): string {
+  return scope === 'settings' ? SCOPE_LABEL.settings : `${SCOPE_LABEL[scope]} ${counts[scope]} 种`;
+}
+
+/** 列出所选分类：「食品 3 种、设备 1 种、提醒设置」。 */
+function describeSummary(counts: Counts, scope: readonly BackupScope[] = ['food', 'daily', 'devices']): string {
+  return ALL_SCOPES.filter((item) => scope.includes(item))
+    .map((item) => describeScopeItem(item, counts))
+    .join('、');
+}
+
+/** 导入时会被替换掉的手机上的数据：「食品（现有 8 种）、提醒设置」。 */
+function describeReplaced(scope: readonly BackupScope[], counts: Counts): string {
+  return ALL_SCOPES.filter((item) => scope.includes(item))
+    .map((item) => (item === 'settings' ? SCOPE_LABEL.settings : `${SCOPE_LABEL[item]}（现有 ${counts[item]} 种）`))
+    .join('、');
 }
 
 type PendingImport = { fileName: string; data: BackupData; summary: BackupSummary };
@@ -67,7 +84,10 @@ export default function SettingsScreen() {
   const [dataNotice, setDataNotice] = useState<DataNotice | null>(null);
   const [busy, setBusy] = useState<'export' | 'pick' | 'import' | 'undo' | null>(null);
   const [pending, setPending] = useState<PendingImport | null>(null);
+  const [exportScope, setExportScope] = useState<BackupScope[]>(ALL_SCOPES);
+  const [importScope, setImportScope] = useState<BackupScope[]>([]);
   const current = settings ?? data.settings;
+  const phoneCounts: Counts = { food: data.foodCount, daily: data.dailyCount, devices: data.deviceCount };
 
   async function update(patch: Partial<AppSettings>) {
     setSettings({ ...current, ...patch });
@@ -86,8 +106,11 @@ export default function SettingsScreen() {
     setBusy('export');
     setDataNotice(null);
     try {
-      const summary = await exportBackup(db);
-      setDataNotice({ text: `已生成备份（${describeSummary(summary)}）。没存好的话可以再导一次。`, tone: 'ok' });
+      const summary = await exportBackup(db, exportScope);
+      setDataNotice({
+        text: `已生成备份（${describeSummary(summary, summary.scope)}）。没存好的话可以再导一次。`,
+        tone: 'ok',
+      });
     } catch (error) {
       setDataNotice({ text: error instanceof Error ? error.message : '导出失败，请重试', tone: 'error' });
     } finally {
@@ -106,6 +129,7 @@ export default function SettingsScreen() {
         return;
       }
       setPending({ fileName: picked.fileName, data: picked.result.data, summary: picked.result.summary });
+      setImportScope(picked.result.summary.scope);
     } catch (error) {
       setDataNotice({ text: error instanceof Error ? error.message : '选文件时出错了，请重试', tone: 'error' });
     } finally {
@@ -117,10 +141,13 @@ export default function SettingsScreen() {
     if (!pending) return;
     setBusy('import');
     try {
-      await importBackup(db, pending.data);
+      await importBackup(db, pending.data, importScope);
       setPending(null);
       setSettings(null);
-      setDataNotice({ text: `已导入（${describeSummary(pending.summary)}）。导入前的数据留了一份，可以撤销。`, tone: 'ok' });
+      setDataNotice({
+        text: `已导入（${describeSummary(pending.summary, importScope)}），没选的分类没动。导入前的数据留了一份，可以撤销。`,
+        tone: 'ok',
+      });
       await reload();
     } catch (error) {
       setPending(null);
@@ -256,19 +283,25 @@ export default function SettingsScreen() {
 
       <SectionTitle title="导入导出" />
       <Card>
-        <Text style={setStyles.body}>
-          现有：{describeSummary({ food: data.foodCount, daily: data.dailyCount, devices: data.deviceCount })}
-        </Text>
         <Text style={setStyles.hint}>
           数据只存在这台手机上。导出会生成一个备份文件（.json），可以存到「文件」、网盘或发给自己；换手机时在新手机上导入它。
+          可以只导出、只导入其中几类。
         </Text>
+        <View style={setStyles.group}>
+          <Label>导出哪些</Label>
+          <MultiChips
+            options={ALL_SCOPES.map((item) => ({ value: item, label: describeScopeItem(item, phoneCounts) }))}
+            values={exportScope}
+            onChange={setExportScope}
+          />
+        </View>
         <View style={setStyles.row}>
           <Button
-            title="导出备份"
+            title={exportScope.length === ALL_SCOPES.length ? '导出全部' : '导出所选'}
             icon="share-outline"
             compact
             loading={busy === 'export'}
-            disabled={busy !== null && busy !== 'export'}
+            disabled={(busy !== null && busy !== 'export') || exportScope.length === 0}
             onPress={() => runExport()}
           />
           <Button
@@ -289,7 +322,7 @@ export default function SettingsScreen() {
         {data.undo ? (
           <View style={setStyles.undo}>
             <Text style={setStyles.hint}>
-              {formatDateTime(data.undo.exportedAt)} 导入过一次备份，导入前的数据（{describeSummary(data.undo)}）还留着。
+              {formatDateTime(data.undo.exportedAt)} 导入过一次备份，导入前的全部数据（{describeSummary(data.undo)}）还留着。
             </Text>
             <View style={setStyles.row}>
               <Button
@@ -313,15 +346,27 @@ export default function SettingsScreen() {
               {pending.fileName}
             </Text>
             <Text style={setStyles.hint}>备份时间：{formatDateTime(pending.summary.exportedAt)}</Text>
-            <Text style={setStyles.body}>{describeSummary(pending.summary)}</Text>
+            <Text style={setStyles.body}>备份里有：{describeSummary(pending.summary, pending.summary.scope)}</Text>
             <Text style={setStyles.hint}>
-              另有 {pending.summary.batches} 个批次、{pending.summary.movements} 条出入库记录、
-              {pending.summary.assignments} 条设备领用记录，以及提醒设置。
+              含 {pending.summary.batches} 个批次、{pending.summary.movements} 条出入库记录、
+              {pending.summary.assignments} 条设备领用记录。
             </Text>
           </Card>
+          <View style={setStyles.group}>
+            <Label>导入哪些</Label>
+            <MultiChips
+              options={pending.summary.scope.map((item) => ({
+                value: item,
+                label: describeScopeItem(item, pending.summary),
+              }))}
+              values={importScope}
+              onChange={setImportScope}
+            />
+          </View>
           <Text style={setStyles.warning}>
-            导入会替换手机上现有的全部数据（{describeSummary({ food: data.foodCount, daily: data.dailyCount, devices: data.deviceCount })}）。
-            替换前会自动留一份，导错了可以在这里撤销。
+            {importScope.length
+              ? `会替换手机上的：${describeReplaced(importScope, phoneCounts)}。没选的分类不动。替换前会自动留一份，导错了可以撤销。`
+              : '至少选一类。'}
           </Text>
           <View style={setStyles.row}>
             <Button
@@ -331,7 +376,13 @@ export default function SettingsScreen() {
               disabled={busy === 'import'}
               onPress={() => setPending(null)}
             />
-            <Button title="替换并导入" style={setStyles.flex} loading={busy === 'import'} onPress={() => runImport()} />
+            <Button
+              title="替换并导入"
+              style={setStyles.flex}
+              loading={busy === 'import'}
+              disabled={importScope.length === 0}
+              onPress={() => runImport()}
+            />
           </View>
         </Sheet>
       ) : null}

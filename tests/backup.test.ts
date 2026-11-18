@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { DEFAULT_SETTINGS } from '../src/db/settings';
-import { backupFileName, buildBackup, parseBackup, type BackupSource } from '../src/lib/backup';
+import {
+  backupFileName,
+  buildBackup,
+  findBarcodeConflict,
+  parseBackup,
+  type BackupSource,
+} from '../src/lib/backup';
 
 const source: BackupSource = {
   settings: { ...DEFAULT_SETTINGS, expiryLeadDays: 5 },
@@ -197,5 +203,74 @@ describe('备份导入校验', () => {
   it('带 BOM 的文件也能读', () => {
     const result = parseBackup(`﻿${JSON.stringify(exported())}`);
     assert.equal(result.ok, true);
+  });
+});
+
+describe('按分类导出导入', () => {
+  const at = new Date('2026-11-18T02:00:00.000Z');
+
+  it('只导出食品：没有日用品、设备和设置', () => {
+    const data = buildBackup(source, at, ['food']);
+    assert.deepEqual(data.scope, ['food']);
+    assert.deepEqual(
+      data.products.map((product) => product.name),
+      ['纯牛奶'],
+    );
+    assert.deepEqual(data.devices, []);
+    assert.equal(data.settings, null);
+  });
+
+  it('分类按固定顺序、去重', () => {
+    assert.deepEqual(buildBackup(source, at, ['devices', 'food', 'food']).scope, ['food', 'devices']);
+  });
+
+  it('文件名带上分类', () => {
+    const now = new Date(2026, 10, 18, 9, 5);
+    assert.equal(backupFileName(now, ['devices', 'food']), 'item-keeper-food-devices-20261118-0905.json');
+    assert.equal(backupFileName(now, ['food', 'daily', 'devices', 'settings']), 'item-keeper-backup-20261118-0905.json');
+  });
+
+  it('部分分类的备份能导回来，范围不变', () => {
+    const result = parseBackup(JSON.stringify(buildBackup(source, at, ['daily', 'settings'])));
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.deepEqual(result.summary.scope, ['daily', 'settings']);
+    assert.equal(result.summary.daily, 1);
+    assert.equal(result.summary.food, 0);
+    assert.equal(result.data.settings?.expiryLeadDays, 5);
+  });
+
+  it('第 2 版备份没有 scope，当作全部分类', () => {
+    const data = JSON.parse(JSON.stringify(buildBackup(source, at)));
+    data.format = 2;
+    delete data.scope;
+    const result = parseBackup(JSON.stringify(data));
+    assert.equal(result.ok, true);
+    if (result.ok) assert.deepEqual(result.data.scope, ['food', 'daily', 'devices', 'settings']);
+  });
+
+  it('拒绝：标明只有食品却混进了日用品', () => {
+    const data = JSON.parse(JSON.stringify(buildBackup(source, at)));
+    data.scope = ['food', 'devices', 'settings'];
+    const result = parseBackup(JSON.stringify(data));
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.error, /不含日用品.*抽纸/);
+  });
+
+  it('拒绝：不认识的分类', () => {
+    const data = JSON.parse(JSON.stringify(buildBackup(source, at, ['food'])));
+    data.scope = ['food', 'tools'];
+    const result = parseBackup(JSON.stringify(data));
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.error, /不认识的分类「tools」/);
+  });
+
+  it('导入食品时，条码不能和手机上保留的日用品撞（含包装条码）', () => {
+    const food = buildBackup(source, at, ['food']).products;
+    assert.equal(findBarcodeConflict(food, [{ name: '抽纸', kind: 'daily', barcodes: ['111'] }]), null);
+    assert.match(
+      findBarcodeConflict(food, [{ name: '洗衣液', kind: 'daily', barcodes: ['16901234567899'] }]) ?? '',
+      /条码 16901234567899 在备份的「纯牛奶」和手机上日用品里的「洗衣液」重复/,
+    );
   });
 });

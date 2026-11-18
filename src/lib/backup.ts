@@ -1,7 +1,8 @@
 /**
  * 备份文件格式与校验（纯函数，有单测）。
  *
- * 备份是一个 JSON 文件，包含全部食品 / 日用品（含批次和出入库记录）、设备（含领用记录）和设置。
+ * 备份是一个 JSON 文件，包含食品 / 日用品（含批次和出入库记录）、设备（含领用记录）和提醒设置，
+ * 可以只导出其中几类（scope）；导入时也可以只替换其中几类。
  * 导入时先完整校验，有任何一处不对就整份拒绝，并告诉用户是哪一条、哪个字段，
  * 不会出现「导入一半」的情况。
  */
@@ -12,8 +13,30 @@ import { validatePacks, type PackUnit } from './packs';
 import { roundQty } from './stock';
 
 export const BACKUP_APP = 'item-keeper';
-/** 1：首版；2：加了包装规格 packs 和流水的 inputQty / inputUnit（读 1 版时这些取空）。 */
-export const BACKUP_FORMAT = 2;
+/**
+ * 1：首版；2：加了包装规格 packs 和流水的 inputQty / inputUnit（读 1 版时这些取空）；
+ * 3：加了 scope，可以只含部分分类（读 1、2 版时当作全部分类）。
+ * 只含部分分类的文件必须让旧版 App 拒绝，否则旧版会当成全量备份把别的分类清空，所以升版本号。
+ */
+export const BACKUP_FORMAT = 3;
+
+export type BackupScope = 'food' | 'daily' | 'devices' | 'settings';
+export const ALL_SCOPES: BackupScope[] = ['food', 'daily', 'devices', 'settings'];
+export const SCOPE_LABEL: Record<BackupScope, string> = {
+  food: '食品',
+  daily: '日用品',
+  devices: '设备',
+  settings: '提醒设置',
+};
+
+/** 去重并按固定顺序排列。 */
+export function normalizeScope(scope: readonly BackupScope[]): BackupScope[] {
+  return ALL_SCOPES.filter((item) => scope.includes(item));
+}
+
+export function isFullScope(scope: readonly BackupScope[]): boolean {
+  return ALL_SCOPES.every((item) => scope.includes(item));
+}
 const MAX_BACKUP_CHARS = 30 * 1024 * 1024;
 
 export type BackupBatch = { quantity: number; expiryDate: string | null; addedOn: string; note: string | null };
@@ -70,13 +93,17 @@ export type BackupData = {
   app: typeof BACKUP_APP;
   format: number;
   exportedAt: string;
-  settings: AppSettings;
+  /** 这份备份包含哪些分类 */
+  scope: BackupScope[];
+  /** scope 不含 settings 时为 null */
+  settings: AppSettings | null;
   products: BackupProduct[];
   devices: BackupDevice[];
 };
 
 export type BackupSummary = {
   exportedAt: string;
+  scope: BackupScope[];
   food: number;
   daily: number;
   devices: number;
@@ -114,7 +141,12 @@ function groupBy<T, K>(items: T[], key: (item: T) => K): Map<K, T[]> {
   return groups;
 }
 
-export function buildBackup(source: BackupSource, now: Date = new Date()): BackupData {
+export function buildBackup(
+  source: BackupSource,
+  now: Date = new Date(),
+  scope: readonly BackupScope[] = ALL_SCOPES,
+): BackupData {
+  const included = normalizeScope(scope);
   const packsByProduct = groupBy(source.packs, (pack) => pack.productId);
   const batchesByProduct = groupBy(source.batches, (batch) => batch.productId);
   const movementsByProduct = groupBy(source.movements, (movement) => movement.productId);
@@ -124,8 +156,11 @@ export function buildBackup(source: BackupSource, now: Date = new Date()): Backu
     app: BACKUP_APP,
     format: BACKUP_FORMAT,
     exportedAt: now.toISOString(),
-    settings: source.settings,
-    products: source.products.map(({ id, ...product }) => ({
+    scope: included,
+    settings: included.includes('settings') ? source.settings : null,
+    products: source.products
+      .filter((product) => included.includes(product.kind))
+      .map(({ id, ...product }) => ({
       kind: product.kind,
       barcode: product.barcode,
       name: product.name,
@@ -157,7 +192,7 @@ export function buildBackup(source: BackupSource, now: Date = new Date()): Backu
         inputUnit: movement.inputUnit,
       })),
     })),
-    devices: source.devices.map(({ id, ...device }) => ({
+    devices: (included.includes('devices') ? source.devices : []).map(({ id, ...device }) => ({
       category: device.category,
       name: device.name,
       model: device.model,
@@ -180,6 +215,7 @@ export function buildBackup(source: BackupSource, now: Date = new Date()): Backu
 export function summarizeBackup(data: BackupData): BackupSummary {
   return {
     exportedAt: data.exportedAt,
+    scope: data.scope,
     food: data.products.filter((product) => product.kind === 'food').length,
     daily: data.products.filter((product) => product.kind === 'daily').length,
     devices: data.devices.length,
@@ -193,9 +229,32 @@ function pad2(value: number): string {
   return value < 10 ? `0${value}` : String(value);
 }
 
-export function backupFileName(now: Date = new Date()): string {
+/** 全部分类：item-keeper-backup-20261118-0930.json；部分分类：item-keeper-food-devices-20261118-0930.json */
+export function backupFileName(now: Date = new Date(), scope: readonly BackupScope[] = ALL_SCOPES): string {
   const stamp = `${now.getFullYear()}${pad2(now.getMonth() + 1)}${pad2(now.getDate())}-${pad2(now.getHours())}${pad2(now.getMinutes())}`;
-  return `item-keeper-backup-${stamp}.json`;
+  const part = isFullScope(scope) ? 'backup' : normalizeScope(scope).join('-');
+  return `item-keeper-${part}-${stamp}.json`;
+}
+
+export type KeptProduct = { name: string; kind: 'food' | 'daily'; barcodes: string[] };
+
+/**
+ * 只替换部分分类时，导进来的物品条码不能和手机上保留下来的（没被替换的分类里的）物品撞。
+ * 撞了返回给用户看的说明，没问题返回 null。
+ */
+export function findBarcodeConflict(incoming: BackupProduct[], kept: KeptProduct[]): string | null {
+  const owner = new Map<string, KeptProduct>();
+  for (const product of kept) for (const code of product.barcodes) owner.set(code, product);
+  for (const product of incoming) {
+    const codes = [product.barcode, ...product.packs.map((pack) => pack.barcode)].filter((code): code is string => !!code);
+    for (const code of codes) {
+      const existing = owner.get(code);
+      if (existing) {
+        return `条码 ${code} 在备份的「${product.name}」和手机上${SCOPE_LABEL[existing.kind]}里的「${existing.name}」重复，没法导入；可以先改掉其中一个的条码`;
+      }
+    }
+  }
+  return null;
 }
 
 // ---------- 导入校验 ----------
@@ -397,8 +456,22 @@ export function parseBackup(text: string): ParseResult {
     if (format > BACKUP_FORMAT) fail('', '这个备份来自更新版本的 App，请先升级 App 再导入');
     const exportedAt = timestamp(root.exportedAt, `${todayStr()}T00:00:00.000Z`);
 
+    let scope: BackupScope[] = [...ALL_SCOPES];
+    if (format >= 3) {
+      const rawScope = list(root.scope, '', '分类');
+      if (!rawScope.length) fail('', '备份没写包含哪些分类，可能已损坏');
+      for (const item of rawScope) {
+        if (!ALL_SCOPES.includes(item as BackupScope)) fail('', `不认识的分类「${String(item)}」`);
+      }
+      scope = normalizeScope(rawScope as BackupScope[]);
+    }
+
     const products = list(root.products, '', '物品').map((raw, index) => parseProduct(raw, index, exportedAt));
     const devices = list(root.devices, '', '设备').map((raw, index) => parseDevice(raw, index, exportedAt));
+    for (const product of products) {
+      if (!scope.includes(product.kind)) fail('', `备份标明不含${SCOPE_LABEL[product.kind]}，里面却有「${product.name}」，文件可能被改坏了`);
+    }
+    if (devices.length && !scope.includes('devices')) fail('', '备份标明不含设备，里面却有设备，文件可能被改坏了');
 
     // 物品条码和包装条码在整份备份里都不能重复
     const barcodeOwner = new Map<string, string>();
@@ -419,7 +492,8 @@ export function parseBackup(text: string): ParseResult {
       app: BACKUP_APP,
       format,
       exportedAt,
-      settings: parseSettings(root.settings),
+      scope,
+      settings: scope.includes('settings') ? parseSettings(root.settings) : null,
       products,
       devices,
     };
