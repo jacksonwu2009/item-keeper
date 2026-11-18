@@ -1,0 +1,641 @@
+<title>物品管家使用指南</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700;900&display=swap">
+<style>
+/* 版式：左侧固定目录 + 右侧正文（约 42 字宽），关键步骤旁边配手机界面示意；窄屏目录变成顶部横排。
+   配色沿用 App 自身：灰绿底、深青主色、图标上的暖黄标签色；状态色（过期/快到期/正常）独立于主色。 */
+:root {
+  --bg: #F2F4F1;
+  --surface: #FFFFFF;
+  --sunken: #E8ECE7;
+  --ink: #18211C;
+  --muted: #55635B;
+  --faint: #86928B;
+  --line: #D9E0DA;
+  --accent: #0D6B5E;
+  --accent-ink: #FFFFFF;
+  --accent-soft: #D5EBE5;
+  --tag: #F2B140;
+  --danger: #B3261E;
+  --danger-soft: #FBE3E0;
+  --warn: #8F5600;
+  --warn-soft: #FBEFD5;
+  --ok: #2C7A4B;
+  --ok-soft: #E0F1E6;
+  --info: #2E5C99;
+  --info-soft: #E2EBF7;
+
+  /* App 界面示意固定用 App 的浅色配色，两种主题下都一样 */
+  --app-bg: #F2F4F1;
+  --app-surface: #FFFFFF;
+  --app-sunken: #E8ECE7;
+  --app-ink: #18211C;
+  --app-muted: #58665E;
+  --app-faint: #8B978F;
+  --app-line: #D9E0DA;
+  --app-accent: #0D6B5E;
+  --app-accent-soft: #D5EBE5;
+  --app-danger: #B3261E;
+  --app-danger-soft: #FBE3E0;
+  --app-warn: #8F5600;
+  --app-warn-soft: #FBEFD5;
+  --app-info: #2E5C99;
+  --app-frame: #18211C;
+
+  --font-body: "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  --font-display: "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --step--1: 0.8125rem;
+  --step-0: 1rem;
+  --step-1: 1.1875rem;
+  --step-2: 1.5rem;
+  --step-3: clamp(1.9rem, 1.4rem + 2.2vw, 2.75rem);
+  --radius: 12px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101613;
+    --surface: #17201B;
+    --sunken: #1E2924;
+    --ink: #E5ECE8;
+    --muted: #A2B0A8;
+    --faint: #75837B;
+    --line: #2A3731;
+    --accent: #5BBDA9;
+    --accent-ink: #0B1512;
+    --accent-soft: #163A33;
+    --tag: #F2B140;
+    --danger: #FF8E84;
+    --danger-soft: #3A1D1A;
+    --warn: #F0B65C;
+    --warn-soft: #382A13;
+    --ok: #7FCF9C;
+    --ok-soft: #173222;
+    --info: #8CB4EE;
+    --info-soft: #18263A;
+    --app-frame: #3A4740;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101613;
+  --surface: #17201B;
+  --sunken: #1E2924;
+  --ink: #E5ECE8;
+  --muted: #A2B0A8;
+  --faint: #75837B;
+  --line: #2A3731;
+  --accent: #5BBDA9;
+  --accent-ink: #0B1512;
+  --accent-soft: #163A33;
+  --tag: #F2B140;
+  --danger: #FF8E84;
+  --danger-soft: #3A1D1A;
+  --warn: #F0B65C;
+  --warn-soft: #382A13;
+  --ok: #7FCF9C;
+  --ok-soft: #173222;
+  --info: #8CB4EE;
+  --info-soft: #18263A;
+  --app-frame: #3A4740;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 24px; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--step-0);
+  line-height: 1.75;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-underline-offset: 3px; }
+a:focus-visible, summary:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+code, .mono { font-family: var(--font-mono); font-size: 0.92em; }
+code { background: var(--sunken); padding: 0.05em 0.4em; border-radius: 5px; word-break: break-all; }
+
+.wrap {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+
+/* 页头 */
+.masthead { border-bottom: 1px solid var(--line); }
+.masthead .wrap { padding-block: 40px 32px; display: grid; gap: 20px; }
+.brand { display: flex; align-items: center; gap: 14px; }
+.brand svg { flex: none; width: 56px; height: 56px; border-radius: 14px; }
+.brand-meta { font-size: var(--step--1); color: var(--muted); letter-spacing: 0.04em; }
+h1 {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: var(--step-3);
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  margin: 0;
+  text-wrap: balance;
+}
+.lede { max-width: 42em; margin: 0; color: var(--muted); font-size: var(--step-1); line-height: 1.7; }
+.facts { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 0; padding: 0; list-style: none; }
+.facts li {
+  display: flex; gap: 8px; align-items: baseline;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 999px;
+  padding: 6px 14px; font-size: var(--step--1);
+}
+.facts b { color: var(--muted); font-weight: 500; }
+
+/* 主体布局 */
+.layout { display: grid; grid-template-columns: 1fr; gap: 24px; padding-block: 24px 64px; }
+.toc { min-width: 0; }
+.toc nav {
+  display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px;
+  scrollbar-width: thin;
+}
+.toc a {
+  flex: none; text-decoration: none; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line); border-radius: 999px;
+  padding: 6px 14px; font-size: var(--step--1); white-space: nowrap;
+}
+.toc a:hover { border-color: var(--accent); color: var(--accent); }
+.toc-label { display: none; }
+@media (min-width: 960px) {
+  .layout { grid-template-columns: 200px minmax(0, 1fr); gap: 56px; padding-top: 40px; }
+  .toc nav {
+    position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px);
+    flex-direction: column; gap: 2px; overflow: visible;
+  }
+  .toc-label { display: block; font-size: var(--step--1); color: var(--faint); letter-spacing: 0.12em; margin: 0 0 8px 12px; }
+  .toc a { border: 0; background: none; border-radius: 8px; padding: 6px 12px; font-size: 0.9375rem; }
+  .toc a:hover { background: var(--sunken); color: var(--ink); }
+}
+
+main { min-width: 0; display: grid; gap: 64px; }
+section { display: grid; gap: 18px; min-width: 0; }
+.kicker { font-size: var(--step--1); color: var(--accent); font-weight: 700; letter-spacing: 0.16em; margin: 0; }
+h2 { font-size: var(--step-2); font-weight: 900; line-height: 1.3; margin: 0; text-wrap: balance; }
+h3 { font-size: var(--step-1); font-weight: 700; line-height: 1.4; margin: 8px 0 0; text-wrap: balance; }
+p { margin: 0; max-width: 42em; }
+.muted { color: var(--muted); }
+
+/* 带插图的两栏：窄屏上下排 */
+.with-figure { display: grid; gap: 24px; align-items: start; }
+.with-figure > * { min-width: 0; }
+@media (min-width: 760px) { .with-figure { grid-template-columns: minmax(0, 1fr) 300px; gap: 36px; } }
+
+/* 步骤（真正的先后顺序才用编号） */
+ol.steps { list-style: none; counter-reset: step; margin: 0; padding: 0; display: grid; gap: 14px; max-width: 42em; }
+ol.steps > li { counter-increment: step; display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; }
+ol.steps > li::before {
+  content: counter(step);
+  width: 30px; height: 30px; border-radius: 50%;
+  background: var(--accent); color: var(--accent-ink);
+  font-family: var(--font-mono); font-weight: 500; font-size: 0.875rem;
+  display: grid; place-items: center; margin-top: 0.15em;
+}
+ul.points { margin: 0; padding-left: 1.2em; display: grid; gap: 8px; max-width: 42em; }
+ul.points li::marker { color: var(--accent); }
+
+/* 平台两栏 */
+.platforms { display: grid; gap: 16px; }
+@media (min-width: 760px) { .platforms { grid-template-columns: 1fr 1fr; } }
+.platform { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; display: grid; gap: 14px; align-content: start; }
+.platform h3 { margin: 0; display: flex; align-items: center; gap: 10px; }
+.platform .badge { font-size: var(--step--1); font-weight: 500; color: var(--muted); background: var(--sunken); border-radius: 999px; padding: 1px 10px; }
+
+/* 提示框：只用在需要特别注意的地方 */
+.note {
+  background: var(--warn-soft); color: var(--ink);
+  border-radius: var(--radius); padding: 14px 16px;
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; max-width: 42em;
+}
+.note svg { width: 20px; height: 20px; margin-top: 3px; color: var(--warn); }
+.note.tip { background: var(--accent-soft); }
+.note.tip svg { color: var(--accent); }
+
+/* 标签页一览 */
+.tabs-table { display: grid; gap: 0; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--surface); max-width: 42em; }
+.tabs-table div { display: grid; grid-template-columns: 6em minmax(0, 1fr); gap: 12px; padding: 12px 16px; }
+.tabs-table div + div { border-top: 1px solid var(--line); }
+.tabs-table dt { font-weight: 700; margin: 0; }
+.tabs-table dd { margin: 0; color: var(--muted); }
+
+/* 换算示例 */
+.equation {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  font-family: var(--font-mono); font-size: 1.05rem;
+}
+.equation span { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 4px 12px; }
+.equation .eq { border: 0; background: none; padding: 0; color: var(--muted); }
+
+/* 提醒时间线 */
+.timeline-wrap { overflow-x: auto; max-width: 100%; }
+.timeline { display: grid; grid-template-columns: repeat(11, minmax(44px, 1fr)); min-width: 520px; gap: 0; padding: 8px 0 4px; }
+.day { display: grid; justify-items: center; gap: 6px; position: relative; }
+.day::before { content: ""; position: absolute; top: 16px; left: 0; right: 0; height: 2px; background: var(--line); }
+.dot { width: 14px; height: 14px; border-radius: 50%; background: var(--surface); border: 2px solid var(--line); position: relative; margin-top: 9px; }
+.day.window .dot { border-color: var(--warn); }
+.day.ping .dot { background: var(--warn); border-color: var(--warn); }
+.day.due .dot { background: var(--danger); border-color: var(--danger); width: 18px; height: 18px; margin-top: 7px; }
+.day .d { font-family: var(--font-mono); font-size: 0.75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.day.ping .d, .day.due .d { color: var(--ink); font-weight: 500; }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: var(--step--1); color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
+
+/* 常见问题 */
+.faq { display: grid; gap: 10px; max-width: 42em; }
+details { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 0 16px; }
+summary { cursor: pointer; font-weight: 700; padding: 14px 0; list-style: none; display: flex; justify-content: space-between; gap: 12px; }
+summary::-webkit-details-marker { display: none; }
+summary::after { content: "+"; font-family: var(--font-mono); color: var(--accent); font-weight: 500; }
+details[open] summary::after { content: "−"; }
+details > div { padding: 0 0 16px; color: var(--muted); display: grid; gap: 8px; }
+
+footer { border-top: 1px solid var(--line); }
+footer .wrap { padding-block: 20px 32px; font-size: var(--step--1); color: var(--faint); }
+
+/* ===== App 界面示意 ===== */
+figure.phone { margin: 0; display: grid; gap: 10px; justify-items: center; }
+figure.phone figcaption { font-size: var(--step--1); color: var(--faint); text-align: center; }
+.screen {
+  width: 100%; max-width: 300px;
+  background: var(--app-bg); color: var(--app-ink);
+  border: 8px solid var(--app-frame); border-radius: 28px;
+  padding: 14px 12px 16px; display: grid; gap: 10px;
+  font-size: 13px; line-height: 1.45;
+}
+.app-title { font-weight: 700; font-size: 15px; display: flex; justify-content: space-between; align-items: baseline; }
+.app-title small { font-weight: 400; color: var(--app-muted); font-size: 11px; }
+.app-btns { display: grid; grid-template-columns: 3fr 2fr; gap: 6px; }
+.app-btn { border-radius: 9px; padding: 8px 6px; text-align: center; font-weight: 700; font-size: 12px; background: var(--app-accent); color: #FFFFFF; }
+.app-btn.alt { background: var(--app-accent-soft); color: var(--app-accent); }
+.app-row { background: var(--app-surface); border: 1px solid var(--app-line); border-radius: 10px; padding: 9px 10px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.app-row .n { font-weight: 700; font-size: 13.5px; }
+.app-row .m { color: var(--app-muted); font-size: 11px; }
+.app-qty { text-align: right; font-variant-numeric: tabular-nums; }
+.app-qty b { display: block; font-size: 19px; line-height: 1.1; }
+.app-qty span { font-size: 10.5px; color: var(--app-muted); }
+.app-qty em { display: block; font-style: normal; font-size: 10.5px; color: var(--app-accent); font-weight: 700; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.chip { font-size: 10.5px; font-weight: 700; border-radius: 999px; padding: 1px 7px; background: var(--app-sunken); color: var(--app-muted); }
+.chip.warn { background: var(--app-warn-soft); color: var(--app-warn); }
+.chip.danger { background: var(--app-danger-soft); color: var(--app-danger); }
+.sheet { background: var(--app-surface); border-radius: 14px; padding: 12px; display: grid; gap: 9px; border: 1px solid var(--app-line); }
+.sheet-title { font-weight: 700; font-size: 14px; }
+.lbl { font-size: 11px; color: var(--app-muted); font-weight: 700; }
+.choice { display: flex; flex-wrap: wrap; gap: 5px; }
+.choice span { border: 1px solid var(--app-line); border-radius: 999px; padding: 3px 9px; font-size: 11.5px; background: var(--app-surface); }
+.choice span.on { background: var(--app-accent); border-color: var(--app-accent); color: #FFFFFF; font-weight: 700; }
+.input { border: 1px solid var(--app-line); border-radius: 8px; padding: 6px 9px; font-family: var(--font-mono); font-size: 14px; background: var(--app-surface); }
+.hint { font-size: 11px; color: var(--app-faint); }
+.hint b { color: var(--app-accent); }
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+.tile { background: var(--app-surface); border: 1px solid var(--app-line); border-radius: 9px; text-align: center; padding: 6px 2px; }
+.tile b { display: block; font-size: 18px; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.tile span { font-size: 10px; color: var(--app-muted); }
+.tile.d b { color: var(--app-danger); }
+.tile.w b { color: var(--app-warn); }
+.tile.i b { color: var(--app-info); }
+.app-list { background: var(--app-surface); border: 1px solid var(--app-line); border-radius: 10px; padding: 0 10px; }
+.app-list div { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 7px 0; }
+.app-list div + div { border-top: 1px solid var(--app-line); }
+.sec { font-size: 10.5px; font-weight: 700; color: var(--app-muted); letter-spacing: 0.06em; margin-top: 2px; }
+.tabbar { display: grid; grid-template-columns: repeat(5, 1fr); background: var(--app-surface); border-top: 1px solid var(--app-line); margin: 4px -12px -16px; padding: 7px 0 9px; border-radius: 0 0 20px 20px; text-align: center; font-size: 10px; color: var(--app-faint); }
+.tabbar .on { color: var(--app-accent); font-weight: 700; }
+</style>
+
+<header class="masthead">
+  <div class="wrap">
+    <div class="brand">
+      <svg viewBox="0 0 56 56" role="img" aria-label="物品管家图标">
+        <rect width="56" height="56" fill="#0D6B5E"/>
+        <rect x="14.5" y="22" width="27" height="20" rx="2.4" fill="#FFFFFF"/>
+        <rect x="12.5" y="15" width="31" height="8" rx="2.2" fill="#FFFFFF"/>
+        <rect x="12.5" y="22.4" width="31" height="1.3" fill="#0D6B5E"/>
+        <rect x="23.5" y="26.5" width="9" height="2.4" rx="1.2" fill="#0D6B5E"/>
+        <rect x="22.5" y="32" width="11" height="6.5" rx="1.3" fill="#F2B140"/>
+      </svg>
+      <div class="brand-meta">物品管家 · 1.0.0 · 安卓 / iPhone</div>
+    </div>
+    <h1>物品管家使用指南</h1>
+    <p class="lede">用手机管三类东西：食品、日用品、设备。扫条码就能录入，库存和过期日期记在手机上，快到期、快用完会按时提醒；电脑和配件记下谁领走、哪天还回来。</p>
+    <ul class="facts">
+      <li><b>安装</b>安卓装 APK，iPhone 用 Expo Go</li>
+      <li><b>数据</b>只存在你自己的手机上</li>
+      <li><b>提醒</b>每天固定时间一条通知</li>
+    </ul>
+  </div>
+</header>
+
+<div class="wrap layout">
+  <aside class="toc" aria-label="目录">
+    <nav>
+      <p class="toc-label">目录</p>
+      <a href="#install">安装</a>
+      <a href="#tabs">认识界面</a>
+      <a href="#stock">录入食品和日用品</a>
+      <a href="#inout">入库与出库</a>
+      <a href="#units">整箱进、按个出</a>
+      <a href="#reminders">到期和库存提醒</a>
+      <a href="#devices">设备领用与退还</a>
+      <a href="#backup">导入导出</a>
+      <a href="#faq">常见问题</a>
+    </nav>
+  </aside>
+
+  <main>
+    <section id="install">
+      <p class="kicker">安装</p>
+      <h2>先把 App 装到手机上</h2>
+      <p class="muted">安装包和 iPhone 用的地址都找管理员（发这份指南给你的人）要。</p>
+      <div class="platforms">
+        <div class="platform">
+          <h3>安卓 <span class="badge">APK 安装包，约 41 MB</span></h3>
+          <ol class="steps">
+            <li><div>在聊天里收到「物品管家 1.0.0 安卓安装包」，点开下载。</div></li>
+            <li><div>下载完点它安装。提示「不允许安装未知来源应用」时，按提示允许这个聊天 App 安装应用，再回来点安装。</div></li>
+            <li><div>桌面上出现深青色储物箱图标就装好了。第一次扫码时允许使用相机。</div></li>
+          </ol>
+          <p class="muted">只支持 64 位手机，近几年的安卓手机都可以。以后有新版本，直接装新的安装包覆盖，数据会保留。</p>
+        </div>
+        <div class="platform">
+          <h3>iPhone <span class="badge">通过 Expo Go 打开</span></h3>
+          <ol class="steps">
+            <li><div>在 App Store 搜索并安装 <b>Expo Go</b>（免费）。</div></li>
+            <li><div>打开 Expo Go，点 <b>Enter URL manually</b>，粘贴管理员给的地址，形如 <code>exp://xxxx.exp.direct</code>。</div></li>
+            <li><div>第一次加载要十几秒，之后从 Expo Go 首页的最近项目里进入。</div></li>
+          </ol>
+          <p class="muted">这种方式不用上架、不用签名。桌面上没有物品管家的图标，要从 Expo Go 里进；相机和通知的授权提示里显示的名字是 Expo Go。</p>
+        </div>
+      </div>
+      <div class="note" role="note">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M10 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm0 3.2a1 1 0 0 1 1 1V10a1 1 0 1 1-2 0V6.2a1 1 0 0 1 1-1Zm0 9.6a1.2 1.2 0 1 1 0-2.4 1.2 1.2 0 0 1 0 2.4Z"/></svg>
+        <p>iPhone 版每次打开都要连到管理员电脑上的服务。打不开时，多半是那台电脑关了或者地址换了，找管理员要新地址。</p>
+      </div>
+    </section>
+
+    <section id="tabs">
+      <p class="kicker">认识界面</p>
+      <h2>底部五个标签</h2>
+      <dl class="tabs-table">
+        <div><dt>提醒</dt><dd>打开 App 先看这里：已过期、快到期、库存不足、借出中的设备都列在一页，点哪条就进到哪件东西。</dd></div>
+        <div><dt>食品</dt><dd>食品清单。扫码入库、手动添加、搜索，按「快到期 / 库存不足」筛选。</dd></div>
+        <div><dt>日用品</dt><dd>纸巾、洗衣液、电池这类。用法和食品一样，过期日期可以不记。</dd></div>
+        <div><dt>设备</dt><dd>电脑和配件。记型号、序列号、数量，登记谁领走、哪天退还；可以按使用人查看。</dd></div>
+        <div><dt>设置</dt><dd>提醒规则、通知权限、导入导出。</dd></div>
+      </dl>
+    </section>
+
+    <section id="stock">
+      <p class="kicker">录入</p>
+      <h2>录入食品和日用品</h2>
+      <div class="with-figure">
+        <div style="display:grid;gap:18px">
+          <h3>扫码录入</h3>
+          <ol class="steps">
+            <li><div>在「食品」或「日用品」页点 <b>扫码入库</b>，把包装上的条码放进取景框。</div></li>
+            <li><div><b>没录过的条码</b>会进新增页，App 会联网查商品名并自动填上，查不到就自己填名称。填过一次，以后再扫这个码就直接认出来。</div></li>
+            <li><div>填这次买了多少、过期日期，点 <b>保存</b>。</div></li>
+            <li><div><b>录过的条码</b>会直接打开这件东西，问你这次是买回来（入库）还是用掉（出库）。</div></li>
+          </ol>
+          <p class="muted">没有条码的东西点 <b>手动添加</b>。扫不出来时，扫码页下方可以手动输入条码数字，比如 <span class="mono">6901234567892</span>。</p>
+
+          <h3>过期日期的两种填法</h3>
+          <ul class="points">
+            <li><b>选到期日</b>：包装上直接印了「保质期至」的，选那一天。</li>
+            <li><b>生产日期 + 保质期</b>：包装上写的是生产日期和「保质期 12 个月」的，填这两项，App 自动算出到期日。比如 2026 年 11 月 1 日生产、保质期 12 个月，到期日是 2027 年 10 月 31 日。</li>
+            <li><b>不记录</b>：日用品默认不记，只按库存数量提醒。</li>
+          </ul>
+
+          <h3>其他几项</h3>
+          <ul class="points">
+            <li><b>最小单位</b>：库存按它来记，比如瓶、盒、包、卷。</li>
+            <li><b>存放位置</b>：冰箱冷藏、储物柜之类，填过的位置下次可以直接点选。</li>
+            <li><b>库存下限</b>：库存降到这个数或更少就提醒补货，留空表示不提醒。</li>
+            <li><b>到期前几天提醒</b>：留空就用设置里的默认天数（7 天）。</li>
+          </ul>
+        </div>
+        <figure class="phone">
+          <div class="screen" aria-label="食品列表界面示意">
+            <div class="app-title">食品 <small>共 3 种</small></div>
+            <div class="app-btns"><div class="app-btn">扫码入库</div><div class="app-btn alt">手动添加</div></div>
+            <div class="app-row">
+              <div><div class="n">面包</div><div class="m">放在 储物柜</div><div class="chips"><span class="chip danger">已过期 1 天</span></div></div>
+              <div class="app-qty"><b>2</b><span>袋</span></div>
+            </div>
+            <div class="app-row">
+              <div><div class="n">纯牛奶</div><div class="m">250ml×12 · 放在 冰箱</div><div class="chips"><span class="chip warn">明天到期</span></div></div>
+              <div class="app-qty"><b>6</b><span>盒</span></div>
+            </div>
+            <div class="app-row">
+              <div><div class="n">可乐</div><div class="m">330ml · 放在 储物柜</div><div class="chips"><span class="chip">244 天后到期</span></div></div>
+              <div class="app-qty"><b>50</b><span>瓶</span><em>2 箱 2 瓶</em></div>
+            </div>
+            <div class="tabbar"><span>提醒</span><span class="on">食品</span><span>日用品</span><span>设备</span><span>设置</span></div>
+          </div>
+          <figcaption>界面示意，数据为示例。过期的排最前面。</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="inout">
+      <p class="kicker">入库与出库</p>
+      <h2>买回来点入库，用掉点出库</h2>
+      <p>在物品详情页（列表里点进去，或者扫一下它的条码）：</p>
+      <ul class="points">
+        <li><b>入库</b>：填数量和这一批的过期日期。过期日期和已有的某一批相同，就合并到那一批。</li>
+        <li><b>出库 / 用掉</b>：填数量，选原因（用掉、过期丢弃、坏了、送人、其他）。<b>先扣最早到期的那一批</b>，不用自己挑。想全部清掉点「全部用完」。</li>
+        <li><b>批次</b>：同一样东西买了几次、过期日期不同，会分成几批显示。点某一批可以改数量、改日期或删掉这一批。</li>
+        <li><b>出入库记录</b>：每次入库、出库、改批次都会记一条，写着时间、加减多少和原因，在详情页最下面。</li>
+      </ul>
+    </section>
+
+    <section id="units">
+      <p class="kicker">包装单位</p>
+      <h2>整箱进、按个出</h2>
+      <div class="with-figure">
+        <div style="display:grid;gap:18px">
+          <p>饮料、牛奶、纸巾常常整箱买、一瓶一瓶拿。给这类东西设好包装规格，入库和出库就都能按箱或按瓶填。</p>
+          <ol class="steps">
+            <li><div>物品详情页点 <b>编辑</b>，在「包装规格」里点 <b>+ 按箱</b>，填「1 箱 = 24 瓶」。还有一提 6 瓶的，再加一条「1 提 = 6 瓶」。</div></li>
+            <li><div>箱子外面的条码和单瓶的通常不一样，可以在这一条里扫进箱子的条码。以后扫箱子，App 直接认出是这件东西，入库默认按箱。</div></li>
+            <li><div>入库时选「箱」填 2，下面会显示 <b>= 48 瓶</b>；平时拿一瓶，出库选「瓶」填 1。</div></li>
+          </ol>
+          <div class="equation" aria-label="换算示例">
+            <span>2 箱</span><span class="eq">+</span><span>2 瓶</span><span class="eq">=</span><span>50 瓶</span>
+          </div>
+          <p class="muted">库存按最小单位记，列表里显示成「50 瓶（2 箱 2 瓶）」。库存下限也按最小单位填：想在只剩一箱时提醒，就填 24。</p>
+        </div>
+        <figure class="phone">
+          <div class="screen" aria-label="入库面板示意">
+            <div class="app-title">可乐 <small>库存 50 瓶</small></div>
+            <div class="sheet">
+              <div class="sheet-title">入库</div>
+              <div class="lbl">按什么单位</div>
+              <div class="choice"><span>瓶</span><span class="on">箱（24 瓶）</span><span>提（6 瓶）</span></div>
+              <div class="lbl">数量（箱）</div>
+              <div class="input">2</div>
+              <div class="hint"><b>= 48 瓶</b></div>
+              <div class="lbl">过期日期</div>
+              <div class="choice"><span class="on">选到期日</span><span>生产日期+保质期</span><span>不记录</span></div>
+              <div class="input" style="font-family:var(--font-body)">2027年7月20日</div>
+              <div class="app-btn">确认入库</div>
+            </div>
+          </div>
+          <figcaption>界面示意：整箱入库，自动换算成瓶。</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="reminders">
+      <p class="kicker">提醒</p>
+      <h2>到期和库存提醒</h2>
+      <div class="with-figure">
+        <div style="display:grid;gap:18px">
+          <p>App 每天在固定时间（默认 09:00）发一条汇总通知，列出这一天要注意的东西。规则在「设置 → 提醒」里改：</p>
+          <ul class="points">
+            <li><b>到期前几天开始提醒</b>：默认 7 天，单个物品可以在编辑页另设。</li>
+            <li><b>多久提醒一次</b>：每天、每 2 天、每 3 天或每周。没处理之前按这个间隔一直提醒，<b>到期当天一定提醒</b>。</li>
+            <li><b>库存提醒</b>：库存 ≤ 下限时提醒补货，补货入库后自动停止。</li>
+            <li><b>提醒时间</b>：每天几点发。</li>
+          </ul>
+          <h3>举个例子</h3>
+          <p class="muted">牛奶 11 月 28 日到期，提前 7 天，每 3 天提醒一次：</p>
+          <div class="timeline-wrap">
+            <div class="timeline" aria-label="提醒时间线示例：11月21、24、27、28日提醒">
+              <div class="day"><span class="dot"></span><span class="d">20</span></div>
+              <div class="day ping"><span class="dot"></span><span class="d">21</span></div>
+              <div class="day window"><span class="dot"></span><span class="d">22</span></div>
+              <div class="day window"><span class="dot"></span><span class="d">23</span></div>
+              <div class="day ping"><span class="dot"></span><span class="d">24</span></div>
+              <div class="day window"><span class="dot"></span><span class="d">25</span></div>
+              <div class="day window"><span class="dot"></span><span class="d">26</span></div>
+              <div class="day ping"><span class="dot"></span><span class="d">27</span></div>
+              <div class="day due"><span class="dot"></span><span class="d">28</span></div>
+              <div class="day window"><span class="dot"></span><span class="d">29</span></div>
+              <div class="day ping"><span class="dot"></span><span class="d">30</span></div>
+            </div>
+          </div>
+          <div class="legend">
+            <span><i style="background:var(--warn)"></i>发提醒</span>
+            <span><i style="background:var(--danger)"></i>到期当天</span>
+            <span><i style="border:2px solid var(--warn);width:8px;height:8px"></i>在提醒期内，这天不发</span>
+          </div>
+          <p class="muted">过期后还没处理的，照样每 3 天提醒一次，直到出库或删掉。</p>
+          <div class="note tip" role="note">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M10 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm3.7 5.8-4.4 5a1 1 0 0 1-1.5 0l-2-2.2a1 1 0 1 1 1.5-1.3l1.2 1.4 3.7-4.2a1 1 0 0 1 1.5 1.3Z"/></svg>
+            <p>第一次用记得在「提醒」页点 <b>开启通知</b>。设置页可以发一条测试通知，3 秒后收到就说明没问题。</p>
+          </div>
+        </div>
+        <figure class="phone">
+          <div class="screen" aria-label="提醒页示意">
+            <div><div style="font-size:11px;color:var(--app-muted)">11月27日 星期五</div><div style="font-weight:900;font-size:17px">有 4 样东西要处理</div></div>
+            <div class="tiles">
+              <div class="tile d"><b>1</b><span>已过期</span></div>
+              <div class="tile w"><b>2</b><span>快到期</span></div>
+              <div class="tile w"><b>1</b><span>库存不足</span></div>
+              <div class="tile i"><b>3</b><span>借出设备</span></div>
+            </div>
+            <div class="hint">下次提醒：11月28日 09:00（每 3 天，到期前 7 天起）</div>
+            <div class="sec">快到期</div>
+            <div class="app-list">
+              <div><span>纯牛奶</span><span class="chip warn">明天到期</span></div>
+              <div><span>鸡蛋</span><span class="chip warn">3 天后到期</span></div>
+            </div>
+            <div class="sec">库存不足</div>
+            <div class="app-list">
+              <div><span>抽纸</span><span class="chip warn">剩 2 包</span></div>
+            </div>
+            <div class="tabbar"><span class="on">提醒</span><span>食品</span><span>日用品</span><span>设备</span><span>设置</span></div>
+          </div>
+          <figcaption>界面示意，数据为示例。</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="devices">
+      <p class="kicker">设备</p>
+      <h2>设备领用与退还</h2>
+      <ol class="steps">
+        <li><div><b>登记设备</b>：「设备」页点 <b>新增设备</b>，选类别（笔记本、显示器、键盘、鼠标……），填名称、型号、数量。序列号可以手填，也可以点旁边的按钮扫机身上的条码。多台同款建议分开登记，各记各的序列号。</div></li>
+        <li><div><b>登记领用</b>：进设备详情点 <b>登记领用</b>，填使用人、数量、领取日期（默认今天）。用过的人名下次可以直接点选。</div></li>
+        <li><div><b>退还</b>：在「正在使用」里找到那条记录点 <b>退还</b>，选退还日期。领了 2 件只还 1 件的，选退还数量，剩下的继续算在他名下。</div></li>
+      </ol>
+      <ul class="points">
+        <li>详情页上方显示 <b>总数 / 借出 / 在库</b>，全部借出时不能再登记领用。</li>
+        <li>每条领用记录都留着，点开可以改人名、日期，登记错了也能删。</li>
+        <li>设备页切到 <b>按使用人</b>，能看到每个人手上有哪些设备、领了多少天。</li>
+      </ul>
+    </section>
+
+    <section id="backup">
+      <p class="kicker">导入导出</p>
+      <h2>备份、换手机、把清单发给同事</h2>
+      <p>数据只存在你自己的手机上，别人看不到，卸载 App 或换手机前要先导出。入口在 <b>设置 → 导入导出</b>。</p>
+      <h3>导出</h3>
+      <ol class="steps">
+        <li><div>勾选要导出的分类：食品、日用品、设备、提醒设置，默认全选。</div></li>
+        <li><div>点 <b>导出全部</b>（只勾了几类时按钮叫 <b>导出所选</b>），在弹出的分享面板里选「存储到文件」、网盘，或者发给自己。</div></li>
+      </ol>
+      <p class="muted">文件名带分类和时间，比如只导出食品是 <code>item-keeper-food-20261118-0930.json</code>，全部导出是 <code>item-keeper-backup-20261118-0930.json</code>。</p>
+      <h3>导入</h3>
+      <ol class="steps">
+        <li><div>点 <b>从备份导入</b>，选一个备份文件。App 会先检查一遍，有问题会说清楚是哪一条、哪里不对，不会导入一半。</div></li>
+        <li><div>看一眼备份里有什么，勾选要导入的分类。</div></li>
+        <li><div>点 <b>替换并导入</b>。</div></li>
+      </ol>
+      <div class="note" role="note">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M10 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm0 3.2a1 1 0 0 1 1 1V10a1 1 0 1 1-2 0V6.2a1 1 0 0 1 1-1Zm0 9.6a1.2 1.2 0 1 1 0-2.4 1.2 1.2 0 0 1 0 2.4Z"/></svg>
+        <p>导入是<b>替换</b>：勾了「食品」，你手机上原来的食品会全部换成备份里的，不会合并；没勾的分类不动。导错了在同一个地方点 <b>撤销上次导入</b>，能换回导入前的全部数据。</p>
+      </div>
+      <ul class="points">
+        <li><b>换手机</b>：旧手机全部导出，新手机全部导入。</li>
+        <li><b>给同事一份设备清单</b>：只勾「设备」导出发给他，他导入时只勾「设备」，他自己的食品和日用品不受影响。</li>
+      </ul>
+    </section>
+
+    <section id="faq">
+      <p class="kicker">常见问题</p>
+      <h2>常见问题</h2>
+      <div class="faq">
+        <details>
+          <summary>扫了条码，名称没带出来</summary>
+          <div><p>联网查名用的是开放商品库，国产商品收录不全。手动填一次名称保存，以后再扫这个码就直接认出来。设置里可以关掉联网查名，关掉后扫码不会把条码发到网上。</p></div>
+        </details>
+        <details>
+          <summary>收不到提醒</summary>
+          <div>
+            <p>先看「提醒」页顶部有没有「通知还没开」，有就点开启。再到设置里发一条测试通知。</p>
+            <p>安卓手机测试通知能收到、每天的提醒收不到时，到系统设置里把物品管家的省电策略改成「不限制」，并允许自启动。</p>
+          </div>
+        </details>
+        <details>
+          <summary>iPhone 上打不开</summary>
+          <div><p>iPhone 版要连管理员电脑上的服务。那台电脑关机、睡眠或者服务重启后地址变了，都会打不开，找管理员要新地址。Expo Go 提示版本不兼容时，先在 App Store 更新 Expo Go。</p></div>
+        </details>
+        <details>
+          <summary>两个人能共用一份数据吗</summary>
+          <div><p>现在不能，每台手机各存各的。需要同步时用「导入导出」把某一类发过去，对方导入时只勾那一类。</p></div>
+        </details>
+        <details>
+          <summary>删错了能恢复吗</summary>
+          <div><p>删除物品、设备、批次不能撤销，只有「导入」可以撤销。建议隔一段时间导出一份全部数据存起来。</p></div>
+        </details>
+        <details>
+          <summary>同一个条码能不能录两次</summary>
+          <div><p>不能。一个条码只属于一件东西（包括箱子的条码）。扫到录过的条码会直接打开那件东西，在那里入库就行。</p></div>
+        </details>
+      </div>
+    </section>
+  </main>
+</div>
+
+<footer>
+  <div class="wrap">物品管家 1.0.0 · 本指南更新于 2026 年 11 月 18 日 · 界面示意中的物品和数量均为示例</div>
+</footer>
