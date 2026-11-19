@@ -19,6 +19,25 @@ function clean(value: unknown): string | null {
   return trimmed ? trimmed : null;
 }
 
+export type LookupFields = { name: string; brand: string; spec: string };
+
+export const EMPTY_LOOKUP_FIELDS: LookupFields = { name: '', brand: '', spec: '' };
+
+/**
+ * 新扫的条码查完后，表单上的名称、品牌、规格各填什么：
+ * 空着的、或者还是上一次扫码带出来的（没手动改过），换成这次查到的（这次没查到的那一项清空，免得留着上一个物品的信息）；
+ * 手动填过、改过的不动。
+ */
+export function mergeLookupFields(current: LookupFields, previousAuto: LookupFields, next: LookupFields): LookupFields {
+  const pick = (key: keyof LookupFields) => (current[key] === '' || current[key] === previousAuto[key] ? next[key] : current[key]);
+  return { name: pick('name'), brand: pick('brand'), spec: pick('spec') };
+}
+
+/** 查商品库的结果换成表单里的三项（没查到就都是空的） */
+export function lookupFieldsOf(info: BarcodeInfo | null): LookupFields {
+  return { name: info?.name ?? '', brand: info?.brand ?? '', spec: info?.spec ?? '' };
+}
+
 export function looksLikeProductBarcode(code: string): boolean {
   return /^\d{8,14}$/.test(code.trim());
 }

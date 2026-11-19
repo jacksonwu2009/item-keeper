@@ -5,7 +5,14 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import type { AppSettings } from '../db/settings';
 import { listLocations, type BatchInput, type StockProductInput } from '../db/stock';
-import { lookupBarcode, looksLikeProductBarcode } from '../lib/barcodeLookup';
+import {
+  EMPTY_LOOKUP_FIELDS,
+  lookupBarcode,
+  lookupFieldsOf,
+  looksLikeProductBarcode,
+  mergeLookupFields,
+  type LookupFields,
+} from '../lib/barcodeLookup';
 import { toBaseQty, validatePacks, type PackUnit } from '../lib/packs';
 import { convertPriceUnit, derivePrice, EMPTY_PRICE, type PriceDraft } from '../lib/price';
 import { takeScanResult, takeScanResultWithPrefix } from '../lib/scanHandoff';
@@ -86,23 +93,31 @@ export function StockProductForm({
   const [showErrors, setShowErrors] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const lookedUp = useRef<string | null>(null);
+  // 上一次扫码从商品库带出来的名称、品牌、规格：再扫别的条码时，没手动改过的这几项换成新查到的
+  const autoFilled = useRef<LookupFields>(EMPTY_LOOKUP_FIELDS);
+  const fieldsRef = useRef<LookupFields>({ name, brand, spec });
+  useEffect(() => {
+    fieldsRef.current = { name, brand, spec };
+  }, [name, brand, spec]);
 
   useEffect(() => {
     listLocations(db).then(setLocations).catch(() => undefined);
   }, [db]);
 
-  /** 查商品库并把结果填进还空着的字段。只在 await 之后改状态。 */
+  /**
+   * 查商品库，把结果填进名称、品牌、规格：空着的、还是上一次扫码带出来的换成这次的（这次没查到就清空），手动填过的不动。
+   * 只在 await 之后改状态。
+   */
   const applyLookup = useCallback(async (code: string) => {
     const info = await lookupBarcode(code);
     if (lookedUp.current !== code) return;
-    if (!info) {
-      setLookup('notfound');
-      return;
-    }
-    setLookup('found');
-    if (info.name) setName((current) => current || info.name || '');
-    if (info.brand) setBrand((current) => current || info.brand || '');
-    if (info.spec) setSpec((current) => current || info.spec || '');
+    setLookup(info ? 'found' : 'notfound');
+    const next = lookupFieldsOf(info);
+    const merged = mergeLookupFields(fieldsRef.current, autoFilled.current, next);
+    autoFilled.current = next;
+    setName(merged.name);
+    setBrand(merged.brand);
+    setSpec(merged.spec);
   }, []);
 
   const runLookup = useCallback(
@@ -243,7 +258,9 @@ export function StockProductForm({
             setBarcode(value);
             setLookup('idle');
           }}
-          onEndEditing={() => runLookup(barcode.trim())}
+          // 离开输入框、按回车（扫码枪扫完会带回车）时查商品库。网页版不支持 onEndEditing，所以用这两个
+          onBlur={() => runLookup(barcode.trim())}
+          onSubmitEditing={() => runLookup(barcode.trim())}
           placeholder="扫码或手动输入，可不填"
           keyboardType="number-pad"
           right={
