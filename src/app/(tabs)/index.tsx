@@ -265,23 +265,27 @@ function Row({
   first: boolean;
   onPress: () => void;
 }) {
+  // 卡片本身不留内边距、超出部分裁掉，按下的底色铺满整行（到卡片边缘，圆角也跟着）；分隔线单独画，左右照旧留空
   return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      unstable_pressDelay={LIST_PRESS_DELAY}
-      style={({ pressed }) => [dash.row, !first && dash.rowDivider, pressed && { backgroundColor: colors.surfaceSunken }]}
-    >
-      <View style={dash.rowMain}>
-        <Text style={dash.rowTitle} numberOfLines={1}>
-          {title}
-        </Text>
-        <Text style={dash.rowSub} numberOfLines={1}>
-          {subtitle}
-        </Text>
-      </View>
-      <Chip text={chip.text} tone={chip.tone} />
-    </Pressable>
+    <>
+      {first ? null : <View style={dash.rowDivider} />}
+      <Pressable
+        accessibilityRole="button"
+        onPress={onPress}
+        unstable_pressDelay={LIST_PRESS_DELAY}
+        style={({ pressed }) => [dash.row, pressed && { backgroundColor: colors.surfaceSunken }]}
+      >
+        <View style={dash.rowMain}>
+          <Text style={dash.rowTitle} numberOfLines={1}>
+            {title}
+          </Text>
+          <Text style={dash.rowSub} numberOfLines={1}>
+            {subtitle}
+          </Text>
+        </View>
+        <Chip text={chip.text} tone={chip.tone} />
+      </Pressable>
+    </>
   );
 }
 
@@ -306,9 +310,9 @@ const dash = StyleSheet.create({
   tileValue: { fontSize: 26, fontWeight: '800', fontVariant: ['tabular-nums'] },
   tileLabel: { fontSize: font.tiny + 1, color: colors.muted, marginTop: 2 },
   next: { fontSize: font.small, color: colors.muted, lineHeight: 19 },
-  listCard: { paddingVertical: 4, gap: 0 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11 },
-  rowDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line },
+  listCard: { padding: 0, gap: 0, overflow: 'hidden' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 13, paddingHorizontal: 14 },
+  rowDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.line, marginHorizontal: 14 },
   rowMain: { flex: 1, minWidth: 0, gap: 2 },
   rowTitle: { fontSize: font.body, fontWeight: '600', color: colors.ink },
   rowSub: { fontSize: font.small, color: colors.muted },
