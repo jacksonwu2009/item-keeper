@@ -2,14 +2,14 @@
   "expo": {
     "name": "物品管家",
     "slug": "item-keeper",
-    "version": "1.6.3",
+    "version": "1.6.4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.itemkeeper.app",
-      "buildNumber": "11"
+      "buildNumber": "12"
     },
     "android": {
       "adaptiveIcon": {
@@ -23,7 +23,7 @@
         "android.permission.CAMERA"
       ],
       "package": "com.itemkeeper.app",
-      "versionCode": 11
+      "versionCode": 12
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -52,8 +52,18 @@
         {
           "locationWhenInUsePermission": "根据你所在的位置给办公点起名，只在你点「用当前位置起名」时使用"
         }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#F2F4F1"
+        }
       ]
     ],
-    "scheme": "itemkeeper"
+    "scheme": "itemkeeper",
+    "backgroundColor": "#F2F4F1"
   }
 }
