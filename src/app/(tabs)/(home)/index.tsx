@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useCallback } from 'react';
-import { Linking, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useCallback, useRef, type ComponentRef } from 'react';
+import { Linking, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button, Card, Chip, LIST_PRESS_DELAY, Screen, SectionTitle, TONES, type IconName, type Tone } from '../../../components/ui';
 import { listActiveAssignments, type ActiveAssignment } from '../../../db/devices';
@@ -25,6 +26,11 @@ import { colors, font, radius } from '../../../theme';
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
 /** 窗口至少这么宽（平板、电脑）时四个数字排一行，手机上两行两列 */
 const TILES_ONE_ROW_MIN_WIDTH = 600;
+/** iOS 系统导航栏（大标题收起后）的高度：滚到某一组时让分组标题露在栏下面 */
+const IOS_NAV_BAR_HEIGHT = 44;
+
+/** 提醒页下面的四组，和上面四个数字块一一对应 */
+type SectionKey = 'expired' | 'expiring' | 'lowStock' | 'devices';
 
 function openProduct(product: PlanProduct) {
   if (product.id !== undefined) router.push({ pathname: '/stock/[id]', params: { id: String(product.id) } });
@@ -39,6 +45,23 @@ export default function RemindersScreen() {
   const office = useOffice();
   const windowSize = useWindowDimensions();
   const tilesInOneRow = windowSize.width >= TILES_ONE_ROW_MIN_WIDTH;
+  const safeArea = useSafeAreaInsets();
+  const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
+  /** 每一组的分组标题在页面里的位置（onLayout 记下） */
+  const sectionTops = useRef<Partial<Record<SectionKey, number>>>({});
+
+  /** 点数字块：滚到下面对应的那一组（每组都是完整列表，和数字对得上） */
+  function scrollToSection(key: SectionKey) {
+    const top = sectionTops.current[key];
+    if (top === undefined) return;
+    // iOS 的滚动视图伸到导航栏下面，要让出状态栏和导航栏；安卓、网页的标题栏在滚动视图外面
+    const coveredTop = Platform.OS === 'ios' ? safeArea.top + IOS_NAV_BAR_HEIGHT : 0;
+    scrollRef.current?.scrollTo({ y: Math.max(0, top - coveredTop - 8), animated: true });
+  }
+
+  function rememberSection(key: SectionKey, event: LayoutChangeEvent) {
+    sectionTops.current[key] = event.nativeEvent.layout.y;
+  }
   const officeFilter = office.filterId;
   const showOffice = office.multiple && officeFilter === null;
   const loader = useCallback(async () => {
@@ -85,7 +108,7 @@ export default function RemindersScreen() {
   const repeatText = settings.repeatEveryDays === 1 ? '每天' : `每 ${settings.repeatEveryDays} 天`;
 
   return (
-    <Screen largeTitle>
+    <Screen largeTitle scrollRef={scrollRef}>
       <View>
         <Text style={dash.date}>
           {now.getMonth() + 1}月{now.getDate()}日 星期{WEEKDAYS[now.getDay()]}
@@ -129,14 +152,15 @@ export default function RemindersScreen() {
       ) : null}
 
       <View style={dash.tiles}>
-        <Tile label="已过期" value={status.expired.length} tone="danger" inOneRow={tilesInOneRow} />
-        <Tile label="快到期" value={status.expiring.length} tone="warn" inOneRow={tilesInOneRow} />
-        <Tile label="库存不足" value={status.lowStock.length} tone="warn" inOneRow={tilesInOneRow} />
+        <Tile label="已过期" value={status.expired.length} tone="danger" inOneRow={tilesInOneRow} onPress={() => scrollToSection('expired')} />
+        <Tile label="快到期" value={status.expiring.length} tone="warn" inOneRow={tilesInOneRow} onPress={() => scrollToSection('expiring')} />
+        <Tile label="库存不足" value={status.lowStock.length} tone="warn" inOneRow={tilesInOneRow} onPress={() => scrollToSection('lowStock')} />
         <Tile
           label="借出设备"
           value={active.reduce((sum, item) => sum + item.quantity, 0)}
           tone="info"
           inOneRow={tilesInOneRow}
+          onPress={() => scrollToSection('devices')}
         />
       </View>
 
@@ -148,7 +172,9 @@ export default function RemindersScreen() {
 
       {status.expired.length > 0 ? (
         <>
-          <SectionTitle title="已过期" />
+          <View onLayout={(event) => rememberSection('expired', event)}>
+            <SectionTitle title="已过期" />
+          </View>
           <Card style={dash.listCard}>
             {status.expired.map((entry, index) => (
               <Row
@@ -166,7 +192,9 @@ export default function RemindersScreen() {
 
       {status.expiring.length > 0 ? (
         <>
-          <SectionTitle title="快到期" />
+          <View onLayout={(event) => rememberSection('expiring', event)}>
+            <SectionTitle title="快到期" />
+          </View>
           <Card style={dash.listCard}>
             {status.expiring.map((entry, index) => (
               <Row
@@ -184,7 +212,9 @@ export default function RemindersScreen() {
 
       {status.lowStock.length > 0 ? (
         <>
-          <SectionTitle title="库存不足" />
+          <View onLayout={(event) => rememberSection('lowStock', event)}>
+            <SectionTitle title="库存不足" />
+          </View>
           <Card style={dash.listCard}>
             {status.lowStock.map((entry, index) => (
               <Row
@@ -202,7 +232,9 @@ export default function RemindersScreen() {
 
       {active.length > 0 ? (
         <>
-          <SectionTitle title="借出中的设备" />
+          <View onLayout={(event) => rememberSection('devices', event)}>
+            <SectionTitle title="借出中的设备" />
+          </View>
           <Card style={dash.listCard}>
             {active.map((item, index) => (
               <Row
@@ -254,15 +286,39 @@ function Shortcut({ title, icon, onPress }: { title: string; icon: IconName; onP
   );
 }
 
-/** 统计小方块：有数时用这个状态的浅色做底、深色写数字；是 0 时白底灰字 */
-function Tile({ label, value, tone, inOneRow }: { label: string; value: number; tone: Tone; inOneRow: boolean }) {
+/** 统计小方块：有数时用这个状态的浅色做底、深色写数字，点了滚到下面对应的一组；是 0 时白底灰字，不能点（下面也没有这一组） */
+function Tile({
+  label,
+  value,
+  tone,
+  inOneRow,
+  onPress,
+}: {
+  label: string;
+  value: number;
+  tone: Tone;
+  inOneRow: boolean;
+  onPress: () => void;
+}) {
   const palette = TONES[tone];
   const active = value > 0;
-  return (
-    <View style={[dash.tile, inOneRow ? dash.tileOneRow : dash.tileTwoColumns, active && { backgroundColor: palette.bg }]}>
+  const boxStyle = [dash.tile, inOneRow ? dash.tileOneRow : dash.tileTwoColumns, active && { backgroundColor: palette.bg }];
+  const content = (
+    <>
       <Text style={[dash.tileValue, { color: active ? palette.fg : colors.faint }]}>{value}</Text>
       <Text style={dash.tileLabel}>{label}</Text>
-    </View>
+    </>
+  );
+  if (!active) return <View style={boxStyle}>{content}</View>;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${label} ${value}`}
+      onPress={onPress}
+      style={({ pressed }) => [...boxStyle, pressed && dash.tilePressed]}
+    >
+      {content}
+    </Pressable>
   );
 }
 
@@ -332,6 +388,8 @@ const dash = StyleSheet.create({
   },
   // 两列：每块略小于一半，剩下的由 flexGrow 补齐；一行四块同理
   tileTwoColumns: { flexBasis: '45%' },
+  // 按下时稍微变暗，表示能点
+  tilePressed: { opacity: 0.7 },
   tileOneRow: { flexBasis: '22%' },
   tileValue: { fontSize: font.title, fontWeight: '700', fontVariant: ['tabular-nums'] },
   tileLabel: { fontSize: font.small, color: colors.muted },

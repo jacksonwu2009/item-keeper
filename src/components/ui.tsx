@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Children, isValidElement, useState, type ComponentProps, type ReactNode } from 'react';
+import { Children, isValidElement, useState, type ComponentProps, type ComponentRef, type ReactNode, type Ref } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -44,15 +44,19 @@ export function Screen({
   children,
   contentStyle,
   largeTitle,
+  scrollRef,
 }: {
   children: ReactNode;
   contentStyle?: StyleProp<ViewStyle>;
   /** 这一页顶上是 iOS 系统大标题（标签页）：滚动视图配合大标题收缩，见 LARGE_TITLE_SCROLL_INSET */
   largeTitle?: boolean;
+  /** 要在页面里滚到某个位置时传（比如提醒页点数字块滚到对应的一组） */
+  scrollRef?: Ref<ComponentRef<typeof ScrollView>>;
 }) {
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
+        ref={scrollRef}
         style={styles.screen}
         contentContainerStyle={[styles.screenContent, contentStyle]}
         keyboardShouldPersistTaps="handled"
