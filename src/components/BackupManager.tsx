@@ -279,7 +279,7 @@ export function BackupManager() {
 
       {pending ? (
         <Sheet visible title="确认导入" onClose={() => (busy === 'import' ? undefined : setPending(null))}>
-          <Card>
+          <Card style={backupStyles.summary}>
             <Text style={backupStyles.body} numberOfLines={2}>
               {pending.fileName}
             </Text>
@@ -389,6 +389,8 @@ function importPlanText({
 
 const backupStyles = StyleSheet.create({
   notes: { gap: 8 },
+  // 确认导入面板里的备份摘要：面板是白底，卡片换成浅灰底才圈得出来
+  summary: { backgroundColor: colors.bg },
   group: { gap: 8 },
   row: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
   body: { fontSize: font.body, color: colors.ink },

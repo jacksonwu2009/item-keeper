@@ -114,7 +114,7 @@ const switcherStyles = StyleSheet.create({
   },
   triggerText: { fontSize: font.small, fontWeight: '700', color: colors.accent, flexShrink: 1 },
   list: { gap: 8 },
-  // 白底圆角，没选中的不描边，选中的描主色
+  // 浅灰底圆角（面板是白底，白块会融进去），没选中的不描边，选中的描主色
   option: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -122,9 +122,9 @@ const switcherStyles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: radius.md,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.bg,
     borderWidth: 1,
-    borderColor: colors.surface,
+    borderColor: colors.bg,
   },
   optionSelected: { borderColor: colors.accent },
   optionText: { flex: 1, minWidth: 0 },

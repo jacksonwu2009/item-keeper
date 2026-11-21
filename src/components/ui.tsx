@@ -374,7 +374,8 @@ export function Empty({ icon, title, text, children }: { icon: IconName; title: 
 
 /**
  * 底部弹出的面板，用来做入库、出库、领用、退还这些小表单。
- * 样子照鸿蒙版的半屏面板：浅灰底、顶上两个大圆角，左边大标题、右边圆形关闭按钮；平板、电脑上最宽 720 居中。
+ * 样子照鸿蒙版的半屏面板：白底、顶上两个大圆角，左边大标题、右边圆形关闭按钮；平板、电脑上最宽 720 居中。
+ * 面板里要单独圈出来的一块（比如确认导入面板里的备份摘要）用浅灰底 colors.bg，不要放白卡片，会融进面板。
  */
 export function Sheet({
   visible,
@@ -559,7 +560,7 @@ export const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(16, 24, 20, 0.35)' },
   sheetOverlay: { backgroundColor: 'rgba(16, 24, 20, 0.35)', justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: colors.bg,
+    backgroundColor: colors.surface,
     borderTopLeftRadius: radius.sheet,
     borderTopRightRadius: radius.sheet,
     maxHeight: '88%',
