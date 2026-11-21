@@ -7,7 +7,9 @@ import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-na
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scheduleOnRN } from 'react-native-worklets';
 
+import { rowSwipeIntent, type RowSwipeIntent } from '../lib/tabs';
 import { colors, font, radius } from '../theme';
+import { useTabSwipe } from './TabSwipe';
 import { LIST_PRESS_DELAY } from './ui';
 
 const ACTION_WIDTH = 84;
@@ -26,6 +28,8 @@ let openRow: { owner: object; close: () => void } | null = null;
  * 左边的名称、标签一直看得见（整行左移会把短名称整个推出屏幕，看着像内容没了）。
  * 点按、长按用手势库的 Pressable：手指一开始横着滑就取消，不会滑到一半弹出编辑页。
  * 只认向左滑；向右滑留给外层切换标签（已经滑开时向右滑是收回）。
+ * 在标签页里时，向左滑和外层切标签的手势同时识别：快速一划是切标签，删除按钮不露出来；按住慢慢拖才是左滑删除
+ * （规则见 lib/tabs 的 rowSwipeIntent）。不在标签页里（详情页的列表）照旧一滑就跟手。
  * 读屏用户可以从「操作」菜单里选编辑和删除。
  */
 export function SwipeRow({
@@ -52,6 +56,12 @@ export function SwipeRow({
   const reveal = useSharedValue(0);
   const dragStart = useSharedValue(0);
   const rightActivation = useSharedValue(CLOSED_RIGHT_ACTIVATION);
+  const tabSwipe = useTabSwipe();
+  const insideTabs = tabSwipe !== null;
+  const rowOwnsSwipe = tabSwipe?.rowOwnsSwipe;
+  /** 这次横滑：还在判断 / 按住慢慢拖（跟手露出删除）/ 快速一划（交给外层切标签） */
+  const intent = useSharedValue<RowSwipeIntent>('drag');
+  const activatedAt = useSharedValue(0);
 
   const [owner] = useState(() => ({}));
 
@@ -76,17 +86,31 @@ export function SwipeRow({
   const pan = usePanGesture({
     activeOffsetX: [-12, rightActivation],
     failOffsetY: [-12, 12],
+    simultaneousWith: tabSwipe?.gesture,
     onActivate: () => {
       'worklet';
       dragStart.set(reveal.get());
+      activatedAt.set(Date.now());
+      // 不在标签页里（没有要让的手势）、或者已经滑开了（这次是收回或接着拉）：直接跟手，这次松手也不切标签
+      const followNow = !insideTabs || reveal.get() > 0;
+      intent.set(followNow ? 'drag' : 'pending');
+      if (followNow && rowOwnsSwipe) rowOwnsSwipe.set(true);
     },
     onUpdate: (event) => {
       'worklet';
+      if (intent.get() === 'pending') {
+        const decided = rowSwipeIntent(Date.now() - activatedAt.get(), event.velocityX);
+        intent.set(decided);
+        if (decided === 'drag' && rowOwnsSwipe) rowOwnsSwipe.set(true);
+      }
+      if (intent.get() !== 'drag') return;
       const next = dragStart.get() - event.translationX;
       reveal.set(Math.min(ACTION_WIDTH, Math.max(0, next)));
     },
     onDeactivate: (event) => {
       'worklet';
+      // 快速一划、或者还没判断出来就松手：删除按钮一直没露出来，交给外层切标签
+      if (intent.get() !== 'drag') return;
       const open = (reveal.get() > ACTION_WIDTH / 2 || event.velocityX < -500) && event.velocityX <= 500;
       if (open) {
         reveal.set(withTiming(ACTION_WIDTH, ANIMATION));
