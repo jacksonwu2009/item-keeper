@@ -70,6 +70,11 @@ function presetKey(preset: DevicePreset): string {
   return [preset.category, preset.name, preset.model, preset.chip, preset.memory, preset.storage].map(normalize).join('|');
 }
 
+/** 表单里现在填的（类别、名称、型号、配置）还是不是这个快速选项：是的话快速选择里把它标成选中 */
+export function presetMatchesForm(preset: DevicePreset, form: Omit<DevicePreset, 'accessories'>): boolean {
+  return presetKey(preset) === presetKey({ ...form, accessories: [] });
+}
+
 /** 自己登记过的组合排在前面；内置的里和自己登记过的同名（不管配置）就不再列出 */
 export function mergePresets(recent: DevicePreset[], builtin: DevicePreset[] = BUILTIN_DEVICE_PRESETS): DevicePreset[] {
   const recentKeys = new Set(recent.map(presetKey));

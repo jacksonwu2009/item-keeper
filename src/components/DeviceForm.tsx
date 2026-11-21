@@ -15,6 +15,7 @@ import {
   normalizeCapacity,
   parseChip,
   presetLabel,
+  presetMatchesForm,
   STORAGE_OPTIONS,
   type DevicePreset,
 } from '../lib/devicePresets';
@@ -121,6 +122,9 @@ export function DeviceForm({
     setAccessories((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
   }
 
+  /** 最近选的快速选项（快速选择里的第几个）；表单再改了名称、配置等就不算选中 */
+  const [appliedPresetIndex, setAppliedPresetIndex] = useState<number | null>(null);
+
   /** 选了快速选择里的一项：类别、名称、型号、配置、配件都换成它的 */
   function applyPreset(preset: DevicePreset) {
     setCategory(preset.category);
@@ -133,6 +137,10 @@ export function DeviceForm({
   }
 
   const showConfig = hasComputerConfig(category);
+  // 选过的快速选项还和表单一致时标成选中（主色底），改了名称、配置等就取消选中
+  const appliedPreset = appliedPresetIndex !== null && presets ? presets[appliedPresetIndex] : undefined;
+  const selectedPresetIndex =
+    appliedPreset && presetMatchesForm(appliedPreset, { category, name, model, chip, memory, storage }) ? appliedPresetIndex : null;
   const chipParts = parseChip(chip);
 
   async function submit(handler: (input: DeviceInput) => Promise<void>) {
@@ -172,8 +180,11 @@ export function DeviceForm({
           <Label>快速选择</Label>
           <ChoiceChips
             options={presets.slice(0, 14).map((preset, index) => ({ value: index, label: presetLabel(preset) }))}
-            value={null}
-            onChange={(index) => applyPreset(presets[index])}
+            value={selectedPresetIndex}
+            onChange={(index) => {
+              setAppliedPresetIndex(index);
+              applyPreset(presets[index]);
+            }}
           />
           <Text style={formStyles.hint}>前面是登记过的，选了自动填类别、名称、配置和配件，再按实际改。</Text>
         </View>

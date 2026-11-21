@@ -12,6 +12,7 @@ import {
   parseChip,
   parseDeviceCode,
   presetLabel,
+  presetMatchesForm,
   splitLegacyModel,
 } from '../src/lib/devicePresets';
 
@@ -82,5 +83,21 @@ describe('扫码认序列号', () => {
     assert.equal(parseDeviceCode('1PMRX33CH/A').kind, 'notSerial');
     assert.equal(parseDeviceCode('194253082392', 'upc_a').kind, 'notSerial');
     assert.equal(parseDeviceCode('C02XK1ABJGH5', 'code128').kind, 'serial');
+  });
+});
+
+describe('快速选择的选中状态', () => {
+  const preset = { category: '笔记本', name: 'MacBook Pro 14 英寸', model: null, chip: 'M3 Pro', memory: '18G', storage: '512G', accessories: [{ name: '充电器', quantity: 1 }] };
+  const form = { category: '笔记本', name: 'MacBook Pro 14 英寸', model: '', chip: 'M3 Pro', memory: '18G', storage: '512G' };
+
+  it('表单和选项的类别、名称、型号、配置一致时算选中（空和 null 一样，空格、大小写不算差别）', () => {
+    assert.equal(presetMatchesForm(preset, form), true);
+    assert.equal(presetMatchesForm(preset, { ...form, name: 'macbook pro 14英寸' }), true);
+  });
+
+  it('改了名称、配置或类别就不算选中', () => {
+    assert.equal(presetMatchesForm(preset, { ...form, name: 'MacBook Pro 16 英寸' }), false);
+    assert.equal(presetMatchesForm(preset, { ...form, memory: '36G' }), false);
+    assert.equal(presetMatchesForm(preset, { ...form, category: '台式机' }), false);
   });
 });
