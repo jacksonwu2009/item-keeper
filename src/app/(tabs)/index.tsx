@@ -2,9 +2,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback } from 'react';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
-import { Button, Card, Chip, LIST_PRESS_DELAY, Screen, SectionTitle, type Tone } from '../../components/ui';
+import { Button, Card, Chip, LIST_PRESS_DELAY, Screen, SectionTitle, TONES, type IconName, type Tone } from '../../components/ui';
 import { listActiveAssignments, type ActiveAssignment } from '../../db/devices';
 import { DEFAULT_SETTINGS, getDataSince, getLastExportAt, getSettings } from '../../db/settings';
 import { useFocusData } from '../../hooks/useFocusData';
@@ -23,6 +23,8 @@ import { formatQty, KIND_LABEL, isStockKind } from '../../lib/stock';
 import { colors, font, radius } from '../../theme';
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
+/** 窗口至少这么宽（平板、电脑）时四个数字排一行，手机上两行两列 */
+const TILES_ONE_ROW_MIN_WIDTH = 600;
 
 function openProduct(product: PlanProduct) {
   if (product.id !== undefined) router.push({ pathname: '/stock/[id]', params: { id: String(product.id) } });
@@ -35,6 +37,8 @@ function kindLabel(product: PlanProduct): string {
 export default function RemindersScreen() {
   const db = useSQLiteContext();
   const office = useOffice();
+  const windowSize = useWindowDimensions();
+  const tilesInOneRow = windowSize.width >= TILES_ONE_ROW_MIN_WIDTH;
   const officeFilter = office.filterId;
   const showOffice = office.multiple && officeFilter === null;
   const loader = useCallback(async () => {
@@ -92,22 +96,8 @@ export default function RemindersScreen() {
       </View>
 
       <View style={dash.shortcuts}>
-        <Button
-          title="盘点"
-          icon="clipboard-outline"
-          variant="secondary"
-          compact
-          onPress={() => router.push('/stocktake')}
-          style={dash.shortcut}
-        />
-        <Button
-          title="报表"
-          icon="bar-chart-outline"
-          variant="secondary"
-          compact
-          onPress={() => router.push('/report')}
-          style={dash.shortcut}
-        />
+        <Shortcut title="盘点" icon="clipboard-outline" onPress={() => router.push('/stocktake')} />
+        <Shortcut title="报表" icon="bar-chart-outline" onPress={() => router.push('/report')} />
       </View>
 
       {loaded && permission !== 'granted' ? (
@@ -120,6 +110,7 @@ export default function RemindersScreen() {
             title={permission === 'denied' ? '去系统设置开启' : '开启通知'}
             compact
             onPress={() => enableNotifications().catch(() => undefined)}
+            style={dash.noticeButton}
           />
         </Card>
       ) : null}
@@ -132,15 +123,20 @@ export default function RemindersScreen() {
               {backupMessage(backup)}。数据只存在这台手机上，导出一份存到 iCloud 云盘或发给自己，手机丢了、换了也能找回来。
             </Text>
           </View>
-          <Button title="去导出" compact onPress={() => router.navigate('/settings')} />
+          <Button title="去导出" compact onPress={() => router.navigate('/settings')} style={dash.noticeButton} />
         </Card>
       ) : null}
 
       <View style={dash.tiles}>
-        <Tile label="已过期" value={status.expired.length} tone="danger" />
-        <Tile label="快到期" value={status.expiring.length} tone="warn" />
-        <Tile label="库存不足" value={status.lowStock.length} tone="warn" />
-        <Tile label="借出设备" value={active.reduce((sum, item) => sum + item.quantity, 0)} tone="info" />
+        <Tile label="已过期" value={status.expired.length} tone="danger" inOneRow={tilesInOneRow} />
+        <Tile label="快到期" value={status.expiring.length} tone="warn" inOneRow={tilesInOneRow} />
+        <Tile label="库存不足" value={status.lowStock.length} tone="warn" inOneRow={tilesInOneRow} />
+        <Tile
+          label="借出设备"
+          value={active.reduce((sum, item) => sum + item.quantity, 0)}
+          tone="info"
+          inOneRow={tilesInOneRow}
+        />
       </View>
 
       <Text style={dash.next}>
@@ -242,11 +238,28 @@ export default function RemindersScreen() {
   );
 }
 
-function Tile({ label, value, tone }: { label: string; value: number; tone: Tone }) {
-  const color = value === 0 ? colors.faint : tone === 'danger' ? colors.danger : tone === 'warn' ? colors.warn : colors.info;
+/** 常用入口（盘点、报表）：白底圆角小块，上面图标、下面文字 */
+function Shortcut({ title, icon, onPress }: { title: string; icon: IconName; onPress: () => void }) {
   return (
-    <View style={dash.tile}>
-      <Text style={[dash.tileValue, { color }]}>{value}</Text>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      onPress={onPress}
+      style={({ pressed }) => [dash.shortcut, pressed && dash.shortcutPressed]}
+    >
+      <Ionicons name={icon} size={22} color={colors.accent} />
+      <Text style={dash.shortcutText}>{title}</Text>
+    </Pressable>
+  );
+}
+
+/** 统计小方块：有数时用这个状态的浅色做底、深色写数字；是 0 时白底灰字 */
+function Tile({ label, value, tone, inOneRow }: { label: string; value: number; tone: Tone; inOneRow: boolean }) {
+  const palette = TONES[tone];
+  const active = value > 0;
+  return (
+    <View style={[dash.tile, inOneRow ? dash.tileOneRow : dash.tileTwoColumns, active && { backgroundColor: palette.bg }]}>
+      <Text style={[dash.tileValue, { color: active ? palette.fg : colors.faint }]}>{value}</Text>
       <Text style={dash.tileLabel}>{label}</Text>
     </View>
   );
@@ -265,7 +278,7 @@ function Row({
   first: boolean;
   onPress: () => void;
 }) {
-  // 卡片本身不留内边距、超出部分裁掉，按下的底色铺满整行（到卡片边缘，圆角也跟着）；分隔线单独画，左右照旧留空
+  // 卡片本身不留内边距、超出部分裁掉，按下的底色铺满整行（到卡片边缘，圆角也跟着）；分隔线单独画，左边留空、右边到头
   return (
     <>
       {first ? null : <View style={dash.rowDivider} />}
@@ -284,37 +297,57 @@ function Row({
           </Text>
         </View>
         <Chip text={chip.text} tone={chip.tone} />
+        <Ionicons name="chevron-forward" size={16} color={colors.faint} />
       </Pressable>
     </>
   );
 }
 
 const dash = StyleSheet.create({
-  date: { fontSize: font.small, color: colors.muted, fontWeight: '600', letterSpacing: 0.5 },
+  date: { fontSize: font.small, color: colors.muted, fontWeight: '500' },
   headline: { fontSize: 26, fontWeight: '800', color: colors.ink, marginTop: 2 },
-  permission: { backgroundColor: colors.warnSoft, borderColor: colors.warnSoft, gap: 10 },
-  permissionRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
+  permission: { backgroundColor: colors.warnSoft },
+  permissionRow: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
   permissionText: { flex: 1, fontSize: font.small, color: colors.ink, lineHeight: 20 },
+  noticeButton: { alignSelf: 'flex-start' },
   shortcuts: { flexDirection: 'row', gap: 8 },
-  shortcut: { flex: 1 },
-  tiles: { flexDirection: 'row', gap: 8 },
-  tile: {
+  shortcut: {
     flex: 1,
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 12,
     backgroundColor: colors.surface,
     borderRadius: radius.md,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.line,
   },
-  tileValue: { fontSize: 26, fontWeight: '800', fontVariant: ['tabular-nums'] },
-  tileLabel: { fontSize: font.tiny + 1, color: colors.muted, marginTop: 2 },
+  shortcutPressed: { backgroundColor: colors.surfaceSunken },
+  shortcutText: { fontSize: font.small, color: colors.ink },
+  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  tile: {
+    flexGrow: 1,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: 12,
+    gap: 4,
+  },
+  // 两列：每块略小于一半，剩下的由 flexGrow 补齐；一行四块同理
+  tileTwoColumns: { flexBasis: '45%' },
+  tileOneRow: { flexBasis: '22%' },
+  tileValue: { fontSize: font.title, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  tileLabel: { fontSize: font.small, color: colors.muted },
   next: { fontSize: font.small, color: colors.muted, lineHeight: 19 },
   listCard: { padding: 0, gap: 0, overflow: 'hidden' },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 13, paddingHorizontal: 14 },
-  rowDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.line, marginHorizontal: 14 },
-  rowMain: { flex: 1, minWidth: 0, gap: 2 },
-  rowTitle: { fontSize: font.body, fontWeight: '600', color: colors.ink },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minHeight: 56,
+    paddingVertical: 10,
+    paddingLeft: 16,
+    paddingRight: 12,
+  },
+  rowDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.line, marginLeft: 16 },
+  rowMain: { flex: 1, minWidth: 0, gap: 2, marginRight: 4 },
+  rowTitle: { fontSize: font.body, fontWeight: '500', color: colors.ink },
   rowSub: { fontSize: font.small, color: colors.muted },
   allGood: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   allGoodText: { flex: 1, fontSize: font.small, color: colors.muted, lineHeight: 20 },

@@ -11,6 +11,7 @@ import {
   Chip,
   ChoiceChips,
   Empty,
+  GroupCard,
   InfoRow,
   Label,
   Screen,
@@ -192,15 +193,9 @@ export default function StockDetailScreen() {
             </View>
           ) : null}
           <View style={detailStyles.actions}>
-            <Button
-              title="入库"
-              icon="add-circle-outline"
-              onPress={() => openSheet({ type: 'in' })}
-              style={detailStyles.flex}
-            />
+            <Button title="入库" onPress={() => openSheet({ type: 'in' })} style={detailStyles.flex} />
             <Button
               title="出库 / 用掉"
-              icon="remove-circle-outline"
               variant="secondary"
               onPress={() => openSheet({ type: 'out' })}
               disabled={totalQty <= 0}
@@ -260,7 +255,7 @@ export default function StockDetailScreen() {
             <Text style={detailStyles.sub}>还没有记录。</Text>
           </Card>
         ) : (
-          <Card style={detailStyles.batchCard}>
+          <Card style={detailStyles.listCard}>
             {(showAllMovements ? movements : movements.slice(0, 8)).map((movement, index) => (
               <MovementRow key={movement.id} movement={movement} unit={product.unit} first={index === 0} />
             ))}
@@ -270,13 +265,14 @@ export default function StockDetailScreen() {
                 variant="ghost"
                 compact
                 onPress={() => setShowAllMovements((value) => !value)}
+                style={detailStyles.moreButton}
               />
             ) : null}
           </Card>
         )}
 
         <SectionTitle title="信息" />
-        <Card>
+        <GroupCard>
           {office.multiple ? <InfoRow label="办公点" value={office.officeName(product.officeId)} /> : null}
           <InfoRow label="条码" value={product.barcode ?? '—'} />
           <InfoRow label="包装规格" value={packs.length ? describePacks(product.unit, packs) : '—'} />
@@ -303,19 +299,17 @@ export default function StockDetailScreen() {
             value={`到期前 ${leadDays} 天起${product.expiryLeadDays === null ? '（默认）' : ''}`}
           />
           {product.note ? <InfoRow label="备注" value={product.note} /> : null}
-        </Card>
+        </GroupCard>
 
         <View style={detailStyles.actions}>
           <Button
             title="编辑"
-            icon="create-outline"
             variant="secondary"
             onPress={() => router.push({ pathname: '/stock/edit/[id]', params: { id: String(product.id) } })}
             style={detailStyles.flex}
           />
           <Button
             title="删除"
-            icon="trash-outline"
             variant="danger"
             onPress={confirmDelete}
             style={detailStyles.flex}
@@ -412,7 +406,7 @@ function MovementRow({ movement, unit, first }: { movement: StockMovement; unit:
     .filter(Boolean)
     .join(' · ');
   return (
-    <View style={[detailStyles.batchRow, !first && detailStyles.batchDivider]}>
+    <View style={[detailStyles.movementRow, !first && detailStyles.movementDivider]}>
       <View style={detailStyles.flex}>
         <Text style={detailStyles.batchDate}>
           {MOVEMENT_LABEL[movement.type]}
@@ -639,6 +633,8 @@ function BatchSheet({
   );
 }
 
+// 照鸿蒙版 ProductDetailPage.ets：顶上一张大卡片（分类、名称、大数字、状态、入库出库），批次一批一张小卡片，
+// 记录和信息是不留内边距的分组卡片、行间画分隔线
 const detailStyles = StyleSheet.create({
   flex: { flex: 1, minWidth: 0 },
   banner: {
@@ -646,41 +642,44 @@ const detailStyles = StyleSheet.create({
     borderRadius: radius.md,
     padding: 12,
   },
-  bannerText: { color: colors.info, fontSize: font.body, fontWeight: '600' },
+  bannerText: { color: colors.info, fontSize: font.body, fontWeight: '500' },
   summary: { gap: 12 },
   summaryTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  kind: { fontSize: font.tiny + 1, color: colors.accent, fontWeight: '700', letterSpacing: 1 },
+  kind: { fontSize: font.tiny, color: colors.accent, fontWeight: '700' },
   title: { fontSize: font.title, fontWeight: '700', color: colors.ink, marginTop: 2 },
   sub: { fontSize: font.small, color: colors.muted, marginTop: 2 },
   qtyBox: { alignItems: 'flex-end' },
   qty: { fontSize: 34, fontWeight: '800', color: colors.ink, fontVariant: ['tabular-nums'] },
   unit: { fontSize: font.small, color: colors.muted },
-  chips: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
-  actions: { flexDirection: 'row', gap: 10 },
-  message: { fontSize: font.small, color: colors.ok, fontWeight: '600' },
-  batchCard: { paddingVertical: 4, gap: 0 },
+  chips: { flexDirection: 'row', gap: 4, flexWrap: 'wrap' },
+  actions: { flexDirection: 'row', gap: 12 },
+  message: { fontSize: font.small, color: colors.ok, fontWeight: '500' },
+  listCard: { padding: 0, gap: 0, overflow: 'hidden' },
+  moreButton: { marginVertical: 4 },
   screen: { flex: 1, backgroundColor: colors.bg },
-  batchRow: {
+  // 记录卡片不留内边距：每一行左边用外边距空出 16，上面的分隔线也就从 16 开始、右边到头（和鸿蒙版一样）
+  movementRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingVertical: 10,
+    gap: 12,
+    paddingVertical: 12,
+    marginLeft: 16,
+    paddingRight: 16,
     backgroundColor: colors.surface,
   },
-  batchDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line },
+  movementDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line },
   // 批次：每一批一张卡片，和外面列表的一行一样，左滑删除的样子也一样
   batchList: { gap: 8 },
   batchHint: { fontSize: font.small, color: colors.faint, textAlign: 'center' },
   batchItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
+    minHeight: 64,
     backgroundColor: colors.surface,
     borderRadius: radius.md,
     paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.line,
+    paddingHorizontal: 16,
   },
   batchMain: { flex: 1, gap: 4, minWidth: 0 },
   batchMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },

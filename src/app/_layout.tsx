@@ -55,7 +55,7 @@ export default function RootLayout() {
             screenOptions={{
               headerStyle: { backgroundColor: colors.bg },
               headerTintColor: colors.accent,
-              headerTitleStyle: { color: colors.ink, fontWeight: '700' },
+              headerTitleStyle: { color: colors.ink, fontWeight: '700', fontSize: 20 },
               headerShadowVisible: false,
               headerBackTitle: '返回',
               contentStyle: { backgroundColor: colors.bg },

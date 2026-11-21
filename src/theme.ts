@@ -23,7 +23,11 @@ export const colors = {
   infoSoft: '#E2EBF7',
 };
 
-export const radius = { sm: 8, md: 12, lg: 18 };
+/**
+ * 圆角，和鸿蒙版 Theme.ets 的 CornerRadius 一致：sm 输入框，md 列表行、小方块，lg 卡片。
+ * pill 是胶囊形（按钮、搜索框、分段筛选），sheet 是底部面板顶上的两个角。
+ */
+export const radius = { sm: 8, md: 12, lg: 18, pill: 999, sheet: 28 };
 
 export const font = {
   title: 22,
@@ -32,3 +36,6 @@ export const font = {
   small: 13,
   tiny: 11,
 };
+
+/** 内容区（卡片、列表、底部面板）最宽多少：平板、电脑上不拉满，和鸿蒙版 CONTENT_MAX_WIDTH 一致 */
+export const CONTENT_MAX_WIDTH = 720;

@@ -6,7 +6,7 @@ import { Alert, Linking, StyleSheet, Text, View } from 'react-native';
 import { TimeField } from '../../components/DateField';
 import { IntegerField } from '../../components/NumberField';
 import { OfficeManager } from '../../components/OfficeManager';
-import { Button, Card, Label, MultiChips, Screen, SectionTitle, Segmented, Sheet, SwitchRow } from '../../components/ui';
+import { Button, Card, GroupCard, Label, MultiChips, Screen, SectionTitle, Segmented, Sheet, SwitchRow } from '../../components/ui';
 import { listDevices } from '../../db/devices';
 import { DEFAULT_SETTINGS, getLastExportAt, getSettings, saveSettings, type AppSettings } from '../../db/settings';
 import { listProducts } from '../../db/stock';
@@ -249,8 +249,9 @@ export default function SettingsScreen() {
       <SectionTitle title="办公点" />
       <OfficeManager />
 
+      {/* 照鸿蒙版设置页：一项一行，行间画分隔线 */}
       <SectionTitle title="提醒" />
-      <Card>
+      <GroupCard>
         <SwitchRow
           title="到期提醒"
           description="食品、日用品快到期和已过期时提醒"
@@ -301,7 +302,7 @@ export default function SettingsScreen() {
           />
           <Text style={setStyles.hint}>填 0 不提醒。在「导入导出」里分类、办公点都全选，点「导出全部」导出才算备份过。</Text>
         </View>
-      </Card>
+      </GroupCard>
 
       <SectionTitle title="通知权限" />
       <Card>
@@ -336,7 +337,7 @@ export default function SettingsScreen() {
       </Card>
 
       <SectionTitle title="录入" />
-      <Card>
+      <GroupCard>
         <View style={setStyles.group}>
           <IntegerField
             label="新物品默认库存下限"
@@ -352,7 +353,7 @@ export default function SettingsScreen() {
           value={current.onlineLookup}
           onChange={(value) => update({ onlineLookup: value })}
         />
-      </Card>
+      </GroupCard>
 
       <SectionTitle title="导入导出" />
       <Card>

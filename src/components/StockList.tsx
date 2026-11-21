@@ -16,7 +16,7 @@ import { expiryStatus, isLowStock } from '../lib/status';
 import { formatQty, KIND_LABEL, type StockKind } from '../lib/stock';
 import { colors, font, radius } from '../theme';
 import { SwipeRow, UndoBar } from './SwipeRow';
-import { Button, Chip, Empty, Field, Segmented } from './ui';
+import { Button, Chip, Empty, SearchField, Segmented } from './ui';
 
 type Filter = 'all' | 'attention' | 'low';
 
@@ -97,7 +97,7 @@ export function StockList({ kind }: { kind: StockKind }) {
       </View>
       {products.length > 0 ? (
         <>
-          <Field
+          <SearchField
             placeholder={`搜索${label}名称、品牌、位置或条码`}
             value={query}
             onChangeText={setQuery}
@@ -173,7 +173,7 @@ export function StockList({ kind }: { kind: StockKind }) {
                 <View style={listStyles.chips}>
                   {expiry && expiry.level !== 'fine' ? <Chip text={expiry.text} tone={expiry.tone} /> : null}
                   {expiry && expiry.level === 'fine' ? <Chip text={expiry.text} tone="neutral" /> : null}
-                  {low ? <Chip text="库存不足" tone="warn" icon="alert-circle-outline" /> : null}
+                  {low ? <Chip text="库存不足" tone="warn" /> : null}
                 </View>
               ) : null}
             </View>
@@ -193,34 +193,35 @@ export function StockList({ kind }: { kind: StockKind }) {
   );
 }
 
+// 照鸿蒙版 StockTab.ets：每一行是一张白底圆角卡片，左边名称、说明和状态标签，右边大数字和单位
 const listStyles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   gestureHint: { fontSize: font.small, color: colors.faint, textAlign: 'center' },
   list: { flex: 1, backgroundColor: colors.bg },
   content: { padding: 16, paddingBottom: 40 },
   header: { gap: 12, marginBottom: 12 },
-  actions: { flexDirection: 'row', gap: 10 },
+  actions: { flexDirection: 'row', gap: 8 },
   actionMain: { flex: 3 },
   actionSide: { flex: 2 },
   separator: { height: 8 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
+    minHeight: 72,
     backgroundColor: colors.surface,
     borderRadius: radius.md,
     paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.line,
+    paddingLeft: 16,
+    paddingRight: 12,
   },
   rowPressed: { backgroundColor: colors.surfaceSunken },
   rowMain: { flex: 1, gap: 4, minWidth: 0 },
-  name: { fontSize: font.body + 1, fontWeight: '600', color: colors.ink },
+  name: { fontSize: font.body + 1, fontWeight: '500', color: colors.ink },
   meta: { fontSize: font.small, color: colors.muted },
-  chips: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginTop: 2 },
+  chips: { flexDirection: 'row', gap: 4, flexWrap: 'wrap' },
   qtyBox: { alignItems: 'flex-end', minWidth: 44 },
-  qty: { fontSize: 22, fontWeight: '700', color: colors.ink, fontVariant: ['tabular-nums'] },
-  unit: { fontSize: font.tiny + 1, color: colors.muted },
-  breakdown: { fontSize: font.tiny + 1, color: colors.accent, fontWeight: '600' },
+  qty: { fontSize: font.title, fontWeight: '700', color: colors.ink, fontVariant: ['tabular-nums'] },
+  unit: { fontSize: font.tiny, color: colors.muted },
+  breakdown: { fontSize: font.tiny, color: colors.accent, fontWeight: '500' },
 });

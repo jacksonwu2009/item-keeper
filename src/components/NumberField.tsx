@@ -171,33 +171,32 @@ export function IntegerField({
   );
 }
 
+// 照鸿蒙版 FormFields.ets 的 NumberField：输入框浅灰底不描边（出错描红边），两边是浅灰底的圆形 − / + 按钮
 const numberStyles = StyleSheet.create({
   field: { gap: 6 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   input: {
     flex: 1,
     minWidth: 0,
     minHeight: 44,
     borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.surface,
+    borderColor: colors.surfaceSunken,
+    backgroundColor: colors.surfaceSunken,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: font.heading,
-    fontWeight: '600',
+    fontWeight: '500',
     color: colors.ink,
     fontVariant: ['tabular-nums'],
   },
   inputCentered: { textAlign: 'center' },
   inputError: { borderColor: colors.danger },
   stepButton: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.surface,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surfaceSunken,
     alignItems: 'center',
     justifyContent: 'center',
   },

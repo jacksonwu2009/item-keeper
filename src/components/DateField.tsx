@@ -161,6 +161,7 @@ export function TimeField({
 const pickerStyles = StyleSheet.create({
   field: { gap: 6 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  // 和输入框一样浅灰底不描边
   box: {
     flex: 1,
     minHeight: 44,
@@ -168,9 +169,9 @@ const pickerStyles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     borderWidth: 1,
-    borderColor: colors.line,
+    borderColor: colors.surfaceSunken,
     borderRadius: radius.sm,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceSunken,
     paddingHorizontal: 12,
   },
   timeBox: { flex: 0, alignSelf: 'flex-start', paddingRight: 18 },

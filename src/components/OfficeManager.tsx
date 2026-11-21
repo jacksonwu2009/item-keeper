@@ -7,7 +7,7 @@ import { createOffice, deleteOffice, OFFICE_NAME_MAX, renameOffice, type Office 
 import { useOffice } from '../hooks/useOffice';
 import { colors, font } from '../theme';
 import { PlaceNameSuggest } from './PlaceNameSuggest';
-import { Button, Card, Field, IconButton, Sheet } from './ui';
+import { Button, Field, GroupCard, IconButton, Sheet } from './ui';
 
 /** 设置页里的办公点管理：添加、改名、删除（只能删空的）。 */
 export function OfficeManager() {
@@ -56,39 +56,44 @@ export function OfficeManager() {
     ]);
   }
 
+  // 分组卡片：说明、每个办公点、添加各占一行，行间画分隔线
   return (
-    <Card>
-      <Text style={managerStyles.hint}>
-        食品、日用品、设备都归到某个办公点下。有多个办公点时，各页右上角可以切换，也可以看全部办公点。
-      </Text>
-      {office.offices.map((item, index) => (
-        <View key={item.id} style={[managerStyles.row, index > 0 && managerStyles.divider]}>
-          <View style={managerStyles.rowText}>
-            <Text style={managerStyles.name}>{item.name}</Text>
-            <Text style={managerStyles.meta}>
-              物品 {item.productCount} 样 · 设备 {item.deviceCount} 种
-            </Text>
+    <>
+      <GroupCard>
+        <Text style={managerStyles.hint}>
+          食品、日用品、设备都归到某个办公点下。有多个办公点时，各页右上角可以切换，也可以看全部办公点。
+        </Text>
+        {office.offices.map((item) => (
+          <View key={item.id} style={managerStyles.row}>
+            <View style={managerStyles.rowText}>
+              <Text style={managerStyles.name}>{item.name}</Text>
+              <Text style={managerStyles.meta}>
+                物品 {item.productCount} 样 · 设备 {item.deviceCount} 种
+              </Text>
+            </View>
+            <IconButton icon="create-outline" label={`给${item.name}改名`} onPress={() => setRenaming(item)} />
+            {office.offices.length > 1 ? (
+              <IconButton
+                icon="trash-outline"
+                label={`删除${item.name}`}
+                color={colors.danger}
+                onPress={() => confirmDelete(item)}
+              />
+            ) : null}
           </View>
-          <IconButton icon="create-outline" label={`给${item.name}改名`} onPress={() => setRenaming(item)} />
-          {office.offices.length > 1 ? (
-            <IconButton
-              icon="trash-outline"
-              label={`删除${item.name}`}
-              color={colors.danger}
-              onPress={() => confirmDelete(item)}
-            />
-          ) : null}
+        ))}
+        <View style={managerStyles.addGroup}>
+          <Field
+            value={newName}
+            onChangeText={setNewName}
+            placeholder="新办公点名称，如 上海办公室"
+            maxLength={OFFICE_NAME_MAX}
+            right={<Button title="添加" compact disabled={!newName.trim()} onPress={() => add()} />}
+          />
+          <PlaceNameSuggest existingNames={office.offices.map((item) => item.name)} onPick={setNewName} />
         </View>
-      ))}
-      <Field
-        value={newName}
-        onChangeText={setNewName}
-        placeholder="新办公点名称，如 上海办公室"
-        maxLength={OFFICE_NAME_MAX}
-        right={<Button title="添加" compact disabled={!newName.trim()} onPress={() => add()} />}
-      />
-      <PlaceNameSuggest existingNames={office.offices.map((item) => item.name)} onPick={setNewName} />
-      {error ? <Text style={managerStyles.error}>{error}</Text> : null}
+        {error ? <Text style={managerStyles.error}>{error}</Text> : null}
+      </GroupCard>
       {renaming ? (
         <RenameSheet
           office={renaming}
@@ -101,7 +106,7 @@ export function OfficeManager() {
           }}
         />
       ) : null}
-    </Card>
+    </>
   );
 }
 
@@ -141,10 +146,10 @@ function RenameSheet({
 
 const managerStyles = StyleSheet.create({
   hint: { fontSize: font.small, color: colors.faint, lineHeight: 18 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 6 },
-  divider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line },
-  rowText: { flex: 1, minWidth: 0 },
-  name: { fontSize: font.body, fontWeight: '700', color: colors.ink },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  rowText: { flex: 1, minWidth: 0, gap: 2 },
+  addGroup: { gap: 8 },
+  name: { fontSize: font.body, fontWeight: '500', color: colors.ink },
   meta: { fontSize: font.small, color: colors.muted },
   error: { fontSize: font.small, color: colors.danger },
 });
