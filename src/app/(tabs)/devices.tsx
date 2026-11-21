@@ -5,7 +5,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 
 import { SwipeRow, UndoBar } from '../../components/SwipeRow';
-import { Button, Chip, Empty, Field, LIST_PRESS_DELAY, Segmented } from '../../components/ui';
+import { Button, Chip, ChoiceChips, Empty, LIST_PRESS_DELAY, SearchField, Segmented } from '../../components/ui';
 import {
   deleteDevice,
   listActiveAssignments,
@@ -116,10 +116,13 @@ export default function DevicesScreen() {
       </View>
       {devices.length > 0 ? (
         <>
-          <Text style={deviceStyles.summary}>
-            共 {devices.length} 种设备，{devices.reduce((sum, device) => sum + device.quantity, 0)} 件；借出 {totalOut}{' '}
-            件
-          </Text>
+          {/* 照鸿蒙版的顺序：搜索框、按设备 / 按使用人、筛选，统计数字贴着下面的列表 */}
+          <SearchField
+            placeholder={mode === 'device' ? '搜索名称、型号、序列号或使用人' : '搜索使用人或设备'}
+            value={query}
+            onChangeText={setQuery}
+            clearButtonMode="while-editing"
+          />
           <Segmented
             options={[
               { value: 'device', label: '按设备' },
@@ -128,15 +131,8 @@ export default function DevicesScreen() {
             value={mode}
             onChange={setMode}
           />
-          <Field
-            placeholder={mode === 'device' ? '搜索名称、型号、序列号或使用人' : '搜索使用人或设备'}
-            value={query}
-            onChangeText={setQuery}
-            clearButtonMode="while-editing"
-          />
-          {mode === 'device' ? <Text style={deviceStyles.gestureHint}>点开看详情，长按编辑，向左滑删除</Text> : null}
           {mode === 'device' ? (
-            <Segmented
+            <ChoiceChips
               options={[
                 { value: 'all', label: '全部' },
                 { value: 'out', label: '有借出' },
@@ -146,6 +142,11 @@ export default function DevicesScreen() {
               onChange={setFilter}
             />
           ) : null}
+          <Text style={deviceStyles.summary}>
+            共 {devices.length} 种设备，{devices.reduce((sum, device) => sum + device.quantity, 0)} 件；借出 {totalOut}{' '}
+            件
+          </Text>
+          {mode === 'device' ? <Text style={deviceStyles.gestureHint}>点开看详情，长按编辑，向左滑删除</Text> : null}
         </>
       ) : null}
     </View>
@@ -189,7 +190,7 @@ export default function DevicesScreen() {
             <Pressable
               onPress={() => router.push({ pathname: '/device/[id]', params: { id: String(item.deviceId) } })}
               unstable_pressDelay={LIST_PRESS_DELAY}
-              style={({ pressed }) => [deviceStyles.row, pressed && deviceStyles.rowPressed]}
+              style={({ pressed }) => [deviceStyles.row, deviceStyles.personRow, pressed && deviceStyles.rowPressed]}
             >
               <View style={deviceStyles.rowMain}>
                 <Text style={deviceStyles.name} numberOfLines={1}>
@@ -239,6 +240,7 @@ export default function DevicesScreen() {
               onDelete={() => deletion.remove(item.id, item.name)}
               style={deviceStyles.row}
               pressedStyle={deviceStyles.rowPressed}
+              cornerRadius={radius.lg}
             >
               <View style={deviceStyles.rowMain}>
                 <Text style={deviceStyles.name} numberOfLines={1}>
@@ -262,7 +264,9 @@ export default function DevicesScreen() {
                   </Text>
                 ) : null}
                 {warranty && warranty.level !== 'ok' ? (
-                  <Chip text={warranty.text} tone={warranty.level === 'expired' ? 'neutral' : 'warn'} />
+                  <View style={deviceStyles.warranty}>
+                    <Chip text={warranty.text} tone={warranty.level === 'expired' ? 'neutral' : 'warn'} />
+                  </View>
                 ) : null}
               </View>
               <View style={deviceStyles.countBox}>
@@ -281,35 +285,40 @@ export default function DevicesScreen() {
   );
 }
 
+// 照鸿蒙版 DevicesTab.ets：每台设备一张白底大圆角卡片，左边名称、配置、使用人，右边「在库」标签和总数；
+// 分组标题是卡片外面的灰色小字，离上一组远一点、贴着下面的卡片
 const deviceStyles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   gestureHint: { fontSize: font.small, color: colors.faint, textAlign: 'center' },
   list: { flex: 1, backgroundColor: colors.bg },
   content: { padding: 16, paddingBottom: 40 },
   header: { gap: 12, marginBottom: 4 },
-  actions: { flexDirection: 'row', gap: 10 },
+  actions: { flexDirection: 'row', gap: 8 },
   actionMain: { flex: 2 },
   actionSide: { flex: 1 },
   summary: { fontSize: font.small, color: colors.muted },
-  sectionTitle: { fontSize: font.small, fontWeight: '700', color: colors.muted, letterSpacing: 0.6, marginTop: 8 },
+  sectionTitle: { fontSize: font.small, fontWeight: '500', color: colors.muted, paddingHorizontal: 4, paddingTop: 12 },
   sectionGap: { height: 8 },
   separator: { height: 8 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
+    minHeight: 64,
     backgroundColor: colors.surface,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.line,
+    paddingLeft: 16,
+    paddingRight: 12,
   },
+  // 按使用人那一行右边没有箭头，左右一样留 16
+  personRow: { paddingRight: 16 },
   rowPressed: { backgroundColor: colors.surfaceSunken },
   rowMain: { flex: 1, gap: 3, minWidth: 0 },
-  name: { fontSize: font.body + 1, fontWeight: '600', color: colors.ink },
+  name: { fontSize: font.body, fontWeight: '500', color: colors.ink },
   meta: { fontSize: font.small, color: colors.muted },
   holders: { fontSize: font.small, color: colors.info },
+  warranty: { marginTop: 2 },
   countBox: { alignItems: 'flex-end', gap: 4 },
   dateBox: { alignItems: 'flex-end', gap: 2 },
   dateText: { fontSize: font.small, color: colors.ink, fontVariant: ['tabular-nums'] },

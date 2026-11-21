@@ -36,6 +36,7 @@ export function SwipeRow({
   style,
   pressedStyle,
   accessibilityLabel,
+  cornerRadius = radius.md,
 }: {
   children: ReactNode;
   onPress: () => void;
@@ -44,6 +45,8 @@ export function SwipeRow({
   style?: StyleProp<ViewStyle>;
   pressedStyle?: StyleProp<ViewStyle>;
   accessibilityLabel?: string;
+  /** 外框圆角（裁掉滑出来的删除按钮的角），和这一行卡片自己的圆角一样；默认 radius.md */
+  cornerRadius?: number;
 }) {
   /** 删除按钮露出来多少：0 = 收起，ACTION_WIDTH = 完全露出 */
   const reveal = useSharedValue(0);
@@ -125,7 +128,7 @@ export function SwipeRow({
   }
 
   return (
-    <View style={swipeStyles.container}>
+    <View style={[swipeStyles.container, { borderRadius: cornerRadius }]}>
       <GestureDetector gesture={pan}>
         <View collapsable={false}>
           <GesturePressable

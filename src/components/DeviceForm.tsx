@@ -170,22 +170,16 @@ export function DeviceForm({
       {presets && presets.length > 0 ? (
         <View style={formStyles.group}>
           <Label>快速选择</Label>
-          <View style={formStyles.chips}>
-            {presets.slice(0, 14).map((preset) => (
-              <Button
-                key={presetLabel(preset)}
-                title={presetLabel(preset)}
-                compact
-                variant="secondary"
-                onPress={() => applyPreset(preset)}
-              />
-            ))}
-          </View>
+          <ChoiceChips
+            options={presets.slice(0, 14).map((preset, index) => ({ value: index, label: presetLabel(preset) }))}
+            value={null}
+            onChange={(index) => applyPreset(presets[index])}
+          />
           <Text style={formStyles.hint}>前面是登记过的，选了自动填类别、名称、配置和配件，再按实际改。</Text>
         </View>
       ) : null}
       <OfficeChooser value={officeId} onChange={setOfficeId} />
-      <Card>
+      <Card style={formStyles.card}>
         <View style={formStyles.group}>
           <Label>类别</Label>
           <ChoiceChips options={categories} value={category} onChange={setCategory} />
@@ -264,7 +258,7 @@ export function DeviceForm({
       </Card>
 
       <SectionTitle title="购买与保修" />
-      <Card>
+      <Card style={formStyles.card}>
         <DateField
           label="购买日期"
           value={purchaseDate}
@@ -350,17 +344,28 @@ export function DeviceForm({
           </View>
         ))}
         {shown(errors.accessories) ? <Text style={formStyles.error}>{errors.accessories}</Text> : null}
-        <View style={formStyles.chips}>
-          {ACCESSORY_SUGGESTIONS.filter((value) => !accessories.some((row) => row.name.trim() === value))
-            .slice(0, 5)
-            .map((value) => (
-              <Button key={value} title={`+ ${value}`} compact variant="secondary" onPress={() => addAccessory(value)} />
-            ))}
-          <Button title="+ 其他" compact variant="ghost" onPress={() => addAccessory('')} />
-        </View>
+        <ChoiceChips
+          options={[
+            ...ACCESSORY_SUGGESTIONS.filter((value) => !accessories.some((row) => row.name.trim() === value))
+              .slice(0, 5)
+              .map((value) => ({ value, label: `+ ${value}` })),
+            { value: '', label: '+ 其他' },
+          ]}
+          value={null}
+          onChange={addAccessory}
+        />
       </Card>
 
-      <Field label="备注" value={note} onChangeText={setNote} placeholder="存放位置等" multiline />
+      <Card>
+        <Field
+          label="备注"
+          value={note}
+          onChangeText={setNote}
+          placeholder="存放位置等"
+          multiline
+          style={formStyles.noteInput}
+        />
+      </Card>
       {submitError ? <Text style={formStyles.error}>{submitError}</Text> : null}
       <Button title={submitLabel} onPress={() => submit(onSubmit)} loading={busy} />
       {onSubmitAndNext ? (
@@ -373,28 +378,27 @@ export function DeviceForm({
         />
       ) : null}
       {onSubmitAndNext ? (
-        <Text style={formStyles.hint}>同款批量登记：下一台沿用这台的名称、配置、配件、购买日期、发票号和保修，只换序列号。</Text>
+        <Text style={[formStyles.hint, formStyles.centered]}>
+          同款批量登记：下一台沿用这台的名称、配置、配件、购买日期、发票号和保修，只换序列号。
+        </Text>
       ) : null}
     </Screen>
   );
 }
 
+// 照鸿蒙版 DeviceFormPage.ets：快速选择、配件建议是浅灰小胶囊；表单卡片里各栏隔 16；
+// 电脑配置是卡片里一块浅灰底小圆角；配件一行是名称框、数量框、删除按钮，不再套灰底；备注也放进卡片
 const formStyles = StyleSheet.create({
   group: { gap: 8 },
-  config: { gap: 8, padding: 10, borderRadius: radius.sm, backgroundColor: colors.surfaceSunken },
+  card: { gap: 16 },
+  config: { gap: 8, padding: 12, borderRadius: radius.md, backgroundColor: colors.bg },
   hint: { fontSize: font.small, color: colors.faint, lineHeight: 18 },
+  centered: { textAlign: 'center' },
   error: { fontSize: font.small, color: colors.danger },
-  computed: { fontSize: font.small, color: colors.muted },
-  computedDate: { color: colors.accent, fontWeight: '700' },
-  accessoryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    padding: 8,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surfaceSunken,
-  },
+  computed: { fontSize: font.small, color: colors.accent, fontWeight: '500' },
+  computedDate: { fontWeight: '600' },
+  accessoryRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   accessoryName: { flex: 1, minWidth: 0 },
-  accessoryQty: { width: 150 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  accessoryQty: { width: 140 },
+  noteInput: { minHeight: 80, textAlignVertical: 'top' },
 });

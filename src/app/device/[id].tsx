@@ -12,6 +12,7 @@ import {
   ChoiceChips,
   Empty,
   Field,
+  GroupCard,
   InfoRow,
   Screen,
   SectionTitle,
@@ -90,6 +91,8 @@ export default function DeviceDetailScreen() {
   const today = todayStr();
   const warranty = warrantyStatus(device.warrantyUntil, today);
   const accessoryText = accessories.length ? describeAccessories(accessories) : null;
+  // 信息里列不列芯片、内存、硬盘：电脑类的，或者填过其中一项
+  const showConfig = hasComputerConfig(device.category) || !!device.chip || !!device.memory || !!device.storage;
 
   function confirmDelete() {
     if (!device) return;
@@ -117,13 +120,12 @@ export default function DeviceDetailScreen() {
           <Chip
             text={warranty.text}
             tone={warranty.level === 'expired' ? 'danger' : warranty.level === 'soon' ? 'warn' : 'ok'}
-            icon="shield-checkmark-outline"
           />
         ) : null}
         <View style={deviceDetail.counts}>
           <Count label="总数" value={device.quantity} />
           <Count label="借出" value={outQty} tone={outQty > 0 ? colors.info : undefined} />
-          <Count label="在库" value={available} tone={available > 0 ? colors.ok : colors.faint} />
+          <Count label="在库" value={available} tone={available > 0 ? colors.ok : undefined} />
         </View>
         <Button
           title="登记领用"
@@ -138,13 +140,13 @@ export default function DeviceDetailScreen() {
       <SectionTitle title={`正在使用（${active.length}）`} />
       {active.length === 0 ? (
         <Card>
-          <Text style={deviceDetail.sub}>没有人在用。</Text>
+          <Text style={deviceDetail.empty}>没有人在用。</Text>
         </Card>
       ) : (
         <Card style={deviceDetail.listCard}>
           {active.map((assignment, index) => (
             <View key={assignment.id} style={[deviceDetail.assignRow, index > 0 && deviceDetail.divider]}>
-              <Pressable style={deviceDetail.flex} onPress={() => setSheet({ type: 'edit', assignment })}>
+              <Pressable style={deviceDetail.assignMain} onPress={() => setSheet({ type: 'edit', assignment })}>
                 <Text style={deviceDetail.person}>
                   {assignment.person}
                   {assignment.quantity > 1 ? ` ×${assignment.quantity}` : ''}
@@ -170,7 +172,7 @@ export default function DeviceDetailScreen() {
                 onPress={() => setSheet({ type: 'edit', assignment })}
                 style={[deviceDetail.assignRow, index > 0 && deviceDetail.divider]}
               >
-                <View style={deviceDetail.flex}>
+                <View style={deviceDetail.assignMain}>
                   <Text style={deviceDetail.person}>
                     {assignment.person}
                     {assignment.quantity > 1 ? ` ×${assignment.quantity}` : ''}
@@ -179,7 +181,9 @@ export default function DeviceDetailScreen() {
                     {formatDate(assignment.issuedOn)} 领取 → {formatDate(assignment.returnedOn)} 退还
                   </Text>
                 </View>
-                <Chip text="已退还" tone="neutral" />
+                <View style={deviceDetail.rowTag}>
+                  <Chip text="已退还" tone="neutral" />
+                </View>
               </Pressable>
             ))}
           </Card>
@@ -187,24 +191,20 @@ export default function DeviceDetailScreen() {
       ) : null}
 
       <SectionTitle title="信息" />
-      <Card>
+      <GroupCard>
         {office.multiple ? <InfoRow label="办公点" value={office.officeName(device.officeId)} /> : null}
         <InfoRow label="类别" value={device.category} />
         <InfoRow label="型号" value={device.model ?? '—'} />
-        {hasComputerConfig(device.category) || device.chip || device.memory || device.storage ? (
-          <>
-            <InfoRow label="芯片" value={device.chip ?? '—'} />
-            <InfoRow label="内存" value={device.memory ?? '—'} />
-            <InfoRow label="硬盘" value={device.storage ?? '—'} />
-          </>
-        ) : null}
+        {showConfig ? <InfoRow label="芯片" value={device.chip ?? '—'} /> : null}
+        {showConfig ? <InfoRow label="内存" value={device.memory ?? '—'} /> : null}
+        {showConfig ? <InfoRow label="硬盘" value={device.storage ?? '—'} /> : null}
         <InfoRow label="序列号" value={device.serialNo ?? '—'} />
         <InfoRow label="购买日期" value={formatDate(device.purchaseDate)} />
         <InfoRow label="发票号" value={device.invoiceNo ?? '—'} />
         <InfoRow label="保修到期" value={device.warrantyUntil ? formatDate(device.warrantyUntil) : '没记录'} />
         <InfoRow label={device.quantity > 1 ? '配件（每件）' : '配件'} value={accessoryText ?? '没有'} />
         {device.note ? <InfoRow label="备注" value={device.note} /> : null}
-      </Card>
+      </GroupCard>
 
       <View style={deviceDetail.actions}>
         <Button
@@ -443,31 +443,46 @@ function ReturnSheet({
   );
 }
 
+// 照鸿蒙版 DeviceDetailPage.ets：顶上一张大卡片（类别、名称、型号、保修、三个大数字、登记领用）；
+// 正在使用、领用记录是不留内边距的白卡片，行自己留边距，行间分隔线从左边 16 开始、右边到头；
+// 信息是分组卡片。领用、退还面板照 AssignmentSheets.ets：配件提示是浅蓝底的一段话
 const deviceDetail = StyleSheet.create({
   flex: { flex: 1, minWidth: 0 },
   summary: { gap: 8 },
-  category: { fontSize: font.tiny + 1, color: colors.accent, fontWeight: '700', letterSpacing: 1 },
+  category: { fontSize: font.small, color: colors.accent, fontWeight: '700' },
   title: { fontSize: font.title, fontWeight: '700', color: colors.ink },
   sub: { fontSize: font.small, color: colors.muted },
   counts: {
     flexDirection: 'row',
     backgroundColor: colors.surfaceSunken,
-    borderRadius: radius.sm,
-    paddingVertical: 10,
+    borderRadius: radius.md,
     marginVertical: 4,
   },
-  count: { flex: 1, alignItems: 'center' },
-  countValue: { fontSize: 24, fontWeight: '800', color: colors.ink, fontVariant: ['tabular-nums'] },
+  count: { flex: 1, alignItems: 'center', gap: 2, paddingVertical: 8 },
+  countValue: { fontSize: font.title, fontWeight: '700', color: colors.ink, fontVariant: ['tabular-nums'] },
   countLabel: { fontSize: font.small, color: colors.muted },
   hint: { fontSize: font.small, color: colors.faint },
-  message: { fontSize: font.small, color: colors.ok, fontWeight: '600' },
-  listCard: { paddingVertical: 4, gap: 0 },
-  assignRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
+  message: { fontSize: font.small, color: colors.ok, fontWeight: '500' },
+  empty: { fontSize: font.small, color: colors.muted },
+  listCard: { padding: 0, gap: 0, overflow: 'hidden' },
+  // 行左边用外边距空出 16：上面的分隔线也就从 16 开始、右边到头
+  assignRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    minHeight: 56,
+    paddingVertical: 8,
+    marginLeft: 16,
+    paddingRight: 12,
+  },
+  assignMain: { flex: 1, minWidth: 0, gap: 2, paddingVertical: 4 },
+  // 标签自己是靠上对齐的（alignSelf: flex-start），套一层才能和鸿蒙版一样在行里上下居中
+  rowTag: { justifyContent: 'center' },
   divider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line },
-  person: { fontSize: font.body, fontWeight: '600', color: colors.ink },
-  meta: { fontSize: font.small, color: colors.muted, marginTop: 2 },
-  actions: { flexDirection: 'row', gap: 10 },
+  person: { fontSize: font.body, fontWeight: '500', color: colors.ink },
+  meta: { fontSize: font.small, color: colors.muted },
+  actions: { flexDirection: 'row', gap: 12 },
   error: { fontSize: font.small, color: colors.danger },
-  accessoryNote: { backgroundColor: colors.infoSoft, borderRadius: radius.sm, padding: 10 },
+  accessoryNote: { backgroundColor: colors.infoSoft, borderRadius: radius.sm, paddingHorizontal: 12, paddingVertical: 8 },
   accessoryNoteText: { fontSize: font.small, color: colors.info, lineHeight: 19 },
 });
