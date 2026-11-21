@@ -476,7 +476,8 @@ export const styles = StyleSheet.create({
   },
   searchFocused: { borderColor: colors.accent },
   // 网页上焦点由外面这一圈胶囊边框表示，输入框自己不再画方框
-  searchInput: { flex: 1, minWidth: 0, paddingVertical: 10, fontSize: font.body, color: colors.ink, outlineWidth: 0 },
+  // 网页上浏览器默认的焦点框是 outline-style: auto，只设宽度 0 去不掉，要连样式一起改
+  searchInput: { flex: 1, minWidth: 0, paddingVertical: 10, fontSize: font.body, color: colors.ink, outlineWidth: 0, outlineStyle: 'solid' },
   // 小状态标签：「已过期 2 天」「库存不足」
   chip: {
     flexDirection: 'row',
