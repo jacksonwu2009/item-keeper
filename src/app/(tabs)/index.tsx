@@ -123,7 +123,8 @@ export default function RemindersScreen() {
               {backupMessage(backup)}。数据只存在这台手机上，导出一份存到 iCloud 云盘或发给自己，手机丢了、换了也能找回来。
             </Text>
           </View>
-          <Button title="去导出" compact onPress={() => router.navigate('/settings')} style={dash.noticeButton} />
+          {/* 导入导出现在是设置里点进去的单独页面，直接打开它 */}
+          <Button title="去导出" compact onPress={() => router.push('/backup')} style={dash.noticeButton} />
         </Card>
       ) : null}
 

@@ -75,7 +75,8 @@ export function OfficeSwitcher() {
           icon="settings-outline"
           onPress={() => {
             setOpen(false);
-            router.navigate('/settings');
+            // 办公点管理现在是设置里点进去的单独页面，直接打开它
+            router.push('/offices');
           }}
         />
       </Sheet>

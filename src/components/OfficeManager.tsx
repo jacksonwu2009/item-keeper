@@ -7,9 +7,10 @@ import { createOffice, deleteOffice, OFFICE_NAME_MAX, renameOffice, type Office 
 import { useOffice } from '../hooks/useOffice';
 import { colors, font } from '../theme';
 import { PlaceNameSuggest } from './PlaceNameSuggest';
+import { Footnote } from './ListRows';
 import { Button, Field, GroupCard, IconButton, Sheet } from './ui';
 
-/** 设置页里的办公点管理：添加、改名、删除（只能删空的）。 */
+/** 办公点管理（设置页「管理办公点」点进去的那一页）：添加、改名、删除（只能删空的）。 */
 export function OfficeManager() {
   const db = useSQLiteContext();
   const office = useOffice();
@@ -18,7 +19,7 @@ export function OfficeManager() {
   const [renaming, setRenaming] = useState<Office | null>(null);
   const { reload } = office;
 
-  // 回到设置页时刷新各办公点的数量
+  // 回到这一页时刷新各办公点的数量
   useFocusEffect(
     useCallback(() => {
       reload().catch(() => undefined);
@@ -56,13 +57,13 @@ export function OfficeManager() {
     ]);
   }
 
-  // 分组卡片：说明、每个办公点、添加各占一行，行间画分隔线
+  // 说明在卡片上面（和鸿蒙版办公点页一样）；分组卡片里每个办公点、添加各占一行，行间画分隔线
   return (
     <>
+      <Footnote>
+        食品、日用品、设备都归到某个办公点下。有多个办公点时，各页右上角可以切换，也可以看全部办公点。
+      </Footnote>
       <GroupCard>
-        <Text style={managerStyles.hint}>
-          食品、日用品、设备都归到某个办公点下。有多个办公点时，各页右上角可以切换，也可以看全部办公点。
-        </Text>
         {office.offices.map((item) => (
           <View key={item.id} style={managerStyles.row}>
             <View style={managerStyles.rowText}>
