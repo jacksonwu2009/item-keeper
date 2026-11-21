@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ALL_OFFICES } from '../db/offices';
 import { useOffice } from '../hooks/useOffice';
@@ -105,7 +105,8 @@ const switcherStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginRight: 16,
+    // 安卓、网页是标签栏自带的标题栏，右边自己空出 16；iOS 上放在系统导航栏里，系统自己留了边距
+    marginRight: Platform.OS === 'ios' ? 0 : 16,
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: radius.pill,

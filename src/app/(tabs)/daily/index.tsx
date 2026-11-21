@@ -1,4 +1,4 @@
-import { StockList } from '../../components/StockList';
+import { StockList } from '../../../components/StockList';
 
 export default function DailyScreen() {
   return <StockList kind="daily" />;

@@ -5,23 +5,23 @@ import { useCallback, useState } from 'react';
 import { router } from 'expo-router';
 import { Linking, StyleSheet, Text, View } from 'react-native';
 
-import { describeLastExport } from '../../components/BackupManager';
-import { TimeField } from '../../components/DateField';
-import { IntegerField } from '../../components/NumberField';
-import { Footnote, ListCard, ListRow, ToggleRow } from '../../components/ListRows';
-import { Button, Card, Screen, SectionTitle, Segmented, Sheet } from '../../components/ui';
-import { DEFAULT_SETTINGS, getLastExportAt, getSettings, saveSettings, type AppSettings } from '../../db/settings';
-import { useFocusData } from '../../hooks/useFocusData';
-import { useOffice } from '../../hooks/useOffice';
-import { formatTime } from '../../lib/dates';
+import { describeLastExport } from '../../../components/BackupManager';
+import { TimeField } from '../../../components/DateField';
+import { IntegerField } from '../../../components/NumberField';
+import { Footnote, ListCard, ListRow, ToggleRow } from '../../../components/ListRows';
+import { Button, Card, Screen, SectionTitle, Segmented, Sheet } from '../../../components/ui';
+import { DEFAULT_SETTINGS, getLastExportAt, getSettings, saveSettings, type AppSettings } from '../../../db/settings';
+import { useFocusData } from '../../../hooks/useFocusData';
+import { useOffice } from '../../../hooks/useOffice';
+import { formatTime } from '../../../lib/dates';
 import {
   getPermissionState,
   requestPermission,
   rescheduleReminders,
   sendTestNotification,
   type PermissionState,
-} from '../../lib/notifications';
-import { colors, font } from '../../theme';
+} from '../../../lib/notifications';
+import { colors, font } from '../../../theme';
 
 const REPEAT_OPTIONS = [
   { value: 1, label: '每天' },
@@ -101,7 +101,7 @@ export default function SettingsScreen() {
   const closeSheet = () => setValueSheet(null);
 
   return (
-    <Screen>
+    <Screen largeTitle>
       <SectionTitle title="办公点" />
       <ListCard>
         <ListRow

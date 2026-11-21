@@ -4,23 +4,23 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback } from 'react';
 import { Linking, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
-import { Button, Card, Chip, LIST_PRESS_DELAY, Screen, SectionTitle, TONES, type IconName, type Tone } from '../../components/ui';
-import { listActiveAssignments, type ActiveAssignment } from '../../db/devices';
-import { DEFAULT_SETTINGS, getDataSince, getLastExportAt, getSettings } from '../../db/settings';
-import { useFocusData } from '../../hooks/useFocusData';
-import { useOffice } from '../../hooks/useOffice';
-import { backupMessage, backupStatus } from '../../lib/backupReminder';
-import { describeDaysLeft, diffDays, formatDate, formatShortDate, formatTime, todayStr } from '../../lib/dates';
+import { Button, Card, Chip, LIST_PRESS_DELAY, Screen, SectionTitle, TONES, type IconName, type Tone } from '../../../components/ui';
+import { listActiveAssignments, type ActiveAssignment } from '../../../db/devices';
+import { DEFAULT_SETTINGS, getDataSince, getLastExportAt, getSettings } from '../../../db/settings';
+import { useFocusData } from '../../../hooks/useFocusData';
+import { useOffice } from '../../../hooks/useOffice';
+import { backupMessage, backupStatus } from '../../../lib/backupReminder';
+import { describeDaysLeft, diffDays, formatDate, formatShortDate, formatTime, todayStr } from '../../../lib/dates';
 import {
   getPermissionState,
   loadPlanProducts,
   requestPermission,
   rescheduleReminders,
   type PermissionState,
-} from '../../lib/notifications';
-import { planReminders, statusForDay, type PlanProduct } from '../../lib/reminderPlan';
-import { formatQty, KIND_LABEL, isStockKind } from '../../lib/stock';
-import { colors, font, radius } from '../../theme';
+} from '../../../lib/notifications';
+import { planReminders, statusForDay, type PlanProduct } from '../../../lib/reminderPlan';
+import { formatQty, KIND_LABEL, isStockKind } from '../../../lib/stock';
+import { colors, font, radius } from '../../../theme';
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
 /** 窗口至少这么宽（平板、电脑）时四个数字排一行，手机上两行两列 */
@@ -85,7 +85,7 @@ export default function RemindersScreen() {
   const repeatText = settings.repeatEveryDays === 1 ? '每天' : `每 ${settings.repeatEveryDays} 天`;
 
   return (
-    <Screen>
+    <Screen largeTitle>
       <View>
         <Text style={dash.date}>
           {now.getMonth() + 1}月{now.getDate()}日 星期{WEEKDAYS[now.getDay()]}

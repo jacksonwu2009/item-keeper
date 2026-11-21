@@ -34,13 +34,29 @@ export const TONES: Record<Tone, { bg: string; fg: string }> = {
   accent: { bg: colors.accentSoft, fg: colors.accent },
 };
 
-export function Screen({ children, contentStyle }: { children: ReactNode; contentStyle?: StyleProp<ViewStyle> }) {
+/**
+ * iOS 上标签页的标题是系统导航栏的大标题（见 TabStack）：页面最外层的滚动视图要让系统按标题栏的高度自动留出上边距，
+ * 大标题才会跟着内容滑走、收成顶部的小标题。只在 iOS 上设；安卓、网页保持默认。
+ */
+export const LARGE_TITLE_SCROLL_INSET = Platform.OS === 'ios' ? ('automatic' as const) : undefined;
+
+export function Screen({
+  children,
+  contentStyle,
+  largeTitle,
+}: {
+  children: ReactNode;
+  contentStyle?: StyleProp<ViewStyle>;
+  /** 这一页顶上是 iOS 系统大标题（标签页）：滚动视图配合大标题收缩，见 LARGE_TITLE_SCROLL_INSET */
+  largeTitle?: boolean;
+}) {
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
         style={styles.screen}
         contentContainerStyle={[styles.screenContent, contentStyle]}
         keyboardShouldPersistTaps="handled"
+        contentInsetAdjustmentBehavior={largeTitle ? LARGE_TITLE_SCROLL_INSET : undefined}
       >
         {children}
       </ScrollView>

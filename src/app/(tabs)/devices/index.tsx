@@ -4,22 +4,22 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 
-import { SwipeRow, UndoBar } from '../../components/SwipeRow';
-import { Button, Chip, ChoiceChips, Empty, LIST_PRESS_DELAY, SearchField, Segmented } from '../../components/ui';
+import { SwipeRow, UndoBar } from '../../../components/SwipeRow';
+import { Button, Chip, ChoiceChips, Empty, LARGE_TITLE_SCROLL_INSET, LIST_PRESS_DELAY, SearchField, Segmented } from '../../../components/ui';
 import {
   deleteDevice,
   listActiveAssignments,
   listDevices,
   type ActiveAssignment,
   type DeviceSummary,
-} from '../../db/devices';
-import { useFocusData } from '../../hooks/useFocusData';
-import { usePendingDelete } from '../../hooks/usePendingDelete';
-import { useOffice } from '../../hooks/useOffice';
-import { diffDays, formatDate, todayStr } from '../../lib/dates';
-import { describeConfig } from '../../lib/devicePresets';
-import { warrantyStatus } from '../../lib/warranty';
-import { colors, font, radius } from '../../theme';
+} from '../../../db/devices';
+import { useFocusData } from '../../../hooks/useFocusData';
+import { usePendingDelete } from '../../../hooks/usePendingDelete';
+import { useOffice } from '../../../hooks/useOffice';
+import { diffDays, formatDate, todayStr } from '../../../lib/dates';
+import { describeConfig } from '../../../lib/devicePresets';
+import { warrantyStatus } from '../../../lib/warranty';
+import { colors, font, radius } from '../../../theme';
 
 type ListMode = 'device' | 'person';
 type Filter = 'all' | 'out' | 'in';
@@ -180,6 +180,7 @@ export default function DevicesScreen() {
           ListHeaderComponent={header}
           ListEmptyComponent={empty}
           keyboardShouldPersistTaps="handled"
+          contentInsetAdjustmentBehavior={LARGE_TITLE_SCROLL_INSET}
           stickySectionHeadersEnabled={false}
           renderSectionHeader={({ section }) => (
             <Text style={deviceStyles.sectionTitle}>
@@ -227,6 +228,7 @@ export default function DevicesScreen() {
         ListHeaderComponent={header}
         ListEmptyComponent={empty}
         keyboardShouldPersistTaps="handled"
+        contentInsetAdjustmentBehavior={LARGE_TITLE_SCROLL_INSET}
         stickySectionHeadersEnabled={false}
         renderSectionHeader={({ section }) => <Text style={deviceStyles.sectionTitle}>{section.title}</Text>}
         renderItem={({ item }) => {

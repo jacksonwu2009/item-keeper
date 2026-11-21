@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { OfficeSwitcher } from '../../components/OfficeSwitcher';
 import { TabSwipe } from '../../components/TabSwipe';
 import type { IconName } from '../../components/ui';
-import { TAB_ROUTES } from '../../lib/tabs';
+import { TAB_ROUTES, TAB_TITLES, type TabRoute } from '../../lib/tabs';
 import { colors } from '../../theme';
 
 /** 标签栏图标：选中的用实心图标，没选中的用线条图标（和鸿蒙版底部标签栏一样） */
@@ -25,7 +25,7 @@ export default function TabsLayout() {
     <Tabs
       // 每个标签页都能左右滑动切到相邻标签
       screenLayout={({ children, route }) => (
-        <TabSwipe index={TAB_ROUTES.indexOf(route.name as (typeof TAB_ROUTES)[number])}>{children}</TabSwipe>
+        <TabSwipe index={TAB_ROUTES.indexOf(route.name as TabRoute)}>{children}</TabSwipe>
       )}
       screenOptions={{
         animation: 'shift',
@@ -38,6 +38,8 @@ export default function TabsLayout() {
           Platform.OS === 'web' && { height: WEB_TAB_BAR_HEIGHT + insets.bottom },
         ],
         tabBarLabelStyle: { fontSize: 11, fontWeight: '500' },
+        // iOS 上标签页的标题栏是每个标签自己那层系统导航栏（大标题，见 components/TabStack），这里的不显示；安卓、网页照旧用这个
+        headerShown: Platform.OS !== 'ios',
         headerStyle: { backgroundColor: colors.bg },
         // 标签页的标题照鸿蒙版：靠左的大标题
         headerTitleAlign: 'left',
@@ -47,13 +49,13 @@ export default function TabsLayout() {
         headerRight: () => <OfficeSwitcher />,
       }}
     >
-      <Tabs.Screen name="index" options={{ title: '提醒', tabBarIcon: tabIcon('notifications-outline', 'notifications') }} />
-      <Tabs.Screen name="food" options={{ title: '食品', tabBarIcon: tabIcon('nutrition-outline', 'nutrition') }} />
-      <Tabs.Screen name="daily" options={{ title: '日用品', tabBarIcon: tabIcon('basket-outline', 'basket') }} />
-      <Tabs.Screen name="devices" options={{ title: '设备', tabBarIcon: tabIcon('laptop-outline', 'laptop') }} />
+      <Tabs.Screen name="(home)" options={{ title: TAB_TITLES['(home)'], tabBarIcon: tabIcon('notifications-outline', 'notifications') }} />
+      <Tabs.Screen name="food" options={{ title: TAB_TITLES.food, tabBarIcon: tabIcon('nutrition-outline', 'nutrition') }} />
+      <Tabs.Screen name="daily" options={{ title: TAB_TITLES.daily, tabBarIcon: tabIcon('basket-outline', 'basket') }} />
+      <Tabs.Screen name="devices" options={{ title: TAB_TITLES.devices, tabBarIcon: tabIcon('laptop-outline', 'laptop') }} />
       <Tabs.Screen
         name="settings"
-        options={{ title: '设置', tabBarIcon: tabIcon('settings-outline', 'settings'), headerRight: () => null }}
+        options={{ title: TAB_TITLES.settings, tabBarIcon: tabIcon('settings-outline', 'settings'), headerRight: () => null }}
       />
     </Tabs>
   );

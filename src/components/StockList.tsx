@@ -16,7 +16,7 @@ import { expiryStatus, isLowStock } from '../lib/status';
 import { formatQty, KIND_LABEL, type StockKind } from '../lib/stock';
 import { colors, font, radius } from '../theme';
 import { SwipeRow, UndoBar } from './SwipeRow';
-import { Button, Chip, Empty, SearchField, Segmented } from './ui';
+import { Button, Chip, Empty, LARGE_TITLE_SCROLL_INSET, SearchField, Segmented } from './ui';
 
 type Filter = 'all' | 'attention' | 'low';
 
@@ -128,6 +128,7 @@ export function StockList({ kind }: { kind: StockKind }) {
         keyExtractor={(row) => String(row.product.id)}
         ListHeaderComponent={header}
         keyboardShouldPersistTaps="handled"
+        contentInsetAdjustmentBehavior={LARGE_TITLE_SCROLL_INSET}
         ItemSeparatorComponent={() => <View style={listStyles.separator} />}
         ListEmptyComponent={
           !loaded ? undefined : products.length === 0 ? (
