@@ -84,6 +84,8 @@ export default function SettingsScreen() {
   const [notice, setNotice] = useState<string | null>(null);
   const [valueSheet, setValueSheet] = useState<ValueSheet | null>(null);
   const current = settings ?? data.settings;
+  /** 到期提醒、库存提醒至少开着一个：「多久提醒一次」「提醒时间」才用得上 */
+  const reminderOn = current.expiryEnabled || current.lowStockEnabled;
 
   async function update(patch: Partial<AppSettings>) {
     setSettings({ ...current, ...patch });
@@ -122,31 +124,39 @@ export default function SettingsScreen() {
             value={current.expiryEnabled}
             onChange={(value) => update({ expiryEnabled: value })}
           />
-          <ListRow
-            title="到期前几天开始提醒"
-            subtitle={EXPIRY_LEAD_HINT}
-            value={expiryLeadSummary(current.expiryLeadDays)}
-            chevron
-            onPress={() => setValueSheet('expiryLead')}
-          />
+          {/* 关着到期提醒时，「到期前几天」用不上，不显示 */}
+          {current.expiryEnabled ? (
+            <ListRow
+              title="到期前几天开始提醒"
+              subtitle={EXPIRY_LEAD_HINT}
+              value={expiryLeadSummary(current.expiryLeadDays)}
+              chevron
+              onPress={() => setValueSheet('expiryLead')}
+            />
+          ) : null}
           <ToggleRow
             title="库存提醒"
             description="库存降到下限时提醒补货"
             value={current.lowStockEnabled}
             onChange={(value) => update({ lowStockEnabled: value })}
           />
-          <ListRow
-            title="多久提醒一次"
-            value={repeatLabel(current.repeatEveryDays)}
-            chevron
-            onPress={() => setValueSheet('repeat')}
-          />
-          <ListRow
-            title="提醒时间"
-            value={formatTime(current.reminderHour, current.reminderMinute)}
-            chevron
-            onPress={() => setValueSheet('time')}
-          />
+          {/* 多久一次、几点提醒是到期提醒和库存提醒共用的：两个都关着时不显示 */}
+          {reminderOn ? (
+            <ListRow
+              title="多久提醒一次"
+              value={repeatLabel(current.repeatEveryDays)}
+              chevron
+              onPress={() => setValueSheet('repeat')}
+            />
+          ) : null}
+          {reminderOn ? (
+            <ListRow
+              title="提醒时间"
+              value={formatTime(current.reminderHour, current.reminderMinute)}
+              chevron
+              onPress={() => setValueSheet('time')}
+            />
+          ) : null}
           <ListRow
             title="超过几天没导出备份就提醒"
             value={backupReminderSummary(current.backupReminderDays)}
@@ -154,8 +164,7 @@ export default function SettingsScreen() {
             onPress={() => setValueSheet('backupDays')}
           />
         </ListCard>
-        <Footnote>{REPEAT_HINT}</Footnote>
-        <Footnote>{BACKUP_REMINDER_HINT}</Footnote>
+        {reminderOn ? <Footnote>{REPEAT_HINT}</Footnote> : null}
       </View>
 
       <SectionTitle title="通知" />
