@@ -1,19 +1,19 @@
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useRef, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 
+import { CardList, CardListRow, cardListStyles, RowChip } from '../../components/CardList';
 import { NumberField } from '../../components/NumberField';
+import { ScanSearchField } from '../../components/ScanSearchField';
 import {
   Button,
   Card,
   Chip,
   ChoiceChips,
   Empty,
-  Field,
-  IconButton,
+  GroupCard,
   InfoRow,
-  LIST_PRESS_DELAY,
   Screen,
   SectionTitle,
   Sheet,
@@ -58,7 +58,7 @@ import {
   type CountState,
   type ItemFilter,
 } from '../../lib/stocktake';
-import { colors, font, radius } from '../../theme';
+import { colors, font } from '../../theme';
 
 const STATE_TONE: Record<CountState, Tone> = {
   uncounted: 'neutral',
@@ -238,21 +238,17 @@ export default function StocktakeScreen() {
         </Card>
 
         <ChoiceChips options={FILTERS} value={filter} onChange={setFilter} />
-        <Field
+        {/* 照鸿蒙版：扫码是搜索框右边的条码图标 */}
+        <ScanSearchField
           value={keyword}
           onChangeText={setKeyword}
           placeholder="搜名称、条码、序列号"
           returnKeyType="search"
-          right={
-            <IconButton
-              icon="barcode-outline"
-              label="扫码找物品"
-              onPress={() => {
-                setMessage(null);
-                router.push({ pathname: '/scan', params: { target: scanTarget } });
-              }}
-            />
-          }
+          scanLabel="扫码找物品"
+          onScan={() => {
+            setMessage(null);
+            router.push({ pathname: '/scan', params: { target: scanTarget } });
+          }}
         />
 
         {visible.length === 0 ? (
@@ -267,7 +263,7 @@ export default function StocktakeScreen() {
             return (
               <View key={kind} style={pageStyles.group}>
                 <SectionTitle title={`${STOCKTAKE_KIND_LABEL[kind]}（${group.length}）`} />
-                <Card style={pageStyles.listCard}>
+                <CardList>
                   {group.map((item, index) => (
                     <ItemRow
                       key={item.id}
@@ -283,7 +279,7 @@ export default function StocktakeScreen() {
                       }}
                     />
                   ))}
-                </Card>
+                </CardList>
               </View>
             );
           })
@@ -330,14 +326,12 @@ function ItemRow({ item, first, onPress }: { item: StocktakeItem; first: boolean
       ? `账面 ${formatQty(item.bookQty)} ${item.unit}`
       : `清点时账面 ${formatQty(item.expectedQty ?? 0)}，实盘 ${formatQty(item.countedQty)} ${item.unit}`;
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${item.name}，${detail}，${describeDifference(item, item.unit)}`}
+    <CardListRow
+      first={first}
       onPress={onPress}
-      unstable_pressDelay={LIST_PRESS_DELAY}
-      style={({ pressed }) => [pageStyles.row, !first && pageStyles.rowDivider, pressed && pageStyles.rowPressed]}
+      accessibilityLabel={`${item.name}，${detail}，${describeDifference(item, item.unit)}`}
     >
-      <View style={pageStyles.rowMain}>
+      <View style={cardListStyles.main}>
         <Text style={pageStyles.rowTitle} numberOfLines={2}>
           {item.name}
         </Text>
@@ -345,8 +339,8 @@ function ItemRow({ item, first, onPress }: { item: StocktakeItem; first: boolean
           {item.absence ? ABSENCE_LABEL[item.absence] : detail}
         </Text>
       </View>
-      <Chip text={describeDifference(item, item.unit)} tone={STATE_TONE[state]} />
-    </Pressable>
+      <RowChip text={describeDifference(item, item.unit)} tone={STATE_TONE[state]} />
+    </CardListRow>
   );
 }
 
@@ -488,20 +482,21 @@ function ResultView({
     <View style={pageStyles.screen}>
       <Stack.Screen options={{ title: done ? '盘点结果' : '已放弃的盘点' }} />
       <Screen>
-        <Card style={pageStyles.summary}>
-          <View style={pageStyles.chips}>
-            <Chip text={STOCKTAKE_STATUS_LABEL[stocktake.status]} tone={done ? 'ok' : 'neutral'} />
-          </View>
+        {/* 照鸿蒙版 StocktakeResultView：上面是状态、范围、时间的分组卡片，下面一张卡片放四个大数字和说明 */}
+        <GroupCard>
+          <Chip text={STOCKTAKE_STATUS_LABEL[stocktake.status]} tone={done ? 'ok' : 'neutral'} />
           <InfoRow label="范围" value={scopeText} />
           <InfoRow label="开始" value={formatDateTime(stocktake.startedAt)} />
           {stocktake.finishedAt ? (
             <InfoRow label={done ? '完成' : '放弃'} value={formatDateTime(stocktake.finishedAt)} />
           ) : null}
+        </GroupCard>
+        <Card style={pageStyles.summary}>
           <View style={pageStyles.tiles}>
             <Tile label="盘盈" value={summary.surplus} tone={colors.info} />
             <Tile label="盘亏" value={summary.deficit} tone={colors.danger} />
             <Tile label="相符" value={summary.match} tone={colors.ok} />
-            <Tile label="未盘" value={summary.uncounted} tone={colors.muted} />
+            <Tile label="未盘" value={summary.uncounted} tone={colors.ink} />
           </View>
           {done ? (
             <Text style={pageStyles.sub}>有差异的物品已按实盘数调整库存，每项在物品的出入库记录里记了一条「调整」。</Text>
@@ -521,7 +516,7 @@ function ResultView({
             <Text style={pageStyles.sub}>{summary.counted > 0 ? '盘到的都和账面一致。' : '一项都没有盘。'}</Text>
           </Card>
         ) : (
-          <Card style={pageStyles.listCard}>
+          <CardList>
             {differences.map((item, index) => {
               const difference = countDifference(item) ?? 0;
               const adjustedNote =
@@ -535,8 +530,8 @@ function ResultView({
                       ? '物品已删除或移走，没有调整'
                       : null;
               return (
-                <View key={item.id} style={[pageStyles.row, index > 0 && pageStyles.rowDivider]}>
-                  <View style={pageStyles.rowMain}>
+                <CardListRow key={item.id} first={index === 0} style={pageStyles.differenceRow}>
+                  <View style={cardListStyles.main}>
                     <Text style={pageStyles.rowTitle} numberOfLines={2}>
                       {item.name}
                     </Text>
@@ -547,10 +542,10 @@ function ResultView({
                     {adjustedNote ? <Text style={pageStyles.note}>{adjustedNote}</Text> : null}
                   </View>
                   <Chip text={describeDifference(item, item.unit)} tone={STATE_TONE[countState(item)]} />
-                </View>
+                </CardListRow>
               );
             })}
-          </Card>
+          </CardList>
         )}
 
         <Button
@@ -565,6 +560,7 @@ function ResultView({
   );
 }
 
+/** 一个大数字 + 下面的说明（照鸿蒙版 IkBigNumber：不加底色，数字用状态色） */
 function Tile({ label, value, tone }: { label: string; value: number; tone: string }) {
   return (
     <View style={pageStyles.tile}>
@@ -574,41 +570,35 @@ function Tile({ label, value, tone }: { label: string; value: number; tone: stri
   );
 }
 
+// 照鸿蒙版 StocktakePage / StocktakeResultView：清点进度卡片、按分类的列表卡片（行间分隔线左边留 16）、结果页的大数字
 const pageStyles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
-  summary: { gap: 10 },
+  summary: { gap: 8 },
   meta: { fontSize: font.small, color: colors.muted },
-  progress: { fontSize: font.title, fontWeight: '800', color: colors.ink, fontVariant: ['tabular-nums'] },
+  progress: { fontSize: font.title, fontWeight: '700', color: colors.ink, fontVariant: ['tabular-nums'] },
   bar: { height: 6, borderRadius: 3, backgroundColor: colors.surfaceSunken, overflow: 'hidden' },
-  barFill: { height: 6, backgroundColor: colors.accent },
-  chips: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
-  message: { fontSize: font.small, color: colors.ok, fontWeight: '600' },
-  group: { gap: 8 },
-  listCard: { paddingVertical: 4, gap: 0 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11 },
-  rowDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line },
-  rowPressed: { opacity: 0.6 },
-  rowMain: { flex: 1, minWidth: 0, gap: 2 },
-  rowTitle: { fontSize: font.body, fontWeight: '600', color: colors.ink },
+  barFill: { height: 6, borderRadius: 3, backgroundColor: colors.accent },
+  chips: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  message: { fontSize: font.small, color: colors.ok, fontWeight: '500' },
+  // 分组小标题自己带「上 8、下 -8」的外边距（贴近下面的卡片），组里按 16 排，标题和卡片之间就是 8
+  group: { gap: 16 },
+  rowTitle: { fontSize: font.body, fontWeight: '500', color: colors.ink },
+  // 差异行可能多一行说明：顶上对齐，上下多留一点
+  differenceRow: { alignItems: 'flex-start', paddingVertical: 12 },
   sub: { fontSize: font.small, color: colors.muted, lineHeight: 19 },
   note: { fontSize: font.small, color: colors.warn },
   warn: { fontSize: font.small, color: colors.warn, lineHeight: 19 },
   actions: { gap: 8 },
-  tiles: { flexDirection: 'row', gap: 8 },
-  tile: {
-    flex: 1,
-    backgroundColor: colors.bg,
-    borderRadius: radius.md,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  tileValue: { fontSize: 22, fontWeight: '800', fontVariant: ['tabular-nums'] },
-  tileLabel: { fontSize: font.tiny + 1, color: colors.muted, marginTop: 2 },
+  tiles: { flexDirection: 'row' },
+  tile: { flex: 1, minWidth: 0, alignItems: 'center', gap: 2, paddingVertical: 8 },
+  tileValue: { fontSize: font.title, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  tileLabel: { fontSize: font.small, color: colors.muted },
 });
 
+// 清点面板：说明是灰色正文
 const sheetStyles = StyleSheet.create({
   book: { fontSize: font.body, color: colors.muted },
-  actions: { flexDirection: 'row', gap: 10 },
+  actions: { flexDirection: 'row', gap: 12 },
   flex: { flex: 1 },
   error: { fontSize: font.small, color: colors.danger },
 });

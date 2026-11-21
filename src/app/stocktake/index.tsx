@@ -1,21 +1,10 @@
 import { router, Stack } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
-import {
-  Button,
-  Card,
-  Chip,
-  ChoiceChips,
-  Empty,
-  Label,
-  LIST_PRESS_DELAY,
-  MultiChips,
-  Screen,
-  SectionTitle,
-  Sheet,
-} from '../../components/ui';
+import { CardList, CardListRow, cardListStyles, RowChip } from '../../components/CardList';
+import { Button, Card, ChoiceChips, Empty, Label, MultiChips, Screen, SectionTitle, Sheet } from '../../components/ui';
 import { ALL_OFFICES } from '../../db/offices';
 import { getOpenStocktake, listStocktakes, startStocktake, type StocktakeListEntry } from '../../db/stocktake';
 import { useFocusData } from '../../hooks/useFocusData';
@@ -66,11 +55,11 @@ export default function StocktakeListScreen() {
         {openEntries.length > 0 ? (
           <>
             <SectionTitle title="进行中" />
-            <Card style={listStyles.listCard}>
+            <CardList>
               {openEntries.map((entry, index) => (
                 <EntryRow key={entry.id} entry={entry} first={index === 0} showOffice={showOffice} />
               ))}
-            </Card>
+            </CardList>
           </>
         ) : null}
 
@@ -78,11 +67,11 @@ export default function StocktakeListScreen() {
         {loaded && history.length === 0 ? (
           <Empty icon="time-outline" title="还没有盘点记录" text="完成或放弃的盘点会列在这里。" />
         ) : (
-          <Card style={listStyles.listCard}>
+          <CardList>
             {history.map((entry, index) => (
               <EntryRow key={entry.id} entry={entry} first={index === 0} showOffice={showOffice} />
             ))}
-          </Card>
+          </CardList>
         )}
       </Screen>
 
@@ -115,27 +104,23 @@ function EntryRow({ entry, first, showOffice }: { entry: StocktakeListEntry; fir
   ]
     .filter(Boolean)
     .join(' · ');
+  // 照鸿蒙版 StocktakeListPage：左边日期和说明，右边状态标签上下排，再一个箭头
   return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={() => openStocktake(entry.id)}
-      unstable_pressDelay={LIST_PRESS_DELAY}
-      style={({ pressed }) => [listStyles.row, !first && listStyles.rowDivider, pressed && { opacity: 0.6 }]}
-    >
-      <View style={listStyles.rowMain}>
+    <CardListRow first={first} onPress={() => openStocktake(entry.id)} chevron>
+      <View style={cardListStyles.main}>
         <Text style={listStyles.rowTitle}>{localDay(entry.startedAt)} 开始</Text>
         <Text style={listStyles.rowSub}>{subtitle}</Text>
       </View>
       <View style={listStyles.chips}>
-        {entry.status === 'open' ? <Chip text="继续" tone="accent" /> : null}
-        {entry.status === 'cancelled' ? <Chip text={STOCKTAKE_STATUS_LABEL.cancelled} tone="neutral" /> : null}
-        {entry.status === 'done' && summary.surplus > 0 ? <Chip text={`盘盈 ${summary.surplus}`} tone="ok" /> : null}
-        {entry.status === 'done' && summary.deficit > 0 ? <Chip text={`盘亏 ${summary.deficit}`} tone="danger" /> : null}
+        {entry.status === 'open' ? <RowChip text="继续" tone="accent" /> : null}
+        {entry.status === 'cancelled' ? <RowChip text={STOCKTAKE_STATUS_LABEL.cancelled} tone="neutral" /> : null}
+        {entry.status === 'done' && summary.surplus > 0 ? <RowChip text={`盘盈 ${summary.surplus}`} tone="ok" /> : null}
+        {entry.status === 'done' && summary.deficit > 0 ? <RowChip text={`盘亏 ${summary.deficit}`} tone="danger" /> : null}
         {entry.status === 'done' && summary.surplus === 0 && summary.deficit === 0 ? (
-          <Chip text="全部相符" tone="ok" />
+          <RowChip text="全部相符" tone="ok" />
         ) : null}
       </View>
-    </Pressable>
+    </CardListRow>
   );
 }
 
@@ -218,13 +203,9 @@ const listStyles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   intro: { gap: 12 },
   introText: { fontSize: font.small, color: colors.muted, lineHeight: 20 },
-  listCard: { paddingVertical: 4, gap: 0 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11 },
-  rowDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line },
-  rowMain: { flex: 1, minWidth: 0, gap: 2 },
-  rowTitle: { fontSize: font.body, fontWeight: '600', color: colors.ink },
+  rowTitle: { fontSize: font.body, fontWeight: '500', color: colors.ink },
   rowSub: { fontSize: font.small, color: colors.muted },
-  chips: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: '45%' },
+  chips: { gap: 4, alignItems: 'flex-end', maxWidth: '45%' },
   group: { gap: 8 },
   hint: { fontSize: font.small, color: colors.faint },
   error: { fontSize: font.small, color: colors.danger },

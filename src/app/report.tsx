@@ -278,8 +278,8 @@ export default function ReportScreen() {
           <>
             <View style={reportStyles.statRow}>
               <BigNumber label="共" value={`${devices.total} 件`} />
-              <BigNumber label="借出" value={String(devices.out)} />
-              <BigNumber label="在库" value={String(devices.inStock)} />
+              <BigNumber label="借出" value={String(devices.out)} color={devices.out > 0 ? colors.info : colors.ink} />
+              <BigNumber label="在库" value={String(devices.inStock)} color={colors.ok} />
             </View>
             {devices.byCategory.map((row) => (
               <ValueRow
@@ -353,7 +353,7 @@ export default function ReportScreen() {
       </Card>
 
       <SectionTitle title="导出表格" />
-      <Card>
+      <Card style={reportStyles.exportCard}>
         <Text style={reportStyles.hint}>导出成 CSV 文件，可以用 Excel、WPS、Numbers 打开，或者直接发给同事。</Text>
         <Button
           title={`导出出入库明细（${period.label}）`}
@@ -381,10 +381,11 @@ export default function ReportScreen() {
   );
 }
 
-function BigNumber({ label, value }: { label: string; value: string }) {
+/** 一个大数字 + 下面的说明，居中（照鸿蒙版 IkBigNumber）；color 不给就是黑字 */
+function BigNumber({ label, value, color = colors.ink }: { label: string; value: string; color?: string }) {
   return (
     <View style={reportStyles.bigNumber}>
-      <Text style={reportStyles.bigValue} numberOfLines={1} adjustsFontSizeToFit>
+      <Text style={[reportStyles.bigValue, { color }]} numberOfLines={1} adjustsFontSizeToFit>
         {value}
       </Text>
       <Text style={reportStyles.bigLabel}>{label}</Text>
@@ -463,10 +464,10 @@ function ExpandableList({ title, items, tone }: { title: string; items: ProductR
               unstable_pressDelay={LIST_PRESS_DELAY}
               style={({ pressed }) => [reportStyles.row, reportStyles.nestedRow, pressed && reportStyles.rowPressed]}
             >
-              <Text style={[reportStyles.rowDetail, reportStyles.rowText]} numberOfLines={1}>
+              <Text style={[reportStyles.rowName, reportStyles.rowText]} numberOfLines={1}>
                 {item.name}（{KIND_LABEL[item.kind]}）
               </Text>
-              <Text style={[reportStyles.rowDetail, { color: tone === 'danger' ? colors.danger : colors.warn }]}>
+              <Text style={[reportStyles.rowValue, { color: tone === 'danger' ? colors.danger : colors.warn }]}>
                 {item.detail}
               </Text>
               <Ionicons name="chevron-forward" size={16} color={colors.faint} />
@@ -477,30 +478,34 @@ function ExpandableList({ title, items, tone }: { title: string; items: ProductR
   );
 }
 
+// 照鸿蒙版 ReportPage：报表卡片上下留 12、左右 16，里面一行最矮 48、行上面一条分隔线；大数字居中
 const reportStyles = StyleSheet.create({
   group: { gap: 8 },
-  hint: { fontSize: font.small, color: colors.faint },
+  // 报表卡片里行与行紧挨着（靠分隔线隔开），说明文字上面自己留一点
+  hint: { fontSize: font.small, color: colors.faint, lineHeight: 18, paddingTop: 4 },
   muted: { fontSize: font.body, color: colors.muted },
-  lead: { fontSize: font.body, fontWeight: '600', color: colors.ink, paddingVertical: 4 },
-  tightCard: { gap: 4 },
-  subTitle: { fontSize: font.small, fontWeight: '700', color: colors.muted, marginTop: 10, marginBottom: 2 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingVertical: 4 },
-  statRow: { flexDirection: 'row', gap: 12, paddingVertical: 4 },
-  bigNumber: { flex: 1, minWidth: 0 },
-  bigValue: { fontSize: 26, fontWeight: '800', color: colors.ink, fontVariant: ['tabular-nums'] },
+  lead: { fontSize: font.body, fontWeight: '500', color: colors.ink, paddingBottom: 8 },
+  tightCard: { gap: 0, paddingVertical: 12 },
+  exportCard: { gap: 8 },
+  subTitle: { fontSize: font.small, fontWeight: '700', color: colors.muted, marginTop: 12, marginBottom: 4 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, paddingTop: 8, paddingBottom: 4 },
+  statRow: { flexDirection: 'row' },
+  bigNumber: { flex: 1, minWidth: 0, alignItems: 'center', gap: 2, paddingVertical: 8 },
+  bigValue: { fontSize: font.title, fontWeight: '700', fontVariant: ['tabular-nums'] },
   bigLabel: { fontSize: font.small, color: colors.muted },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingVertical: 9,
+    minHeight: 48,
+    paddingVertical: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.line,
   },
-  nestedRow: { paddingLeft: 12 },
+  nestedRow: { paddingLeft: 16 },
   rowPressed: { backgroundColor: colors.surfaceSunken },
   rowText: { flex: 1, minWidth: 0 },
-  rowName: { fontSize: font.body, color: colors.ink, fontWeight: '500' },
+  rowName: { fontSize: font.body, color: colors.ink },
   rowDetail: { fontSize: font.small, color: colors.muted, marginTop: 1 },
   rowValue: { fontSize: font.body, fontWeight: '700', fontVariant: ['tabular-nums'], textAlign: 'right' },
 });
