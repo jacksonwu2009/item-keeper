@@ -451,6 +451,8 @@ export const styles = StyleSheet.create({
   // 输入框：浅灰底、不描边（出错时描红边）；边框留着同色，出错时不跳动
   input: {
     flex: 1,
+    // 网页上输入框天生有个最小宽度（约 20 个字），并排两个时会被挤出卡片；去掉它才能跟着列宽缩
+    minWidth: 0,
     minHeight: 44,
     borderRadius: radius.sm,
     borderWidth: 1,
