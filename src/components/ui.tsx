@@ -296,6 +296,9 @@ export function MultiChips<T extends string>({
   );
 }
 
+/** 分段按钮的字最多缩到原来的几成（再小就看不清了） */
+const SEGMENT_MIN_FONT_SCALE = 0.75;
+
 export function Segmented<T extends string | number>({
   options,
   value,
@@ -315,9 +318,17 @@ export function Segmented<T extends string | number>({
             accessibilityRole="tab"
             accessibilityState={{ selected }}
             onPress={() => onChange(option.value)}
-            style={[styles.segment, selected && styles.segmentSelected]}
+            style={[styles.segment, Platform.OS === 'web' && styles.segmentWeb, selected && styles.segmentSelected]}
           >
-            <Text style={[styles.segmentText, selected && styles.segmentTextSelected]}>{option.label}</Text>
+            {/* 和鸿蒙版的分段按钮一样始终一行：窄的地方（比如表单卡片里的「生产日期+保质期」）把字缩小一点，不折行 */}
+            <Text
+              style={[styles.segmentText, selected && styles.segmentTextSelected]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={SEGMENT_MIN_FONT_SCALE}
+            >
+              {option.label}
+            </Text>
           </Pressable>
         );
       })}
@@ -557,7 +568,7 @@ export const styles = StyleSheet.create({
     padding: 3,
     gap: 2,
   },
-  // 左右只留 2：表单卡片里三段的「生产日期+保质期」要能放在一行
+  // 左右只留 2，给三段里最长的「生产日期+保质期」多留点地方；还放不下时字会缩小（见 Segmented）
   segment: {
     flex: 1,
     minHeight: 36,
@@ -567,6 +578,8 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // 网页不支持缩字：按字的长短分宽度（最长的一段多分一点），每段至少留出自己的字宽
+  segmentWeb: { flexBasis: 'auto' },
   segmentSelected: {
     backgroundColor: colors.surface,
     shadowColor: colors.ink,
