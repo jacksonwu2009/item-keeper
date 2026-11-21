@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View, type StyleProp, type TextStyle } from 'react-native';
 
 import { parseNumberText, sanitizeNumberText, stepNumberText } from '../lib/number';
 import { colors, font, radius } from '../theme';
@@ -27,6 +27,8 @@ type NumberFieldProps = {
   autoFocus?: boolean;
   accessibilityLabel?: string;
   onBlur?: () => void;
+  /** 输入框自己的样式，叠在默认样式后面（比如放在浅灰底上时改成白底）；不传就是默认的浅灰底 */
+  inputStyle?: StyleProp<TextStyle>;
 };
 
 /** 数字输入框：左右是 − / + 按钮，中间可以直接输入，只接受数字（和小数点）。 */
@@ -47,6 +49,7 @@ export function NumberField({
   autoFocus,
   accessibilityLabel,
   onBlur,
+  inputStyle,
 }: NumberFieldProps) {
   const current = parseNumberText(value);
   const atMin = current !== null && current <= min;
@@ -76,7 +79,7 @@ export function NumberField({
           accessibilityLabel={accessibilityLabel ?? label}
           selectTextOnFocus
           onBlur={onBlur}
-          style={[numberStyles.input, buttons && numberStyles.inputCentered, error ? numberStyles.inputError : null]}
+          style={[numberStyles.input, buttons && numberStyles.inputCentered, inputStyle, error ? numberStyles.inputError : null]}
         />
         {buttons ? (
           <StepButton

@@ -4,9 +4,10 @@ import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useRef, useState } from 'react';
-import { Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Linking, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { CircleIconButton } from '../components/CircleIconButton';
 import { Button } from '../components/ui';
 import { findDeviceBySerial } from '../db/devices';
 import { findByBarcode } from '../db/stock';
@@ -14,7 +15,7 @@ import { useOffice } from '../hooks/useOffice';
 import { parseDeviceCode } from '../lib/devicePresets';
 import { putScanResult } from '../lib/scanHandoff';
 import { isStockKind } from '../lib/stock';
-import { font, radius } from '../theme';
+import { colors, CONTENT_MAX_WIDTH, font, radius } from '../theme';
 
 /**
  * 几种用法：
@@ -97,18 +98,17 @@ export default function ScanScreen() {
     });
   }
 
+  // 左上角关闭：和二级页的返回按钮一样是浅灰圆形，压在相机画面上也看得清
   const closeButton = (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel="关闭扫码"
+    <CircleIconButton
+      icon="close"
+      label="关闭扫码"
       onPress={() => router.back()}
-      style={[scanStyles.close, { top: insets.top + 8, left: insets.left + 12 }]}
-      hitSlop={10}
-    >
-      <Ionicons name="close" size={26} color="#FFFFFF" />
-    </Pressable>
+      style={[scanStyles.corner, { top: insets.top + 8, left: insets.left + 16 }]}
+    />
   );
 
+  // 手动输入：照鸿蒙版扫码页下面那张白色卡片，浅灰输入框加浅主色的「确定」胶囊
   const manualEntry = (
     <View style={scanStyles.manual}>
       <Text style={scanStyles.manualLabel}>{deviceMode ? '扫不出来？手动输入序列号' : '扫不出来？手动输入条码'}</Text>
@@ -117,14 +117,20 @@ export default function ScanScreen() {
           value={manualCode}
           onChangeText={setManualCode}
           placeholder={deviceMode ? '例如 C02XK1ABJGH5' : '例如 6901234567892'}
-          placeholderTextColor="rgba(255,255,255,0.5)"
+          placeholderTextColor={colors.faint}
           keyboardType={target || deviceMode ? 'default' : 'number-pad'}
           autoCapitalize="characters"
           style={scanStyles.manualInput}
           returnKeyType="done"
           onSubmitEditing={() => handleCode(manualCode)}
         />
-        <Button title="确定" compact onPress={() => handleCode(manualCode)} disabled={!manualCode.trim()} />
+        <Button
+          title="确定"
+          variant="secondary"
+          onPress={() => handleCode(manualCode)}
+          disabled={!manualCode.trim()}
+          style={scanStyles.manualButton}
+        />
       </View>
     </View>
   );
@@ -133,19 +139,24 @@ export default function ScanScreen() {
     return <View style={scanStyles.dark}>{closeButton}</View>;
   }
 
+  // 没有相机权限：照鸿蒙版扫码页，浅色底，上面一张白卡片（主色相机图标、说明、按钮），下面是手动输入卡片
   if (!permission.granted) {
     return (
-      <View style={[scanStyles.dark, scanStyles.center, { paddingTop: insets.top + 60 }]}>
+      <View style={[scanStyles.light, { paddingTop: insets.top + 64, paddingBottom: insets.bottom + 16 }]}>
         {closeButton}
-        <Ionicons name="camera-outline" size={44} color="#FFFFFF" />
-        <Text style={scanStyles.permissionTitle}>需要相机权限才能扫码</Text>
-        <Text style={scanStyles.permissionText}>相机只用来识别条码，不会拍照或上传。</Text>
-        {permission.canAskAgain ? (
-          <Button title="允许使用相机" onPress={() => requestPermission()} style={scanStyles.permissionButton} />
-        ) : (
-          <Button title="去系统设置开启" onPress={() => Linking.openSettings()} style={scanStyles.permissionButton} />
-        )}
-        <View style={[scanStyles.bottom, { paddingBottom: insets.bottom + 16 }]}>{manualEntry}</View>
+        <View style={scanStyles.permissionColumn}>
+          <View style={scanStyles.permissionCard}>
+            <Ionicons name="camera-outline" size={56} color={colors.accent} />
+            <Text style={scanStyles.permissionTitle}>需要相机权限才能扫码</Text>
+            <Text style={scanStyles.permissionText}>相机只用来识别条码，不会拍照或上传。</Text>
+            {permission.canAskAgain ? (
+              <Button title="允许使用相机" onPress={() => requestPermission()} style={scanStyles.permissionButton} />
+            ) : (
+              <Button title="去系统设置开启" onPress={() => Linking.openSettings()} style={scanStyles.permissionButton} />
+            )}
+          </View>
+          {manualEntry}
+        </View>
       </View>
     );
   }
@@ -178,23 +189,21 @@ export default function ScanScreen() {
         {notice ? <Text style={scanStyles.notice}>{notice}</Text> : null}
       </View>
       {closeButton}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={torch ? '关闭手电筒' : '打开手电筒'}
+      <CircleIconButton
+        icon={torch ? 'flashlight' : 'flashlight-outline'}
+        label={torch ? '关闭手电筒' : '打开手电筒'}
         onPress={() => setTorch((value) => !value)}
-        style={[scanStyles.torch, { top: insets.top + 8, right: insets.right + 12 }]}
-        hitSlop={10}
-      >
-        <Ionicons name={torch ? 'flashlight' : 'flashlight-outline'} size={24} color="#FFFFFF" />
-      </Pressable>
+        style={[scanStyles.corner, { top: insets.top + 8, right: insets.right + 16 }]}
+      />
       <View style={[scanStyles.bottom, { paddingBottom: insets.bottom + 16 }]}>{manualEntry}</View>
     </View>
   );
 }
 
+// 相机画面上的东西：白色取景框和提示字；关闭、手电筒是浅灰圆形按钮；出错提示是浅红底红字；手动输入是白色卡片
 const scanStyles = StyleSheet.create({
   dark: { flex: 1, backgroundColor: '#0B0F0D' },
-  center: { alignItems: 'center', gap: 10, paddingHorizontal: 32 },
+  light: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: 16 },
   overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', gap: 16 },
   frame: {
     width: '78%',
@@ -204,52 +213,46 @@ const scanStyles = StyleSheet.create({
     borderColor: '#FFFFFF',
     borderRadius: radius.lg,
   },
-  tip: { color: '#FFFFFF', fontSize: font.body, fontWeight: '600' },
-  subTip: { color: 'rgba(255,255,255,0.75)', fontSize: font.small, textAlign: 'center', paddingHorizontal: 32 },
+  tip: { color: '#FFFFFF', fontSize: font.heading, fontWeight: '500', textAlign: 'center', paddingHorizontal: 24 },
+  subTip: { color: 'rgba(255,255,255,0.8)', fontSize: font.small, textAlign: 'center', paddingHorizontal: 32 },
   notice: {
-    color: '#FFFFFF',
+    color: colors.danger,
     fontSize: font.small,
-    fontWeight: '600',
+    lineHeight: 20,
     textAlign: 'center',
-    backgroundColor: 'rgba(196,60,44,0.85)',
+    backgroundColor: colors.dangerSoft,
     borderRadius: radius.sm,
-    paddingVertical: 6,
+    overflow: 'hidden',
+    paddingVertical: 8,
     paddingHorizontal: 12,
     marginHorizontal: 24,
   },
-  close: {
-    position: 'absolute',
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    alignItems: 'center',
-    justifyContent: 'center',
+  corner: { position: 'absolute' },
+  bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 16, alignItems: 'center' },
+  manual: {
+    width: '100%',
+    maxWidth: CONTENT_MAX_WIDTH,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: 16,
+    gap: 8,
   },
-  torch: {
-    position: 'absolute',
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 16 },
-  manual: { backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: radius.md, padding: 12, gap: 8 },
-  manualLabel: { color: 'rgba(255,255,255,0.8)', fontSize: font.small },
+  manualLabel: { color: colors.muted, fontSize: font.small },
   manualRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   manualInput: {
     flex: 1,
-    minHeight: 40,
+    minWidth: 0,
+    minHeight: 44,
     borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
-    paddingHorizontal: 10,
-    color: '#FFFFFF',
+    backgroundColor: colors.surfaceSunken,
+    paddingHorizontal: 12,
+    color: colors.ink,
     fontSize: font.body,
   },
-  permissionTitle: { color: '#FFFFFF', fontSize: font.heading, fontWeight: '700', marginTop: 8 },
-  permissionText: { color: 'rgba(255,255,255,0.7)', fontSize: font.small, textAlign: 'center' },
-  permissionButton: { marginTop: 12, alignSelf: 'stretch' },
+  manualButton: { minHeight: 44 },
+  permissionColumn: { width: '100%', maxWidth: CONTENT_MAX_WIDTH, alignSelf: 'center', gap: 24 },
+  permissionCard: { alignItems: 'center', gap: 12, padding: 24, borderRadius: radius.lg, backgroundColor: colors.surface },
+  permissionTitle: { color: colors.ink, fontSize: font.heading, fontWeight: '500', textAlign: 'center' },
+  permissionText: { color: colors.muted, fontSize: font.small, lineHeight: 20, textAlign: 'center' },
+  permissionButton: { marginTop: 4, alignSelf: 'stretch' },
 });

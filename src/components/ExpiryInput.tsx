@@ -92,8 +92,9 @@ export function ExpiryInput({
   );
 }
 
+// 照鸿蒙版 StockInputs.ets 的 ExpiryInput：分段选填法，下面的日期、保质期上下排，间隔 12
 const expiryStyles = StyleSheet.create({
-  wrap: { gap: 10 },
+  wrap: { gap: 12 },
   computed: { fontSize: font.small, color: colors.muted },
   computedDate: { color: colors.accent, fontWeight: '700' },
   note: { fontSize: font.small, color: colors.faint },

@@ -17,13 +17,14 @@ import { toBaseQty, validatePacks, type PackUnit } from '../lib/packs';
 import { convertPriceUnit, derivePrice, EMPTY_PRICE, type PriceDraft } from '../lib/price';
 import { takeScanResult, takeScanResultWithPrefix } from '../lib/scanHandoff';
 import { DEFAULT_UNITS, formatQty, KIND_LABEL, parseQty, type StockKind } from '../lib/stock';
-import { colors, font, radius } from '../theme';
+import { colors, CONTENT_MAX_WIDTH, font, radius } from '../theme';
 import { useOffice } from '../hooks/useOffice';
+import { CircleIconButton } from './CircleIconButton';
 import { ExpiryInput, type ExpiryValue } from './ExpiryInput';
 import { NumberField } from './NumberField';
 import { OfficeChooser } from './OfficeSwitcher';
 import { PriceFields } from './PriceFields';
-import { Button, Card, ChoiceChips, Field, IconButton, Label, Screen, SectionTitle, Segmented } from './ui';
+import { Button, Card, ChoiceChips, Field, Label, Screen, SectionTitle, Segmented } from './ui';
 import { UnitQtyField } from './UnitQtyField';
 
 const SCAN_TARGET = 'stock-form-barcode';
@@ -238,8 +239,10 @@ export function StockProductForm({
     label: value,
   }));
 
+  // 照鸿蒙版 ProductFormPage.ets：最宽 720 居中；分类、办公点在卡片外面，基本信息、包装规格、这次入库、提醒、备注各一张卡片，
+  // 卡片里各项之间 16；输入框右边的扫码是浅主色底的圆按钮
   return (
-    <Screen>
+    <Screen contentStyle={formStyles.page}>
       <Segmented
         options={[
           { value: 'food', label: KIND_LABEL.food },
@@ -250,7 +253,7 @@ export function StockProductForm({
       />
       <OfficeChooser value={officeId} onChange={setOfficeId} />
 
-      <Card>
+      <Card style={formStyles.card}>
         <Field
           label="条码"
           value={barcode}
@@ -264,9 +267,11 @@ export function StockProductForm({
           placeholder="扫码或手动输入，可不填"
           keyboardType="number-pad"
           right={
-            <IconButton
+            <CircleIconButton
               icon="barcode-outline"
               label="扫描条码"
+              tone="accent"
+              size={44}
               onPress={() => router.push({ pathname: '/scan', params: { target: SCAN_TARGET } })}
             />
           }
@@ -307,7 +312,7 @@ export function StockProductForm({
       </Card>
 
       <SectionTitle title="包装规格（可选）" />
-      <Card>
+      <Card style={formStyles.card}>
         <Text style={formStyles.hint}>
           整箱进、按{baseUnit}出的东西在这里设，如「1 箱 = 24 {baseUnit}」。入库出库时可以按箱或按{baseUnit}填，库存自动换算。
           整箱外包装上的条码也可以录进来，扫箱子就能认出。
@@ -317,7 +322,13 @@ export function StockProductForm({
             <View style={formStyles.packLine}>
               <Text style={formStyles.packText}>1</Text>
               <View style={formStyles.packUnit}>
-                <Field value={row.unit} onChangeText={(value) => updatePackRow(row.key, { unit: value })} placeholder="箱" maxLength={6} />
+                <Field
+                  value={row.unit}
+                  onChangeText={(value) => updatePackRow(row.key, { unit: value })}
+                  placeholder="箱"
+                  maxLength={6}
+                  style={formStyles.packInput}
+                />
               </View>
               <Text style={formStyles.packText}>=</Text>
               <View style={formStyles.packSize}>
@@ -328,12 +339,14 @@ export function StockProductForm({
                   decimals={2}
                   buttons={false}
                   accessibilityLabel={`1 ${row.unit || '包装'}等于多少${baseUnit}`}
+                  inputStyle={formStyles.packInput}
                 />
               </View>
               <Text style={formStyles.packText}>{baseUnit}</Text>
-              <IconButton
+              <CircleIconButton
                 icon="trash-outline"
                 label="删除这个包装规格"
+                tone="plain"
                 color={colors.danger}
                 onPress={() => setPackRows((rows) => rows.filter((candidate) => candidate.key !== row.key))}
               />
@@ -343,10 +356,13 @@ export function StockProductForm({
               onChangeText={(value) => updatePackRow(row.key, { barcode: value })}
               placeholder={`${row.unit || '这个包装'}的条码，可不填`}
               keyboardType="number-pad"
+              style={formStyles.packInput}
               right={
-                <IconButton
+                <CircleIconButton
                   icon="barcode-outline"
                   label="扫描包装条码"
+                  tone="accent"
+                  size={44}
                   onPress={() => router.push({ pathname: '/scan', params: { target: `${PACK_SCAN_PREFIX}${row.key}` } })}
                 />
               }
@@ -378,7 +394,7 @@ export function StockProductForm({
       {withFirstBatch ? (
         <>
           <SectionTitle title="这次入库" />
-          <Card>
+          <Card style={formStyles.card}>
             <UnitQtyField
               label="数量"
               baseUnit={baseUnit}
@@ -402,7 +418,7 @@ export function StockProductForm({
       ) : null}
 
       <SectionTitle title="提醒" />
-      <Card>
+      <Card style={formStyles.card}>
         <NumberField
           label={`库存下限（${baseUnit}）`}
           value={lowStockText}
@@ -429,7 +445,9 @@ export function StockProductForm({
         />
       </Card>
 
-      <Field label="备注" value={note} onChangeText={setNote} placeholder="可不填" multiline />
+      <Card style={formStyles.card}>
+        <Field label="备注" value={note} onChangeText={setNote} placeholder="可不填" multiline style={formStyles.noteInput} />
+      </Card>
 
       {submitError ? <Text style={formStyles.error}>{submitError}</Text> : null}
       <Button title={submitLabel} onPress={submit} loading={submitting} />
@@ -438,21 +456,26 @@ export function StockProductForm({
 }
 
 const formStyles = StyleSheet.create({
-  twoCols: { flexDirection: 'row', gap: 10 },
+  page: { width: '100%', maxWidth: CONTENT_MAX_WIDTH, alignSelf: 'center' },
+  card: { gap: 16 },
+  twoCols: { flexDirection: 'row', gap: 12 },
   col: { flex: 1, minWidth: 0 },
   group: { gap: 8 },
   lookup: { fontSize: font.small, color: colors.muted },
   error: { fontSize: font.small, color: colors.danger },
   hint: { fontSize: font.small, color: colors.faint, lineHeight: 18 },
+  // 一个包装规格一块浅灰底，里面的输入框是白底（不然和底色分不出来）
   packRow: {
     gap: 8,
-    padding: 10,
+    padding: 12,
     borderRadius: radius.sm,
     backgroundColor: colors.surfaceSunken,
   },
-  packLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  packText: { fontSize: font.body, color: colors.ink, fontWeight: '600' },
+  packLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  packText: { fontSize: font.body, color: colors.ink, fontWeight: '500' },
   packUnit: { width: 72 },
   packSize: { flex: 1, minWidth: 0 },
+  packInput: { backgroundColor: colors.surface, borderColor: colors.surface },
   packAdd: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  noteInput: { minHeight: 88, textAlignVertical: 'top' },
 });
