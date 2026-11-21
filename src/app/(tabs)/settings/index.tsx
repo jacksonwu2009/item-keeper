@@ -6,7 +6,7 @@ import { router } from 'expo-router';
 import { Linking, StyleSheet, Text, View } from 'react-native';
 
 import { describeLastExport } from '../../../components/BackupManager';
-import { TimeField } from '../../../components/DateField';
+import { TimePickerSheet } from '../../../components/DateField';
 import { IntegerField } from '../../../components/NumberField';
 import { Footnote, ListCard, ListRow, ToggleRow } from '../../../components/ListRows';
 import { Button, Card, Screen, SectionTitle, Segmented, Sheet } from '../../../components/ui';
@@ -251,14 +251,15 @@ export default function SettingsScreen() {
           </View>
         </Sheet>
       ) : null}
+      {/* 提醒时间：点一行直接弹时、分滚轮 */}
       {valueSheet === 'time' ? (
-        <Sheet visible title="提醒时间" onClose={closeSheet}>
-          <TimeField
-            hour={current.reminderHour}
-            minute={current.reminderMinute}
-            onChange={(hour, minute) => update({ reminderHour: hour, reminderMinute: minute })}
-          />
-        </Sheet>
+        <TimePickerSheet
+          title="提醒时间"
+          hour={current.reminderHour}
+          minute={current.reminderMinute}
+          onChange={(hour, minute) => update({ reminderHour: hour, reminderMinute: minute })}
+          onClose={closeSheet}
+        />
       ) : null}
       {valueSheet === 'backupDays' ? (
         <Sheet visible title="超过几天没导出备份就提醒" onClose={closeSheet}>

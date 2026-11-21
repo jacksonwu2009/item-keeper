@@ -175,6 +175,42 @@ export function TimeField({
   );
 }
 
+/**
+ * 直接弹出的时间选择（没有输入框）：设置页「提醒时间」点一行就弹滚轮，不用先开一层面板再点时间框。
+ * 安卓是我们的时、分滚轮面板，iOS 是系统滚轮（在我们的底部面板里）。点「确定」写回并关掉，点关闭或面板外面不改。
+ */
+export function TimePickerSheet({
+  title,
+  hour,
+  minute,
+  onChange,
+  onClose,
+}: {
+  title: string;
+  hour: number;
+  minute: number;
+  onChange: (hour: number, minute: number) => void;
+  onClose: () => void;
+}) {
+  if (USE_WHEEL_SHEET) {
+    return (
+      <TimeWheelSheet
+        title={title}
+        hour={hour}
+        minute={minute}
+        onConfirm={(nextHour, nextMinute) => {
+          onChange(nextHour, nextMinute);
+          onClose();
+        }}
+        onClose={onClose}
+      />
+    );
+  }
+  const current = new Date();
+  current.setHours(hour, minute, 0, 0);
+  return <IosPickerSheet mode="time" initialValue={current} onConfirm={(date) => onChange(date.getHours(), date.getMinutes())} onClose={onClose} />;
+}
+
 const pickerStyles = StyleSheet.create({
   field: { gap: 6 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
