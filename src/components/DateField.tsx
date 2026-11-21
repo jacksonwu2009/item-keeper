@@ -1,4 +1,4 @@
-import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -7,65 +7,52 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { dateStrToLocalDate, formatDate, formatTime, toDateStr, todayStr } from '../lib/dates';
 import { colors, font, radius } from '../theme';
 import { Button, Label } from './ui';
+import { DateWheelSheet, TimeWheelSheet } from './WheelPicker';
 
 type PickerMode = 'date' | 'time';
 
-/** iOS 底部弹出滚轮；Android 用系统日期对话框。 */
-function usePicker() {
-  const [iosState, setIosState] = useState<{
-    mode: PickerMode;
-    value: Date;
-    minimumDate?: Date;
-    onConfirm: (date: Date) => void;
-  } | null>(null);
+/**
+ * 手机上的日期、时间选择：
+ * - 安卓：我们自己画的底部滚轮面板（WheelPicker.tsx），日期是年、月、日三列，时间是时、分两列；
+ * - iOS：底部面板里放系统滚轮（日期、时间都是 spinner），点「确定」写回。
+ */
+const USE_WHEEL_SHEET = Platform.OS === 'android';
 
-  function open(mode: PickerMode, value: Date, onConfirm: (date: Date) => void, minimumDate?: Date) {
-    if (Platform.OS === 'android') {
-      DateTimePickerAndroid.open({
-        mode,
-        value,
-        minimumDate,
-        is24Hour: true,
-        onValueChange: (_event, date) => onConfirm(date),
-      });
-      return;
-    }
-    setIosState({ mode, value, minimumDate, onConfirm });
-  }
-
-  return { iosState, setIosState, open };
-}
-
+/** iOS 底部弹出的系统滚轮：拨动时只改面板里的值，点「确定」才交给 onConfirm */
 function IosPickerSheet({
-  state,
-  onChange,
+  mode,
+  initialValue,
+  minimumDate,
+  onConfirm,
   onClose,
 }: {
-  state: { mode: PickerMode; value: Date; minimumDate?: Date; onConfirm: (date: Date) => void } | null;
-  onChange: (date: Date) => void;
+  mode: PickerMode;
+  initialValue: Date;
+  minimumDate?: Date;
+  onConfirm: (date: Date) => void;
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
-  if (!state) return null;
+  const [draft, setDraft] = useState(initialValue);
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={pickerStyles.backdrop} onPress={onClose} accessibilityLabel="取消" />
       <View style={[pickerStyles.sheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
         <DateTimePicker
-          value={state.value}
-          mode={state.mode}
-          display={state.mode === 'date' ? 'inline' : 'spinner'}
+          value={draft}
+          mode={mode}
+          display="spinner"
           locale="zh-CN"
-          minimumDate={state.minimumDate}
-          minuteInterval={state.mode === 'time' ? 5 : undefined}
+          minimumDate={minimumDate}
+          minuteInterval={mode === 'time' ? 5 : undefined}
           accentColor={colors.accent}
           themeVariant="light"
-          onValueChange={(_event, date) => onChange(date)}
+          onValueChange={(_event, date) => setDraft(date)}
         />
         <Button
           title="确定"
           onPress={() => {
-            state.onConfirm(state.value);
+            onConfirm(draft);
             onClose();
           }}
         />
@@ -93,9 +80,7 @@ export function DateField({
   minimumDate?: string | null;
   hint?: string;
 }) {
-  const picker = usePicker();
-  const current = value ? dateStrToLocalDate(value) : dateStrToLocalDate(todayStr());
-  const min = minimumDate ? dateStrToLocalDate(minimumDate) : undefined;
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   return (
     <View style={pickerStyles.field}>
@@ -105,7 +90,7 @@ export function DateField({
           accessibilityRole="button"
           accessibilityLabel={label ? `${label}：${value ? formatDate(value) : '未设置'}` : undefined}
           style={pickerStyles.box}
-          onPress={() => picker.open('date', current, (date) => onChange(toDateStr(date)), min)}
+          onPress={() => setPickerOpen(true)}
         >
           <Ionicons name="calendar-outline" size={18} color={colors.accent} />
           <Text style={[pickerStyles.boxText, !value && pickerStyles.placeholder]}>
@@ -115,11 +100,28 @@ export function DateField({
         {clearable && value ? <Button title="清除" variant="ghost" compact onPress={() => onChange(null)} /> : null}
       </View>
       {hint ? <Text style={pickerStyles.hint}>{hint}</Text> : null}
-      <IosPickerSheet
-        state={picker.iosState}
-        onChange={(date) => picker.setIosState((state) => (state ? { ...state, value: date } : state))}
-        onClose={() => picker.setIosState(null)}
-      />
+      {pickerOpen && USE_WHEEL_SHEET ? (
+        <DateWheelSheet
+          title={label ?? '选择日期'}
+          value={value}
+          minimumDate={minimumDate ?? null}
+          clearable={!!clearable}
+          onConfirm={(next) => {
+            setPickerOpen(false);
+            onChange(next);
+          }}
+          onClose={() => setPickerOpen(false)}
+        />
+      ) : null}
+      {pickerOpen && !USE_WHEEL_SHEET ? (
+        <IosPickerSheet
+          mode="date"
+          initialValue={dateStrToLocalDate(value ?? todayStr())}
+          minimumDate={minimumDate ? dateStrToLocalDate(minimumDate) : undefined}
+          onConfirm={(date) => onChange(toDateStr(date))}
+          onClose={() => setPickerOpen(false)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -135,7 +137,7 @@ export function TimeField({
   minute: number;
   onChange: (hour: number, minute: number) => void;
 }) {
-  const picker = usePicker();
+  const [pickerOpen, setPickerOpen] = useState(false);
   const current = new Date();
   current.setHours(hour, minute, 0, 0);
   return (
@@ -144,16 +146,31 @@ export function TimeField({
       <Pressable
         accessibilityRole="button"
         style={[pickerStyles.box, pickerStyles.timeBox]}
-        onPress={() => picker.open('time', current, (date) => onChange(date.getHours(), date.getMinutes()))}
+        onPress={() => setPickerOpen(true)}
       >
         <Ionicons name="time-outline" size={18} color={colors.accent} />
         <Text style={pickerStyles.boxText}>{formatTime(hour, minute)}</Text>
       </Pressable>
-      <IosPickerSheet
-        state={picker.iosState}
-        onChange={(date) => picker.setIosState((state) => (state ? { ...state, value: date } : state))}
-        onClose={() => picker.setIosState(null)}
-      />
+      {pickerOpen && USE_WHEEL_SHEET ? (
+        <TimeWheelSheet
+          title={label ?? '选择时间'}
+          hour={hour}
+          minute={minute}
+          onConfirm={(nextHour, nextMinute) => {
+            setPickerOpen(false);
+            onChange(nextHour, nextMinute);
+          }}
+          onClose={() => setPickerOpen(false)}
+        />
+      ) : null}
+      {pickerOpen && !USE_WHEEL_SHEET ? (
+        <IosPickerSheet
+          mode="time"
+          initialValue={current}
+          onConfirm={(date) => onChange(date.getHours(), date.getMinutes())}
+          onClose={() => setPickerOpen(false)}
+        />
+      ) : null}
     </View>
   );
 }

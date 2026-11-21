@@ -35,7 +35,8 @@ export function isValidDateStr(value: string | null | undefined): value is strin
   return typeof value === 'string' && parseDateStr(value) !== null;
 }
 
-function daysInMonth(year: number, month: number): number {
+/** 某年某月有几天（month 从 1 开始；闰年 2 月 29 天）。 */
+export function daysInMonth(year: number, month: number): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
