@@ -164,7 +164,7 @@ export default function ReportScreen() {
               <BigNumber label="入库次数" value={String(purchases.stockInCount)} />
             </View>
             {purchases.unpricedCount > 0 ? (
-              <Text style={reportStyles.hint}>{purchases.unpricedCount} 次入库没填价格，没算进去。</Text>
+              <Text style={[reportStyles.hint, reportStyles.hintAboveRows]}>{purchases.unpricedCount} 次入库没填价格，没算进去。</Text>
             ) : null}
             <ValueRow name="食品" value={formatPrice(purchases.amountByKind.food)} />
             <ValueRow name="日用品" value={formatPrice(purchases.amountByKind.daily)} />
@@ -483,6 +483,8 @@ const reportStyles = StyleSheet.create({
   group: { gap: 8 },
   // 报表卡片里行与行紧挨着（靠分隔线隔开），说明文字上面自己留一点
   hint: { fontSize: font.small, color: colors.faint, lineHeight: 18, paddingTop: 4 },
+  // 说明下面紧跟着带分隔线的行时，下面也留 8，文字不贴着线
+  hintAboveRows: { paddingBottom: 8 },
   muted: { fontSize: font.body, color: colors.muted },
   lead: { fontSize: font.body, fontWeight: '500', color: colors.ink, paddingBottom: 8 },
   tightCard: { gap: 0, paddingVertical: 12 },
