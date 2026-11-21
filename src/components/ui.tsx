@@ -8,6 +8,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -332,6 +333,9 @@ export function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
+/** iOS 系统开关关着时的底色（iOS 默认的浅灰） */
+const IOS_SWITCH_OFF_COLOR = '#E9E9EA';
+
 export function SwitchRow({
   title,
   description,
@@ -343,7 +347,25 @@ export function SwitchRow({
   value: boolean;
   onChange: (value: boolean) => void;
 }) {
-  // 整行都能点（和鸿蒙版一样）；开关用自己画的鸿蒙样式，安卓、iOS、网页一样
+  // iOS 用系统开关（拨动有触感反馈），和 iOS 设置一样只有开关本身能点，整行不切换
+  if (Platform.OS === 'ios') {
+    return (
+      <View style={styles.switchRow}>
+        <View style={styles.flexShrink}>
+          <Text style={styles.switchTitle}>{title}</Text>
+          {description ? <Text style={styles.switchDescription}>{description}</Text> : null}
+        </View>
+        <Switch
+          value={value}
+          onValueChange={onChange}
+          trackColor={{ true: colors.accent, false: IOS_SWITCH_OFF_COLOR }}
+          ios_backgroundColor={IOS_SWITCH_OFF_COLOR}
+          accessibilityLabel={title}
+        />
+      </View>
+    );
+  }
+  // 安卓、网页（鸿蒙是原生应用，不走这里）：整行都能点，开关用自己画的鸿蒙样式；安卓系统自带的开关样式比较旧
   return (
     <Pressable
       style={styles.switchRow}
