@@ -8,7 +8,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   View,
@@ -19,6 +18,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, CONTENT_MAX_WIDTH, font, radius } from '../theme';
+import { SwitchTrack } from './HarmonySwitch';
 
 export type IconName = ComponentProps<typeof Ionicons>['name'];
 export type Tone = 'danger' | 'warn' | 'ok' | 'info' | 'neutral' | 'accent';
@@ -332,12 +332,6 @@ export function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-/**
- * 网页版的开关打开时圆钮用的是另一个属性（react-native-web 的 activeThumbColor，默认是青绿色），
- * 也设成白色，和手机上、鸿蒙版一样是主色底白圆钮。手机上没有这个属性，不传。
- */
-const WEB_SWITCH_THUMB: object = Platform.OS === 'web' ? { activeThumbColor: colors.surface } : {};
-
 export function SwitchRow({
   title,
   description,
@@ -349,20 +343,21 @@ export function SwitchRow({
   value: boolean;
   onChange: (value: boolean) => void;
 }) {
+  // 整行都能点（和鸿蒙版一样）；开关用自己画的鸿蒙样式，安卓、iOS、网页一样
   return (
-    <View style={styles.switchRow}>
+    <Pressable
+      style={styles.switchRow}
+      accessibilityRole="switch"
+      accessibilityState={{ checked: value }}
+      accessibilityLabel={title}
+      onPress={() => onChange(!value)}
+    >
       <View style={styles.flexShrink}>
         <Text style={styles.switchTitle}>{title}</Text>
         {description ? <Text style={styles.switchDescription}>{description}</Text> : null}
       </View>
-      <Switch
-        value={value}
-        onValueChange={onChange}
-        trackColor={{ true: colors.accent, false: colors.line }}
-        thumbColor={colors.surface}
-        {...WEB_SWITCH_THUMB}
-      />
-    </View>
+      <SwitchTrack value={value} />
+    </Pressable>
   );
 }
 
