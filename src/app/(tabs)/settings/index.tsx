@@ -115,57 +115,55 @@ export default function SettingsScreen() {
         />
       </ListCard>
 
+      {/* 每个开关下面只放它自己的设置：关掉就收起来，库存提醒没有自己的设置，下面不接别的行 */}
       <SectionTitle title="提醒" />
-      <View style={setStyles.group}>
-        <ListCard>
-          <ToggleRow
-            title="到期提醒"
-            description="食品、日用品快到期和已过期时提醒"
-            value={current.expiryEnabled}
-            onChange={(value) => update({ expiryEnabled: value })}
-          />
-          {/* 关着到期提醒时，「到期前几天」用不上，不显示 */}
-          {current.expiryEnabled ? (
-            <ListRow
-              title="到期前几天开始提醒"
-              subtitle={EXPIRY_LEAD_HINT}
-              value={expiryLeadSummary(current.expiryLeadDays)}
-              chevron
-              onPress={() => setValueSheet('expiryLead')}
-            />
-          ) : null}
-          <ToggleRow
-            title="库存提醒"
-            description="库存降到下限时提醒补货"
-            value={current.lowStockEnabled}
-            onChange={(value) => update({ lowStockEnabled: value })}
-          />
-          {/* 多久一次、几点提醒是到期提醒和库存提醒共用的：两个都关着时不显示 */}
-          {reminderOn ? (
-            <ListRow
-              title="多久提醒一次"
-              value={repeatLabel(current.repeatEveryDays)}
-              chevron
-              onPress={() => setValueSheet('repeat')}
-            />
-          ) : null}
-          {reminderOn ? (
-            <ListRow
-              title="提醒时间"
-              value={formatTime(current.reminderHour, current.reminderMinute)}
-              chevron
-              onPress={() => setValueSheet('time')}
-            />
-          ) : null}
+      <ListCard>
+        <ToggleRow
+          title="到期提醒"
+          description="食品、日用品快到期和已过期时提醒"
+          value={current.expiryEnabled}
+          onChange={(value) => update({ expiryEnabled: value })}
+        />
+        {current.expiryEnabled ? (
           <ListRow
-            title="超过几天没导出备份就提醒"
-            value={backupReminderSummary(current.backupReminderDays)}
+            title="到期前几天开始提醒"
+            subtitle={EXPIRY_LEAD_HINT}
+            value={expiryLeadSummary(current.expiryLeadDays)}
             chevron
-            onPress={() => setValueSheet('backupDays')}
+            onPress={() => setValueSheet('expiryLead')}
           />
-        </ListCard>
-        {reminderOn ? <Footnote>{REPEAT_HINT}</Footnote> : null}
-      </View>
+        ) : null}
+        <ToggleRow
+          title="库存提醒"
+          description="库存降到下限时提醒补货"
+          value={current.lowStockEnabled}
+          onChange={(value) => update({ lowStockEnabled: value })}
+        />
+      </ListCard>
+
+      {/* 多久一次、几点提醒是到期提醒和库存提醒共用的：单独一组，两个都关着时整组不显示 */}
+      {reminderOn ? (
+        <>
+          <SectionTitle title="什么时候提醒" />
+          <View style={setStyles.group}>
+            <ListCard>
+              <ListRow
+                title="多久提醒一次"
+                value={repeatLabel(current.repeatEveryDays)}
+                chevron
+                onPress={() => setValueSheet('repeat')}
+              />
+              <ListRow
+                title="提醒时间"
+                value={formatTime(current.reminderHour, current.reminderMinute)}
+                chevron
+                onPress={() => setValueSheet('time')}
+              />
+            </ListCard>
+            <Footnote>{REPEAT_HINT}</Footnote>
+          </View>
+        </>
+      ) : null}
 
       <SectionTitle title="通知" />
       <Card>
@@ -229,6 +227,12 @@ export default function SettingsScreen() {
           subtitle={describeLastExport(data.lastExportAt)}
           chevron
           onPress={() => router.push('/backup')}
+        />
+        <ListRow
+          title="超过几天没导出备份就提醒"
+          value={backupReminderSummary(current.backupReminderDays)}
+          chevron
+          onPress={() => setValueSheet('backupDays')}
         />
       </ListCard>
 
