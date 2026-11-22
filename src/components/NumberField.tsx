@@ -29,6 +29,8 @@ type NumberFieldProps = {
   onBlur?: () => void;
   /** 输入框自己的样式，叠在默认样式后面（比如放在浅灰底上时改成白底）；不传就是默认的浅灰底 */
   inputStyle?: StyleProp<TextStyle>;
+  /** 不能改：输入框和 − / + 都不能点 */
+  disabled?: boolean;
 };
 
 /** 数字输入框：左右是 − / + 按钮，中间可以直接输入，只接受数字（和小数点）。 */
@@ -50,6 +52,7 @@ export function NumberField({
   accessibilityLabel,
   onBlur,
   inputStyle,
+  disabled = false,
 }: NumberFieldProps) {
   const current = parseNumberText(value);
   const atMin = current !== null && current <= min;
@@ -64,13 +67,14 @@ export function NumberField({
           <StepButton
             icon="remove"
             label={`减少${label ?? ''}`}
-            disabled={atMin || current === null}
+            disabled={disabled || atMin || current === null}
             onPress={() => onChangeText(stepNumberText(value, -step, options))}
           />
         ) : null}
         <TextInput
           value={value}
           onChangeText={(text) => onChangeText(sanitizeNumberText(text, decimals))}
+          editable={!disabled}
           keyboardType={decimals > 0 ? 'decimal-pad' : 'number-pad'}
           inputMode={decimals > 0 ? 'decimal' : 'numeric'}
           placeholder={placeholder}
@@ -85,7 +89,7 @@ export function NumberField({
           <StepButton
             icon="add"
             label={`增加${label ?? ''}`}
-            disabled={atMax}
+            disabled={disabled || atMax}
             onPress={() => onChangeText(stepNumberText(value, step, options))}
           />
         ) : null}

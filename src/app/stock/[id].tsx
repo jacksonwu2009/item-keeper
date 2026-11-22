@@ -3,6 +3,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 
+import { BatchPicker, pickedAllocation, type PickerBatch } from '../../components/BatchPicker';
 import { DateField } from '../../components/DateField';
 import { ExpiryInput, type ExpiryValue } from '../../components/ExpiryInput';
 import {
@@ -11,6 +12,7 @@ import {
   Chip,
   ChoiceChips,
   Empty,
+  Field,
   GroupCard,
   InfoRow,
   Label,
@@ -56,7 +58,7 @@ import {
   type PriceDraft,
 } from '../../lib/price';
 import { expiryStatus, isLowStock } from '../../lib/status';
-import { formatQty, KIND_LABEL, parseQty, roundQty } from '../../lib/stock';
+import { formatQty, KIND_LABEL, NOTE_INPUT_MAX, outNote, parseQty, roundQty, type BatchAllocation } from '../../lib/stock';
 import { colors, font, radius } from '../../theme';
 
 type SheetState = { type: 'in' } | { type: 'out' } | { type: 'batch'; batch: StockBatch } | null;
@@ -339,10 +341,10 @@ export default function StockDetailScreen() {
             unit={product.unit}
             packs={packs}
             total={totalQty}
-            firstBatch={batches[0] ?? null}
+            batches={batches.map((batch) => ({ id: batch.id, uid: null, quantity: batch.quantity, expiryDate: batch.expiryDate }))}
             onClose={() => setSheet(null)}
-            onSubmit={async (quantity, reason, entry) => {
-              const result = await stockOut(db, product.id, quantity, reason, entry);
+            onSubmit={async (quantity, reason, entry, allocations) => {
+              const result = await stockOut(db, product.id, quantity, reason, entry, allocations);
               await afterChange(
                 result.shortfall > 0
                   ? `只有 ${formatQty(result.consumed)} ${product.unit}，已全部出库`
@@ -516,26 +518,34 @@ function StockOutSheet({
   unit,
   packs,
   total,
-  firstBatch,
+  batches,
   onClose,
   onSubmit,
 }: {
   unit: string;
   packs: PackUnit[];
   total: number;
-  firstBatch: StockBatch | null;
+  /** 在库的批次（先到期的在前）：两批以上时可以选从哪一批出 */
+  batches: PickerBatch[];
   onClose: () => void;
-  onSubmit: (quantity: number, reason: string, entry: EntryQty) => Promise<void>;
+  onSubmit: (quantity: number, reason: string, entry: EntryQty, allocations: BatchAllocation[] | null) => Promise<void>;
 }) {
-  const [qtyText, setQtyText] = useState('1');
+  // 现有不到 1 时默认填现有的全部，免得一打开就超了
+  const [qtyText, setQtyText] = useState(total > 0 && total < 1 ? formatQty(total) : '1');
   const [entryUnit, setEntryUnit] = useState(unit);
   const [reason, setReason] = useState<string>(OUT_REASONS[0]);
+  const [note, setNote] = useState('');
+  const [allocation, setAllocation] = useState<BatchAllocation[] | null>(null);
   const [showErrors, setShowErrors] = useState(false);
   const [busy, setBusy] = useState(false);
   const qty = parseQty(qtyText);
   const baseQty = qty === null ? null : toBaseQty(qty, entryUnit, unit, packs);
   const qtyError = qty === null || qty <= 0 || baseQty === null ? '请填大于 0 的数量' : null;
   const totalBreakdown = formatBreakdown(total, unit, packs);
+  // 不能出得比现有的多：输多了马上提示，不能确认
+  const overError = baseQty !== null && baseQty > total ? `最多出 ${formatQty(total)} ${unit}（现有的全部）` : null;
+  const picked = pickedAllocation(batches, baseQty, allocation);
+  const firstBatch = batches[0] ?? null;
 
   return (
     <Sheet visible title="出库 / 用掉" onClose={onClose}>
@@ -555,13 +565,25 @@ function StockOutSheet({
         onQtyText={setQtyText}
         unit={entryUnit}
         onUnit={setEntryUnit}
-        error={showErrors ? qtyError : null}
+        error={overError ?? (showErrors ? qtyError : null)}
         hint={`现有 ${formatQty(total)} ${unit}${totalBreakdown ? `（${totalBreakdown}）` : ''}`}
+        max={total}
         autoFocus
       />
-      {firstBatch?.expiryDate ? (
+      {batches.length >= 2 ? (
+        <BatchPicker
+          batches={batches}
+          amount={qtyError || overError ? null : baseQty}
+          unit={unit}
+          value={allocation}
+          onChange={setAllocation}
+          syncEnabled={false}
+          showErrors={showErrors}
+        />
+      ) : firstBatch?.expiryDate ? (
         <Text style={detailStyles.hintText}>先扣 {formatDate(firstBatch.expiryDate)} 到期的那一批。</Text>
       ) : null}
+      <Field label="备注" value={note} onChangeText={setNote} placeholder="选填，比如：年会用" maxLength={NOTE_INPUT_MAX} />
       <View style={detailStyles.actions}>
         <Button
           title="全部用完"
@@ -578,10 +600,10 @@ function StockOutSheet({
           style={detailStyles.flex}
           onPress={async () => {
             setShowErrors(true);
-            if (qtyError || qty === null || baseQty === null) return;
+            if (overError || qtyError || qty === null || baseQty === null || picked.error) return;
             setBusy(true);
             try {
-              await onSubmit(baseQty, reason, { qty, unit: entryUnit });
+              await onSubmit(baseQty, outNote(reason, note), { qty, unit: entryUnit }, picked.allocations);
             } finally {
               setBusy(false);
             }

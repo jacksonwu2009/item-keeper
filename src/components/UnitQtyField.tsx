@@ -21,6 +21,7 @@ export function UnitQtyField({
   error,
   hint,
   autoFocus,
+  max,
 }: {
   label: string;
   baseUnit: string;
@@ -32,12 +33,17 @@ export function UnitQtyField({
   error?: string | null;
   hint?: string;
   autoFocus?: boolean;
+  /** 最多填多少（最小单位，比如出库时的现有数）：按当前单位换算，到了上限「+」变灰 */
+  max?: number;
 }) {
   const options = unitOptions(baseUnit, packs);
   const current = options.some((option) => option.value === unit) ? unit : baseUnit;
   const qty = parseQty(qtyText);
   const base = qty === null ? null : toBaseQty(qty, current, baseUnit, packs);
   const conversion = current !== baseUnit && base !== null && qty !== null && qty > 0 ? `= ${formatQty(base)} ${baseUnit}` : null;
+  // 当前单位 1 个是几个最小单位（按箱填时 1 箱 = 24 瓶），上限按它换算，保留两位小数往下取
+  const factor = toBaseQty(1, current, baseUnit, packs);
+  const maxInUnit = max === undefined || !factor ? undefined : Math.floor((max / factor) * 100 + 1e-9) / 100;
 
   return (
     <View style={unitStyles.wrap}>
@@ -56,7 +62,7 @@ export function UnitQtyField({
         value={qtyText}
         onChangeText={onQtyText}
         decimals={2}
-        max={1000000}
+        max={maxInUnit ?? 1000000}
         suffix={current}
         error={error}
         hint={conversion ?? hint}

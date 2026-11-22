@@ -3,7 +3,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { todayStr } from '../lib/dates';
 import type { PackUnit } from '../lib/packs';
 import { perBaseUnitPrice, roundTotalPrice, roundUnitPrice, type EntryPrice } from '../lib/price';
-import { planConsumption, roundQty, type StockKind } from '../lib/stock';
+import { allocationError, planAllocatedConsumption, roundQty, type BatchAllocation, type StockKind } from '../lib/stock';
 
 export type StockProduct = {
   id: number;
@@ -375,11 +375,17 @@ export async function stockOut(
   amount: number,
   note: string | null = null,
   entry: EntryQty | null = null,
+  allocations: readonly BatchAllocation[] | null = null,
 ): Promise<{ consumed: number; shortfall: number }> {
   let outcome = { consumed: 0, shortfall: amount };
   await db.withTransactionAsync(async () => {
     const batches = await listBatches(db, productId);
-    const plan = planConsumption(batches, amount);
+    // 指定了从哪几批出：先核对（每批不超过现有、合计等于要出的），再先扣指定的批次；没指定就先到期先出
+    if (allocations?.length) {
+      const error = allocationError(batches, amount, allocations);
+      if (error) throw new Error(error);
+    }
+    const plan = planAllocatedConsumption(batches, amount, allocations);
     for (const update of plan.updates) {
       if (update.quantity <= 0) {
         await db.runAsync('DELETE FROM stock_batch WHERE id = ?', [update.id]);
