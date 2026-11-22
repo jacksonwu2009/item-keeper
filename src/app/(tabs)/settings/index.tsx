@@ -60,8 +60,8 @@ type ValueSheet = 'expiryLead' | 'repeat' | 'time' | 'backupDays' | 'lowStock' |
 /**
  * 设置页，结构照鸿蒙版 SettingsTab：一项一行，开关在行内，数值、频率、时间点开底部面板改（面板里还是原来的输入框、分段、时间框，
  * 改了马上存，和原来一样）；导入导出、办公点各是一行，点进单独的页面。
- * 分组顺序：提醒 → 通知 → 录入 → 数据。办公点（家庭场景叫地点）不单独成组：只有一个时右上角没有切换，
- * 这一行是加第二个的入口，放在「数据」最后，和「使用场景」挨着。
+ * 分组顺序：提醒 → 通知 → 录入 → 数据 → 通用。「通用」放使用场景和办公点（家庭场景叫地点）：都很少改，放最下面；
+ * 办公点只有一个时右上角没有切换，这一行是加第二个的入口。
  */
 export default function SettingsScreen() {
   const db = useSQLiteContext();
@@ -228,6 +228,10 @@ export default function SettingsScreen() {
           chevron
           onPress={() => setValueSheet('backupDays')}
         />
+      </ListCard>
+
+      <SectionTitle title="通用" />
+      <ListCard>
         <ListRow
           title="使用场景"
           subtitle="家里用还是公司用，只影响界面怎么显示"
