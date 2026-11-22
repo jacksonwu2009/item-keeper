@@ -11,6 +11,7 @@ import {
   type BackupScope,
   type KeptProduct,
 } from '../lib/backup';
+import { DEFAULT_PLACE_NAMES } from '../lib/terms';
 import { ensureOfficeByName } from './offices';
 import { DEFAULT_SETTINGS, getScene, getSettings, writeScene } from './settings';
 import type { MovementType } from './stock';
@@ -263,6 +264,23 @@ async function deleteDevicesOf(db: SQLiteDatabase, officeId: number): Promise<vo
   await db.runAsync('DELETE FROM device WHERE office_id = ?', [officeId]);
 }
 
+/**
+ * 新手机导入：本机只有一个地点、名字还是系统起的（「默认办公点」或新装选家庭时的「家」）、里面什么都没有，
+ * 文件里又没有这个名字时，把它直接改成文件里的第一个地点，不另建一个，免得留下一个空地点和右上角的切换。
+ */
+async function adoptUntouchedPlace(db: SQLiteDatabase, incoming: readonly string[]): Promise<void> {
+  const offices = await db.getAllAsync<{ id: number; name: string }>('SELECT id, name FROM office');
+  if (offices.length !== 1 || !incoming.length) return;
+  const [only] = offices;
+  if (!DEFAULT_PLACE_NAMES.includes(only.name) || incoming.includes(only.name)) return;
+  const used = await db.getFirstAsync<{ n: number }>(
+    `SELECT (SELECT COUNT(*) FROM stock_product WHERE office_id = ?) + (SELECT COUNT(*) FROM device WHERE office_id = ?) AS n`,
+    [only.id, only.id],
+  );
+  if ((used?.n ?? 0) > 0) return;
+  await db.runAsync('UPDATE office SET name = ? WHERE id = ?', [incoming[0], only.id]);
+}
+
 async function writeSettings(db: SQLiteDatabase, settings: BackupData['settings']): Promise<void> {
   if (!settings) return;
   // 只换提醒设置；本机的界面状态（比如当前办公点）不动
@@ -306,6 +324,7 @@ export async function replaceData(db: SQLiteDatabase, data: BackupData, choice: 
 
   await db.withTransactionAsync(async () => {
     if (hasData) {
+      await adoptUntouchedPlace(db, officeNames);
       for (const name of officeNames) {
         const officeId = await ensureOfficeByName(db, name);
         // 物品、设备要重建（id 会变），这个办公点进行中的盘点对不上了，删掉；已结束的盘点是快照，保留
@@ -324,7 +343,7 @@ export async function replaceData(db: SQLiteDatabase, data: BackupData, choice: 
     }
     if (selected.includes('settings')) {
       await writeSettings(db, data.settings);
-      // 文件里带了场景才换；切到家庭时按规则把「默认办公点」改叫「家」（在上面建好办公点之后）
+      // 文件里带了场景才换（只记场景，不改地点名）
       if (data.scene) await writeScene(db, data.scene);
     }
   });
@@ -385,7 +404,7 @@ export async function restoreAll(db: SQLiteDatabase, data: BackupData): Promise<
       }
     }
     await writeSettings(db, data.settings);
-    // 撤销导入：留底里有场景就原样还原，不改地点名字（地点已经按留底重建）
-    if (data.scene) await writeScene(db, data.scene, false);
+    // 撤销导入：留底里有场景就原样还原
+    if (data.scene) await writeScene(db, data.scene);
   });
 }

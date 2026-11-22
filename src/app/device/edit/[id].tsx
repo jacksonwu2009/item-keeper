@@ -12,10 +12,13 @@ import {
   updateDevice,
   type Device,
 } from '../../../db/devices';
+import { useScene } from '../../../hooks/useScene';
+import { rescheduleReminders } from '../../../lib/notifications';
 import type { Accessory } from '../../../lib/warranty';
 
 export default function EditDeviceScreen() {
   const db = useSQLiteContext();
+  const home = useScene().scene === 'home';
   const { id } = useLocalSearchParams<{ id: string }>();
   const deviceId = Number(id);
   const [state, setState] = useState<{ device: Device | null; out: number; accessories: Accessory[] } | null>(null);
@@ -41,12 +44,16 @@ export default function EditDeviceScreen() {
       minQuantity={state.out}
       submitLabel="保存修改"
       onSubmit={async (input) => {
-        if (input.quantity < state.out) throw new Error(`目前借出 ${state.out} 件，数量不能比这个少`);
+        if (input.quantity < state.out) {
+          throw new Error(home ? `目前有 ${state.out} 件在用，数量不能比这个少` : `目前借出 ${state.out} 件，数量不能比这个少`);
+        }
         const sameSerial = input.serialNo ? await findDeviceBySerial(db, input.serialNo) : null;
         if (sameSerial && sameSerial.id !== deviceId) {
           throw new Error(`序列号 ${input.serialNo} 已经登记过：「${sameSerial.name}」`);
         }
         await updateDevice(db, deviceId, input);
+        // 保修日期可能改了（家庭场景有保修提醒）
+        rescheduleReminders(db).catch(() => undefined);
         router.back();
       }}
     />

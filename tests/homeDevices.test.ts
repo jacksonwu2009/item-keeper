@@ -63,10 +63,14 @@ describe('谁在用', () => {
     assert.deepEqual(returned, { 张三: '2026-11-22', 李四: '2026-11-30' });
   });
 
-  it('名字太长不让存', async () => {
+  it('名字太长不让存；办公场景记的长名字原样保存不报错', async () => {
     const db = await openDb();
     const id = await createDevice(db, tv);
     await assert.rejects(setDeviceHolder(db, id, '一'.repeat(21)), /最多 20 个字/);
+    const long = '二'.repeat(25);
+    await issueDevice(db, id, { person: long, quantity: 1, issuedOn: '2026-11-01', returnedOn: null, note: null });
+    await setDeviceHolder(db, id, long, '2026-11-22');
+    assert.equal((await listAssignments(db, id)).length, 1);
   });
 });
 

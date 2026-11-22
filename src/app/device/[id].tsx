@@ -39,6 +39,7 @@ import { useOffice } from '../../hooks/useOffice';
 import { useScene } from '../../hooks/useScene';
 import { diffDays, formatDate, todayStr } from '../../lib/dates';
 import { hasComputerConfig } from '../../lib/devicePresets';
+import { rescheduleReminders } from '../../lib/notifications';
 import { describeAccessories, warrantyStatus, type Accessory } from '../../lib/warranty';
 import { colors, font, radius } from '../../theme';
 
@@ -112,6 +113,7 @@ export default function DeviceDetailScreen() {
         style: 'destructive',
         onPress: async () => {
           await deleteDevice(db, device.id);
+          rescheduleReminders(db).catch(() => undefined);
           router.back();
         },
       },

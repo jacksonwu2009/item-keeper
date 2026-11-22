@@ -19,6 +19,7 @@ import { useOffice } from '../../../hooks/useOffice';
 import { useScene } from '../../../hooks/useScene';
 import { diffDays, formatDate, todayStr } from '../../../lib/dates';
 import { describeConfig } from '../../../lib/devicePresets';
+import { rescheduleReminders } from '../../../lib/notifications';
 import { warrantyStatus } from '../../../lib/warranty';
 import { colors, font, radius } from '../../../theme';
 
@@ -58,7 +59,11 @@ export default function DevicesScreen() {
 
   const deletion = usePendingDelete<number>(
     (id) => deleteDevice(db, id),
-    () => reload(),
+    () => {
+      // 家庭场景有保修提醒，删掉的设备不再提醒
+      rescheduleReminders(db).catch(() => undefined);
+      return reload();
+    },
   );
   // 等撤销的那台设备在两种视图、顶部统计里都先拿掉
   const pendingId = deletion.pending?.key;

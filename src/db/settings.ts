@@ -2,7 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { DEFAULT_BACKUP_REMINDER_DAYS } from '../lib/backupReminder';
 import type { ReminderSettings } from '../lib/reminderPlan';
-import { isScene, placeToRenameForHome, termsFor, type Scene } from '../lib/terms';
+import { isScene, termsFor, type Scene } from '../lib/terms';
 
 export type AppSettings = ReminderSettings & {
   /** 新建食品 / 日用品时默认的库存下限 */
@@ -103,21 +103,32 @@ export async function getScene(db: SQLiteDatabase): Promise<Scene | null> {
   }
 }
 
-/**
- * 写场景，不开事务（导入备份时在导入的事务里调）。
- * renameDefaultPlace：切到家庭时，名字还是「默认办公点」的地点改叫「家」（已经有「家」就不改）；撤销导入时不改名，原样还原。
- */
-export async function writeScene(db: SQLiteDatabase, scene: Scene, renameDefaultPlace = true): Promise<void> {
+/** 写场景，不开事务（导入备份时在导入的事务里调）。只记场景，不改任何数据。 */
+export async function writeScene(db: SQLiteDatabase, scene: Scene): Promise<void> {
   await db.runAsync(
     'INSERT INTO setting (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
     [SCENE_KEY, JSON.stringify(scene)],
   );
-  if (scene !== 'home' || !renameDefaultPlace) return;
-  const names = (await db.getAllAsync<{ name: string }>('SELECT name FROM office')).map((row) => row.name);
-  const from = placeToRenameForHome(names);
-  if (from) await db.runAsync('UPDATE office SET name = ? WHERE name = ?', [termsFor('home').defaultPlaceName, from]);
 }
 
 export async function saveScene(db: SQLiteDatabase, scene: Scene): Promise<void> {
-  await db.withTransactionAsync(() => writeScene(db, scene));
+  await writeScene(db, scene);
+}
+
+/**
+ * 新装第一次打开时选场景。选家庭、而且手机上还什么都没有（只有一个空的「默认办公点」）时，把它改叫「家」。
+ * 之后在设置里切场景走 saveScene，不改名：地点按名字和别的手机对，悄悄改名会对不上。
+ */
+export async function chooseInitialScene(db: SQLiteDatabase, scene: Scene): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    await writeScene(db, scene);
+    if (scene !== 'home') return;
+    const offices = await db.getAllAsync<{ id: number; name: string }>('SELECT id, name FROM office');
+    if (offices.length !== 1 || offices[0].name !== termsFor('office').defaultPlaceName) return;
+    const used = await db.getFirstAsync<{ n: number }>(
+      'SELECT (SELECT COUNT(*) FROM stock_product) + (SELECT COUNT(*) FROM device) AS n',
+    );
+    if ((used?.n ?? 0) > 0) return;
+    await db.runAsync('UPDATE office SET name = ? WHERE id = ?', [termsFor('home').defaultPlaceName, offices[0].id]);
+  });
 }

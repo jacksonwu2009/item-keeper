@@ -269,7 +269,7 @@ export function DeviceForm({
           min={Math.max(1, minQuantity)}
           max={9999}
           suffix="件"
-          hint={minQuantity > 1 ? `目前借出 ${minQuantity} 件，数量不能比这个少` : undefined}
+          hint={minQuantity > 1 ? (home ? `目前有 ${minQuantity} 件在用，数量不能比这个少` : `目前借出 ${minQuantity} 件，数量不能比这个少`) : undefined}
           error={shown(errors.quantity)}
         />
       </Card>

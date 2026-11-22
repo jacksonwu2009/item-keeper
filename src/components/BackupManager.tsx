@@ -8,13 +8,13 @@ import { listProducts } from '../db/stock';
 import { listOpenStocktakeScopes } from '../db/stocktake';
 import { useFocusData } from '../hooks/useFocusData';
 import { useOffice } from '../hooks/useOffice';
-import { useTerms } from '../hooks/useScene';
+import { useScene } from '../hooks/useScene';
 import { ALL_SCOPES, SCOPE_LABEL, type BackupData, type BackupScope, type BackupSummary } from '../lib/backup';
 import { notifyDataChanged } from '../lib/dataEvents';
 import { exportBackup, importBackup, pickBackup, readUndoSnapshot, undoLastImport } from '../lib/dataTransfer';
 import { diffDays, formatDateTime, toDateStr, todayStr } from '../lib/dates';
 import { stocktakesClearedByImport, type OpenStocktakeScope } from '../lib/stocktake';
-import { currentTerms } from '../lib/terms';
+import { currentTerms, SCENE_LABELS, type Scene } from '../lib/terms';
 import { colors, font } from '../theme';
 import { Footnote } from './ListRows';
 import { Button, Card, Label, MultiChips, Sheet } from './ui';
@@ -64,7 +64,7 @@ type DataNotice = { text: string; tone: 'ok' | 'error' };
 export function BackupManager() {
   const db = useSQLiteContext();
   const office = useOffice();
-  const terms = useTerms();
+  const { scene, terms } = useScene();
   const loader = useCallback(async () => {
     const [products, devices, undo, openStocktakes, lastExportAt] = await Promise.all([
       listProducts(db),
@@ -298,7 +298,7 @@ export function BackupManager() {
             ))}
             <Text style={backupStyles.hint}>
               含 {pending.summary.batches} 个批次、{pending.summary.movements} 条出入库记录、
-              {pending.summary.assignments} 条设备领用记录。
+              {pending.summary.assignments} 条设备{scene === 'home' ? '「谁在用」' : '领用'}记录。
             </Text>
           </Card>
           {pending.data.offices.length > 1 ? (
@@ -329,6 +329,7 @@ export function BackupManager() {
               chosenOffices: importOffices,
               countsOf: (name) => countsOf(localOfficeId(name)),
               exists: (name) => localOfficeId(name) !== undefined,
+              sceneChange: pending.data.scene && pending.data.scene !== (scene ?? 'office') ? pending.data.scene : null,
               clearedStocktakes: stocktakesClearedByImport(data.openStocktakes, {
                 offices: pending.data.offices.filter((name) => importOffices.includes(name)),
                 scope: importScope.filter((item) => pending.summary.scope.includes(item)),
@@ -367,6 +368,7 @@ function importPlanText({
   chosenOffices,
   countsOf,
   exists,
+  sceneChange,
   clearedStocktakes,
 }: {
   scope: BackupScope[];
@@ -374,6 +376,8 @@ function importPlanText({
   chosenOffices: string[];
   countsOf: (name: string) => Counts;
   exists: (name: string) => boolean;
+  /** 导入设置会把使用场景换成这个；不换为 null */
+  sceneChange: Scene | null;
   /** 这次导入会清掉进行中盘点的办公点 */
   clearedStocktakes: string[];
 }): string {
@@ -387,7 +391,9 @@ function importPlanText({
       parts.push(exists(name) ? `${name}的${describeReplaced(dataScope, countsOf(name))}` : `${name}（本机还没有，会新建）`);
     }
   }
-  if (scope.includes('settings')) parts.push(SCOPE_LABEL.settings);
+  if (scope.includes('settings')) {
+    parts.push(sceneChange ? `${SCOPE_LABEL.settings}（使用场景会换成${SCENE_LABELS[sceneChange]}）` : SCOPE_LABEL.settings);
+  }
   const stocktakeNote = clearedStocktakes.length
     ? `会清掉${clearedStocktakes.map((name) => `「${name}」`).join('、')}进行中的盘点（已录的实盘数不保留）。`
     : '';

@@ -90,6 +90,8 @@ export default function SettingsScreen() {
   }
   const [notice, setNotice] = useState<string | null>(null);
   const [valueSheet, setValueSheet] = useState<ValueSheet | null>(null);
+  const [sceneBusy, setSceneBusy] = useState(false);
+  const [sceneError, setSceneError] = useState<string | null>(null);
   const current = settings ?? data.settings;
   /** 到期提醒、库存提醒至少开着一个：「多久提醒一次」「提醒时间」才用得上 */
   const reminderOn = current.expiryEnabled || current.lowStockEnabled;
@@ -228,10 +230,13 @@ export default function SettingsScreen() {
         />
         <ListRow
           title="使用场景"
-          subtitle="家里用还是公司用，只影响界面上的叫法"
+          subtitle="家里用还是公司用，只影响界面怎么显示"
           value={scene ? SCENE_LABELS[scene] : null}
           chevron
-          onPress={() => setValueSheet('scene')}
+          onPress={() => {
+            setSceneError(null);
+            setValueSheet('scene');
+          }}
         />
         <ListRow
           title={terms.place}
@@ -299,13 +304,19 @@ export default function SettingsScreen() {
           <View style={setStyles.group}>
             <SceneOptions
               value={scene}
+              disabled={sceneBusy}
               onChoose={(next) => {
+                if (next === scene) return closeSheet();
+                setSceneBusy(true);
+                setSceneError(null);
                 choose(next)
                   .then(closeSheet)
-                  .catch(() => undefined);
+                  .catch(() => setSceneError('没存上，请再点一次。'))
+                  .finally(() => setSceneBusy(false));
               }}
             />
-            <Text style={setStyles.hint}>只改叫法，记的东西都不变，可以随时换回来。</Text>
+            {sceneError ? <Text style={setStyles.error}>{sceneError}</Text> : null}
+            <Text style={setStyles.hint}>只改界面怎么显示，记的东西（包括地点名字）都不变，可以随时换回来。</Text>
           </View>
         </Sheet>
       ) : null}
@@ -330,5 +341,6 @@ const setStyles = StyleSheet.create({
   permissionRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   body: { flex: 1, fontSize: font.body, color: colors.ink },
   hint: { fontSize: font.small, color: colors.faint, lineHeight: 18 },
+  error: { fontSize: font.small, color: colors.danger },
   footer: { fontSize: font.small, color: colors.faint, textAlign: 'center', marginTop: 8 },
 });

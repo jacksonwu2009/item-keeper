@@ -343,13 +343,14 @@ export async function setDeviceHolder(
   today: string = todayStr(),
 ): Promise<void> {
   const name = person?.trim() ? person.trim() : null;
-  if (name && name.length > HOLDER_NAME_MAX) throw new Error(`名字最多 ${HOLDER_NAME_MAX} 个字`);
   const open = await db.getAllAsync<{ id: number; person: string; issuedOn: string }>(
     'SELECT id, person, issued_on AS issuedOn FROM device_assignment WHERE device_id = ? AND returned_on IS NULL',
     [deviceId],
   );
   if (name && open.length === 1 && open[0].person === name) return;
   if (!name && open.length === 0) return;
+  // 办公场景记的使用人没限长；只在要新记一条时查
+  if (name && name.length > HOLDER_NAME_MAX) throw new Error(`名字最多 ${HOLDER_NAME_MAX} 个字`);
   await db.withTransactionAsync(async () => {
     for (const row of open) {
       await db.runAsync('UPDATE device_assignment SET returned_on = ? WHERE id = ?', [

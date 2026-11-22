@@ -13,6 +13,7 @@ import {
 } from '../../db/devices';
 import { useScene } from '../../hooks/useScene';
 import { mergePresets, type DevicePreset } from '../../lib/devicePresets';
+import { rescheduleReminders } from '../../lib/notifications';
 
 /**
  * 新增设备。从扫码进来时带着 serial（序列号）；
@@ -63,7 +64,10 @@ export default function NewDeviceScreen() {
   async function save(input: DeviceInput): Promise<number> {
     const existing = input.serialNo ? await findDeviceBySerial(db, input.serialNo) : null;
     if (existing) throw new Error(`序列号 ${input.serialNo} 已经登记过：「${existing.name}」`);
-    return createDevice(db, input);
+    const id = await createDevice(db, input);
+    // 家庭场景有保修提醒，新设备要排进去
+    rescheduleReminders(db).catch(() => undefined);
+    return id;
   }
 
   return (

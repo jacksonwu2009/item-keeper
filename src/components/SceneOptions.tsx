@@ -50,15 +50,15 @@ export function SceneOptions({
 }
 
 /** 新装的手机第一次打开：盖在最上面，选了才能用（只是叫法，选错了可以在设置里改） */
-export function SceneChooser({ onChoose }: { onChoose: (scene: Scene) => Promise<void> }) {
+export function SceneChooser({ visible, onChoose }: { visible: boolean; onChoose: (scene: Scene) => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
-    <Modal visible animationType="fade" onRequestClose={() => undefined}>
+    <Modal visible={visible} animationType="fade" onRequestClose={() => undefined}>
       <SafeAreaView style={chooserStyles.screen}>
         <View style={chooserStyles.body}>
           <Text style={chooserStyles.title}>物品管家用在哪？</Text>
-          <Text style={chooserStyles.subtitle}>只影响界面上的叫法，记的东西都一样。</Text>
+          <Text style={chooserStyles.subtitle}>只影响界面怎么显示，以后可以在设置里改，记的东西不会变。</Text>
           <SceneOptions
             value={null}
             disabled={busy}
@@ -72,7 +72,7 @@ export function SceneChooser({ onChoose }: { onChoose: (scene: Scene) => Promise
             }}
           />
           {error ? <Text style={chooserStyles.error}>{error}</Text> : null}
-          <Text style={chooserStyles.footnote}>以后可以在「设置」→「使用场景」里改。</Text>
+          <Text style={chooserStyles.footnote}>在「设置」→「使用场景」里改。</Text>
         </View>
       </SafeAreaView>
     </Modal>
