@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { deleteStocktakesOfOffice } from './stocktake';
+import { currentTerms } from '../lib/terms';
 
 export type Office = {
   id: number;
@@ -26,14 +27,15 @@ export async function listOffices(db: SQLiteDatabase): Promise<Office[]> {
 
 function cleanName(name: string): string {
   const trimmed = name.trim();
-  if (!trimmed) throw new Error('请填办公点名称');
-  if (trimmed.length > OFFICE_NAME_MAX) throw new Error(`办公点名称最多 ${OFFICE_NAME_MAX} 个字`);
+  const { place } = currentTerms();
+  if (!trimmed) throw new Error(`请填${place}名称`);
+  if (trimmed.length > OFFICE_NAME_MAX) throw new Error(`${place}名称最多 ${OFFICE_NAME_MAX} 个字`);
   return trimmed;
 }
 
 async function assertNameFree(db: SQLiteDatabase, name: string, selfId: number | null): Promise<void> {
   const existing = await db.getFirstAsync<{ id: number }>('SELECT id FROM office WHERE name = ?', [name]);
-  if (existing && existing.id !== selfId) throw new Error(`已经有叫「${name}」的办公点了`);
+  if (existing && existing.id !== selfId) throw new Error(`已经有叫「${name}」的${currentTerms().place}了`);
 }
 
 export async function createOffice(db: SQLiteDatabase, name: string): Promise<number> {
@@ -59,9 +61,9 @@ export async function deleteOffice(db: SQLiteDatabase, id: number): Promise<void
   const offices = await listOffices(db);
   const office = offices.find((item) => item.id === id);
   if (!office) return;
-  if (offices.length <= 1) throw new Error('至少要留一个办公点');
+  if (offices.length <= 1) throw new Error(`至少要留一个${currentTerms().place}`);
   if (office.productCount > 0 || office.deviceCount > 0) {
-    throw new Error(`「${office.name}」里还有 ${office.productCount} 样物品、${office.deviceCount} 种设备，先移走或删掉再删办公点`);
+    throw new Error(`「${office.name}」里还有 ${office.productCount} 样物品、${office.deviceCount} 种设备，先移走或删掉再删${currentTerms().place}`);
   }
   await db.withTransactionAsync(async () => {
     // 盘点记录跟着办公点走，办公点没了就一起删

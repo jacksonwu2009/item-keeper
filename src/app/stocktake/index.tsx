@@ -9,6 +9,7 @@ import { ALL_OFFICES } from '../../db/offices';
 import { getOpenStocktake, listStocktakes, startStocktake, type StocktakeListEntry } from '../../db/stocktake';
 import { useFocusData } from '../../hooks/useFocusData';
 import { useOffice } from '../../hooks/useOffice';
+import { useTerms } from '../../hooks/useScene';
 import { formatDate, toDateStr } from '../../lib/dates';
 import {
   describeKinds,
@@ -96,9 +97,10 @@ export default function StocktakeListScreen() {
 }
 
 function EntryRow({ entry, first, showOffice }: { entry: StocktakeListEntry; first: boolean; showOffice: boolean }) {
+  const terms = useTerms();
   const { summary } = entry;
   const subtitle = [
-    showOffice ? (entry.officeName ?? '已删除的办公点') : null,
+    showOffice ? (entry.officeName ?? `已删除的${terms.place}`) : null,
     describeKinds(entry.kinds),
     entry.status === 'open' ? `已盘 ${summary.counted} / ${summary.total}` : `共 ${summary.total} 项`,
   ]
@@ -140,6 +142,7 @@ function StartSheet({
   findOpen: (officeId: number) => Promise<number | null>;
 }) {
   const office = useOffice();
+  const terms = useTerms();
   const [officeId, setOfficeId] = useState(defaultOfficeId);
   const [kinds, setKinds] = useState<StocktakeKind[]>(['food', 'daily']);
   const [busy, setBusy] = useState(false);
@@ -154,7 +157,7 @@ function StartSheet({
       const existing = await findOpen(officeId);
       if (existing !== null) {
         setOpenId(existing);
-        setError('这个办公点有一次盘点还没完成，可以接着盘，或者先在那边放弃。');
+        setError(`这个${terms.place}有一次盘点还没完成，可以接着盘，或者先在那边放弃。`);
         return;
       }
       onStarted(await start(officeId, kinds));
@@ -169,7 +172,7 @@ function StartSheet({
     <Sheet visible title="开始盘点" onClose={onClose}>
       {office.multiple ? (
         <View style={listStyles.group}>
-          <Label>办公点</Label>
+          <Label>{terms.place}</Label>
           <ChoiceChips
             options={office.offices.map((item) => ({ value: item.id, label: item.name }))}
             value={officeId}

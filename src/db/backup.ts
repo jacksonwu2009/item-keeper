@@ -12,7 +12,7 @@ import {
   type KeptProduct,
 } from '../lib/backup';
 import { ensureOfficeByName } from './offices';
-import { DEFAULT_SETTINGS, getSettings } from './settings';
+import { DEFAULT_SETTINGS, getScene, getSettings, writeScene } from './settings';
 import type { MovementType } from './stock';
 import { dropOpenStocktakesFor } from './stocktake';
 
@@ -25,8 +25,9 @@ export async function collectBackup(
   scope: readonly BackupScope[] = ALL_SCOPES,
   officeIds: readonly number[] | null = null,
 ): Promise<BackupData> {
-  const [settings, offices, products, packs, batches, movements, devices, accessories, assignments] = await Promise.all([
+  const [settings, scene, offices, products, packs, batches, movements, devices, accessories, assignments] = await Promise.all([
     getSettings(db),
+    getScene(db),
     db.getAllAsync<{ id: number; name: string }>('SELECT id, name FROM office ORDER BY sort, id'),
     db.getAllAsync<{
       id: number;
@@ -112,7 +113,7 @@ export async function collectBackup(
     ),
   ]);
   return buildBackup(
-    { settings, offices, products, packs, batches, movements, devices, accessories, assignments },
+    { settings, scene, offices, products, packs, batches, movements, devices, accessories, assignments },
     new Date(),
     scope,
     officeIds,
@@ -321,7 +322,11 @@ export async function replaceData(db: SQLiteDatabase, data: BackupData, choice: 
         }
       }
     }
-    if (selected.includes('settings')) await writeSettings(db, data.settings);
+    if (selected.includes('settings')) {
+      await writeSettings(db, data.settings);
+      // 文件里带了场景才换；切到家庭时按规则把「默认办公点」改叫「家」（在上面建好办公点之后）
+      if (data.scene) await writeScene(db, data.scene);
+    }
   });
 }
 
@@ -380,5 +385,7 @@ export async function restoreAll(db: SQLiteDatabase, data: BackupData): Promise<
       }
     }
     await writeSettings(db, data.settings);
+    // 撤销导入：留底里有场景就原样还原，不改地点名字（地点已经按留底重建）
+    if (data.scene) await writeScene(db, data.scene, false);
   });
 }

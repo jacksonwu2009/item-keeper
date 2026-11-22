@@ -5,17 +5,19 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ALL_OFFICES } from '../db/offices';
 import { useOffice } from '../hooks/useOffice';
+import { useTerms } from '../hooks/useScene';
 import { colors, font, radius } from '../theme';
 import { Button, ChoiceChips, Label, Sheet } from './ui';
 
 /** 标签页右上角的办公点切换。只有一个办公点时不显示。 */
 export function OfficeSwitcher() {
   const office = useOffice();
+  const terms = useTerms();
   const [open, setOpen] = useState(false);
   if (!office.multiple) return null;
 
   const options = [
-    { id: ALL_OFFICES, name: '全部办公点', detail: `${office.offices.length} 个办公点` },
+    { id: ALL_OFFICES, name: `全部${terms.place}`, detail: `${office.offices.length} 个${terms.place}` },
     ...office.offices.map((item) => ({
       id: item.id,
       name: item.name,
@@ -27,7 +29,7 @@ export function OfficeSwitcher() {
     <>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`当前办公点：${office.currentName ?? '全部办公点'}，点按切换`}
+        accessibilityLabel={`当前${terms.place}：${office.currentName ?? `全部${terms.place}`}，点按切换`}
         onPress={() => {
           office.reload().catch(() => undefined);
           setOpen(true);
@@ -41,7 +43,7 @@ export function OfficeSwitcher() {
         </Text>
         <Ionicons name="chevron-down" size={14} color={colors.accent} />
       </Pressable>
-      <Sheet visible={open} title="切换办公点" onClose={() => setOpen(false)}>
+      <Sheet visible={open} title={`切换${terms.place}`} onClose={() => setOpen(false)}>
         <View style={switcherStyles.list}>
           {options.map((item) => {
             const selected = item.id === office.currentId;
@@ -70,7 +72,7 @@ export function OfficeSwitcher() {
           })}
         </View>
         <Button
-          title="管理办公点"
+          title={`管理${terms.place}`}
           variant="ghost"
           icon="settings-outline"
           onPress={() => {
@@ -87,10 +89,11 @@ export function OfficeSwitcher() {
 /** 表单里选「放在哪个办公点」。只有一个办公点时不显示。 */
 export function OfficeChooser({ value, onChange }: { value: number; onChange: (id: number) => void }) {
   const office = useOffice();
+  const terms = useTerms();
   if (!office.multiple) return null;
   return (
     <View style={switcherStyles.chooser}>
-      <Label>办公点</Label>
+      <Label>{terms.place}</Label>
       <ChoiceChips
         options={office.offices.map((item) => ({ value: item.id, label: item.name }))}
         value={value}

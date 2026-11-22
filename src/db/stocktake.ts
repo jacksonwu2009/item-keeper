@@ -2,6 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { todayStr } from '../lib/dates';
 import { roundQty } from '../lib/stock';
+import { currentTerms } from '../lib/terms';
 import {
   adjustmentNote,
   countState,
@@ -203,7 +204,7 @@ export async function startStocktake(
 ): Promise<number> {
   const selected = parseKinds(serializeKinds(kinds));
   if (!selected.length) throw new Error('请至少选一个分类');
-  if (await getOpenStocktake(db, officeId)) throw new Error('这个办公点有一次盘点还没完成，先完成或放弃它');
+  if (await getOpenStocktake(db, officeId)) throw new Error(`这个${currentTerms().place}有一次盘点还没完成，先完成或放弃它`);
 
   const productKinds = selected.filter((kind): kind is 'food' | 'daily' => kind !== 'devices');
   const products = productKinds.length
@@ -260,7 +261,7 @@ export async function recordCount(db: SQLiteDatabase, itemId: number, countedQty
   if (!item) throw new Error('找不到这一项');
   await assertOpen(db, item.stocktakeId);
   if (item.absence === 'deleted') throw new Error('这一项已经删除了，不用盘');
-  if (item.absence === 'moved') throw new Error('这一项已经移到别的办公点或分类了，不用在这里盘');
+  if (item.absence === 'moved') throw new Error(`这一项已经移到别的${currentTerms().place}或分类了，不用在这里盘`);
   if (!(countedQty >= 0)) throw new Error('实盘数量不能小于 0');
   if (item.itemType === 'device' && !Number.isInteger(countedQty)) throw new Error('设备数量要是整数');
   await db.runAsync('UPDATE stocktake_item SET counted_qty = ?, expected_qty = ?, counted_at = ? WHERE id = ?', [

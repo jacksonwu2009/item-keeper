@@ -5,6 +5,7 @@ import { Alert, StyleSheet, Text, View } from 'react-native';
 
 import { createOffice, deleteOffice, OFFICE_NAME_MAX, renameOffice, type Office } from '../db/offices';
 import { useOffice } from '../hooks/useOffice';
+import { useTerms } from '../hooks/useScene';
 import { colors, font } from '../theme';
 import { PlaceNameSuggest } from './PlaceNameSuggest';
 import { Footnote } from './ListRows';
@@ -14,6 +15,7 @@ import { Button, Field, GroupCard, IconButton, Sheet } from './ui';
 export function OfficeManager() {
   const db = useSQLiteContext();
   const office = useOffice();
+  const terms = useTerms();
   const [newName, setNewName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<Office | null>(null);
@@ -40,7 +42,7 @@ export function OfficeManager() {
   }
 
   function confirmDelete(item: Office) {
-    Alert.alert(`删除「${item.name}」？`, '只能删除里面没有东西的办公点。', [
+    Alert.alert(`删除「${item.name}」？`, `只能删除里面没有东西的${terms.place}。`, [
       { text: '取消', style: 'cancel' },
       {
         text: '删除',
@@ -61,7 +63,7 @@ export function OfficeManager() {
   return (
     <>
       <Footnote>
-        食品、日用品、设备都归到某个办公点下。有多个办公点时，各页右上角可以切换，也可以看全部办公点。
+        食品、日用品、设备都归到某个{terms.place}下。有多个{terms.place}时，各页右上角可以切换，也可以看全部{terms.place}。
       </Footnote>
       <GroupCard>
         {office.offices.map((item) => (
@@ -87,7 +89,7 @@ export function OfficeManager() {
           <Field
             value={newName}
             onChangeText={setNewName}
-            placeholder="新办公点名称，如 上海办公室"
+            placeholder={terms.newPlacePlaceholder}
             maxLength={OFFICE_NAME_MAX}
             right={<Button title="添加" compact disabled={!newName.trim()} onPress={() => add()} />}
           />
@@ -122,13 +124,14 @@ function RenameSheet({
   onClose: () => void;
   onSave: (name: string) => Promise<void>;
 }) {
+  const terms = useTerms();
   const [name, setName] = useState(office.name);
   const [error, setError] = useState<string | null>(null);
   return (
-    <Sheet visible title="办公点改名" onClose={onClose}>
+    <Sheet visible title={`${terms.place}改名`} onClose={onClose}>
       <Field label="名称" value={name} onChangeText={setName} maxLength={OFFICE_NAME_MAX} autoFocus error={error} />
       <PlaceNameSuggest existingNames={otherNames} onPick={setName} />
-      <Text style={managerStyles.hint}>别的手机按名称认办公点，改名后，从别的手机导过来的同名数据会对不上，记得让对方也改成一样的名字。</Text>
+      <Text style={managerStyles.hint}>别的手机按名称认{terms.place}，改名后，从别的手机导过来的同名数据会对不上，记得让对方也改成一样的名字。</Text>
       <Button
         title="保存"
         disabled={!name.trim()}

@@ -8,11 +8,13 @@ import { Linking, StyleSheet, Text, View } from 'react-native';
 import { describeLastExport } from '../../../components/BackupManager';
 import { TimePickerSheet } from '../../../components/DateField';
 import { IntegerField } from '../../../components/NumberField';
+import { SceneOptions } from '../../../components/SceneOptions';
 import { Footnote, ListCard, ListRow, ToggleRow } from '../../../components/ListRows';
 import { Button, Card, Screen, SectionTitle, Segmented, Sheet } from '../../../components/ui';
 import { DEFAULT_SETTINGS, getLastExportAt, getSettings, saveSettings, type AppSettings } from '../../../db/settings';
 import { useFocusData } from '../../../hooks/useFocusData';
 import { useOffice } from '../../../hooks/useOffice';
+import { useScene } from '../../../hooks/useScene';
 import { formatTime } from '../../../lib/dates';
 import {
   getPermissionState,
@@ -21,6 +23,7 @@ import {
   sendTestNotification,
   type PermissionState,
 } from '../../../lib/notifications';
+import { SCENE_LABELS } from '../../../lib/terms';
 import { colors, font } from '../../../theme';
 
 const REPEAT_OPTIONS = [
@@ -47,19 +50,23 @@ function backupReminderSummary(days: number): string {
 
 const EXPIRY_LEAD_HINT = '单个物品可以在编辑页里另设天数。';
 const REPEAT_HINT = '问题没处理之前按这个间隔重复提醒；到期当天一定会提醒。';
-const BACKUP_REMINDER_HINT = '填 0 不提醒。在「导入导出」里分类、办公点都全选，点「导出全部」导出才算备份过。';
+function backupReminderHint(place: string): string {
+  return `填 0 不提醒。在「导入导出」里分类、${place}都全选，点「导出全部」导出才算备份过。`;
+}
 
 /** 点一行打开的改值面板：到期前几天、多久提醒一次、提醒时间、备份提醒天数、新物品默认库存下限 */
-type ValueSheet = 'expiryLead' | 'repeat' | 'time' | 'backupDays' | 'lowStock';
+type ValueSheet = 'expiryLead' | 'repeat' | 'time' | 'backupDays' | 'lowStock' | 'scene';
 
 /**
  * 设置页，结构照鸿蒙版 SettingsTab：一项一行，开关在行内，数值、频率、时间点开底部面板改（面板里还是原来的输入框、分段、时间框，
- * 改了马上存，和原来一样）；办公点、导入导出各是一行，点进单独的页面。
- * 分组顺序：办公点 → 提醒 → 通知 → 录入 → 数据。
+ * 改了马上存，和原来一样）；导入导出、办公点各是一行，点进单独的页面。
+ * 分组顺序：提醒 → 通知 → 录入 → 数据。办公点（家庭场景叫地点）不单独成组：只有一个时右上角没有切换，
+ * 这一行是加第二个的入口，放在「数据」最后，和「使用场景」挨着。
  */
 export default function SettingsScreen() {
   const db = useSQLiteContext();
   const office = useOffice();
+  const { scene, terms, choose } = useScene();
   const loader = useCallback(async () => {
     const [settings, permission, lastExportAt] = await Promise.all([
       getSettings(db),
@@ -104,17 +111,6 @@ export default function SettingsScreen() {
 
   return (
     <Screen largeTitle>
-      <SectionTitle title="办公点" />
-      <ListCard>
-        <ListRow
-          title="管理办公点"
-          subtitle="食品、日用品、设备都归到某个办公点下"
-          value={`${office.offices.length} 个`}
-          chevron
-          onPress={() => router.push('/offices')}
-        />
-      </ListCard>
-
       <SectionTitle title="提醒" />
       <View style={setStyles.group}>
         <ListCard>
@@ -230,6 +226,20 @@ export default function SettingsScreen() {
           chevron
           onPress={() => setValueSheet('backupDays')}
         />
+        <ListRow
+          title="使用场景"
+          subtitle="家里用还是公司用，只影响界面上的叫法"
+          value={scene ? SCENE_LABELS[scene] : null}
+          chevron
+          onPress={() => setValueSheet('scene')}
+        />
+        <ListRow
+          title={terms.place}
+          subtitle={`食品、日用品、设备都归到某个${terms.place}下`}
+          value={`${office.offices.length} 个`}
+          chevron
+          onPress={() => router.push('/offices')}
+        />
       </ListCard>
 
       <Text style={setStyles.footer}>物品管家 {Constants.expoConfig?.version ?? ''}</Text>
@@ -280,8 +290,23 @@ export default function SettingsScreen() {
             max={365}
             step={10}
             suffix="天"
-            hint={BACKUP_REMINDER_HINT}
+            hint={backupReminderHint(terms.place)}
           />
+        </Sheet>
+      ) : null}
+      {valueSheet === 'scene' ? (
+        <Sheet visible title="使用场景" onClose={closeSheet}>
+          <View style={setStyles.group}>
+            <SceneOptions
+              value={scene}
+              onChoose={(next) => {
+                choose(next)
+                  .then(closeSheet)
+                  .catch(() => undefined);
+              }}
+            />
+            <Text style={setStyles.hint}>只改叫法，记的东西都不变，可以随时换回来。</Text>
+          </View>
         </Sheet>
       ) : null}
       {valueSheet === 'lowStock' ? (

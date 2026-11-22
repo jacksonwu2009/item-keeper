@@ -12,6 +12,7 @@ import { DEFAULT_SETTINGS, type AppSettings } from '../db/settings';
 import { isValidDateStr, todayStr } from './dates';
 import { validatePacks, type PackUnit } from './packs';
 import { roundQty } from './stock';
+import { isScene, type Scene } from './terms';
 import { validateAccessories, type Accessory } from './warranty';
 
 export const BACKUP_APP = 'item-keeper';
@@ -29,7 +30,7 @@ export const SCOPE_LABEL: Record<BackupScope, string> = {
   food: '食品',
   daily: '日用品',
   devices: '设备',
-  settings: '提醒设置',
+  settings: '设置',
 };
 
 /** 去重并按固定顺序排列。 */
@@ -116,6 +117,11 @@ export type BackupData = {
   scope: BackupScope[];
   /** scope 不含 settings 时为 null */
   settings: AppSettings | null;
+  /**
+   * 使用场景（家庭 / 办公），跟着设置走：scope 含 settings、而且选过场景时才有。
+   * 旧文件没有这个字段，导入时不动本机的场景；鸿蒙版写法一样。没加格式版本号：旧版本 App 不认识这个字段，直接忽略。
+   */
+  scene?: Scene;
   /** 文件里有哪些办公点（含空的），按原顺序 */
   offices: string[];
   products: BackupProduct[];
@@ -153,6 +159,8 @@ type SourceAssignment = BackupAssignment & { deviceId: number };
 
 export type BackupSource = {
   settings: AppSettings;
+  /** 没选过场景为 null */
+  scene: Scene | null;
   offices: { id: number; name: string }[];
   products: SourceProduct[];
   packs: SourcePack[];
@@ -197,6 +205,7 @@ export function buildBackup(
     exportedAt: now.toISOString(),
     scope: included,
     settings: included.includes('settings') ? source.settings : null,
+    ...(included.includes('settings') && source.scene ? { scene: source.scene } : {}),
     offices: offices.map((office) => office.name),
     products: source.products
       .filter((product) => included.includes(product.kind) && officeName.has(product.officeId))
@@ -614,6 +623,7 @@ export function parseBackup(text: string): ParseResult {
       exportedAt,
       scope,
       settings: scope.includes('settings') ? parseSettings(root.settings) : null,
+      ...(scope.includes('settings') && isScene(root.scene) ? { scene: root.scene } : {}),
       offices,
       products,
       devices,

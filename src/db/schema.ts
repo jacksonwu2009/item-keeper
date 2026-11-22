@@ -3,7 +3,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { CONFIG_CATEGORIES, splitLegacyModel } from '../lib/devicePresets';
 
 export const DATABASE_NAME = 'item-keeper.db';
-const DATABASE_VERSION = 8;
+const DATABASE_VERSION = 9;
 
 /**
  * 表结构
@@ -210,6 +210,12 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
       ALTER TABLE device ADD COLUMN storage TEXT;
     `);
     await splitLegacyDeviceModels(db);
+  }
+
+  if (currentVersion > 0 && currentVersion < 9) {
+    // 使用场景（家庭 / 办公，lib/terms.ts）：升级上来的老用户记成办公，界面和以前一样，也不弹首次选择。
+    // 新装的（currentVersion 为 0）不写，打开时让用户选
+    await db.runAsync(`INSERT OR IGNORE INTO setting (key, value) VALUES ('usage.scene', '"office"')`);
   }
 
   await db.execAsync(`PRAGMA user_version = ${DATABASE_VERSION}`);

@@ -9,6 +9,7 @@ import { ALL_OFFICES } from '../db/offices';
 import { EMPTY_REPORT_SOURCE, loadReportSource } from '../db/report';
 import { useFocusData } from '../hooks/useFocusData';
 import { useOffice } from '../hooks/useOffice';
+import { useTerms } from '../hooks/useScene';
 import { toCsv } from '../lib/csv';
 import { formatShortDate, toDateStr, todayStr } from '../lib/dates';
 import { shareCsv } from '../lib/exportCsv';
@@ -55,6 +56,7 @@ function localDay(iso: string): string {
 export default function ReportScreen() {
   const db = useSQLiteContext();
   const office = useOffice();
+  const terms = useTerms();
   const [officeChoice, setOfficeChoice] = useState<number>(office.filterId ?? ALL_OFFICES);
   const [periodKey, setPeriodKey] = useState<ReportPeriodKey>('thisMonth');
   const [showAllDetails, setShowAllDetails] = useState(false);
@@ -123,7 +125,7 @@ export default function ReportScreen() {
       <Card>
         {office.multiple ? (
           <View style={reportStyles.group}>
-            <Label>办公点</Label>
+            <Label>{terms.place}</Label>
             <ChoiceChips
               options={[
                 { value: ALL_OFFICES, label: '全部' },

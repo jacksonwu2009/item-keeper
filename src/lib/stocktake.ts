@@ -3,6 +3,7 @@
  */
 import { toCsv } from './csv';
 import { planConsumption, roundQty, type BatchForConsume } from './stock';
+import { currentTerms } from './terms';
 
 export type StocktakeKind = 'food' | 'daily' | 'devices';
 export type StocktakeStatus = 'open' | 'done' | 'cancelled';
@@ -46,10 +47,9 @@ export function describeKinds(kinds: readonly StocktakeKind[]): string {
  */
 export type Absence = 'deleted' | 'moved' | null;
 
-export const ABSENCE_LABEL: Record<Exclude<Absence, null>, string> = {
-  deleted: '已经删除，完成时跳过',
-  moved: '已移到别的办公点或分类，完成时跳过',
-};
+export function absenceLabel(absence: Exclude<Absence, null>): string {
+  return absence === 'deleted' ? '已经删除，完成时跳过' : `已移到别的${currentTerms().place}或分类，完成时跳过`;
+}
 
 /** 每一项的盘点结果 */
 export type CountState = 'uncounted' | 'match' | 'surplus' | 'deficit';

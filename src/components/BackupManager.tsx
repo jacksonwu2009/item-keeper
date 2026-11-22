@@ -8,10 +8,13 @@ import { listProducts } from '../db/stock';
 import { listOpenStocktakeScopes } from '../db/stocktake';
 import { useFocusData } from '../hooks/useFocusData';
 import { useOffice } from '../hooks/useOffice';
+import { useTerms } from '../hooks/useScene';
 import { ALL_SCOPES, SCOPE_LABEL, type BackupData, type BackupScope, type BackupSummary } from '../lib/backup';
+import { notifyDataChanged } from '../lib/dataEvents';
 import { exportBackup, importBackup, pickBackup, readUndoSnapshot, undoLastImport } from '../lib/dataTransfer';
 import { diffDays, formatDateTime, toDateStr, todayStr } from '../lib/dates';
 import { stocktakesClearedByImport, type OpenStocktakeScope } from '../lib/stocktake';
+import { currentTerms } from '../lib/terms';
 import { colors, font } from '../theme';
 import { Footnote } from './ListRows';
 import { Button, Card, Label, MultiChips, Sheet } from './ui';
@@ -44,7 +47,7 @@ function describeReplaced(scope: readonly BackupScope[], counts: Counts): string
 
 /** 「上次备份：11月18日 15:20（3 天前）」；没导出过写明（设置页「导入导出」一行下面也用这句） */
 export function describeLastExport(lastExportAt: string | null): string {
-  if (!lastExportAt) return '上次备份：还没导出过（分类、办公点都全选，点「导出全部」导出一次就算）。';
+  if (!lastExportAt) return `上次备份：还没导出过（分类、${currentTerms().place}都全选，点「导出全部」导出一次就算）。`;
   const days = diffDays(todayStr(), toDateStr(new Date(lastExportAt)));
   return `上次备份：${formatDateTime(lastExportAt)}${days > 0 ? `（${days} 天前）` : ''}。`;
 }
@@ -61,6 +64,7 @@ type DataNotice = { text: string; tone: 'ok' | 'error' };
 export function BackupManager() {
   const db = useSQLiteContext();
   const office = useOffice();
+  const terms = useTerms();
   const loader = useCallback(async () => {
     const [products, devices, undo, openStocktakes, lastExportAt] = await Promise.all([
       listProducts(db),
@@ -154,13 +158,15 @@ export function BackupManager() {
       setPending(null);
       setDataNotice(
         undoSaved
-          ? { text: '已导入，没选的办公点和分类没动。导入前的数据留了一份，可以撤销。', tone: 'ok' }
+          ? { text: `已导入，没选的${terms.place}和分类没动。导入前的数据留了一份，可以撤销。`, tone: 'ok' }
           : {
-              text: '已导入，没选的办公点和分类没动。但导入前的数据没能留底（手机存储可能满了），这次撤销不了。',
+              text: `已导入，没选的${terms.place}和分类没动。但导入前的数据没能留底（手机存储可能满了），这次撤销不了。`,
               tone: 'error',
             },
       );
       await Promise.all([reload(), office.reload()]);
+      // 导入可能换了使用场景（设置里带了 scene）；别的页面也跟着重新读
+      notifyDataChanged();
     } catch (error) {
       setPending(null);
       setDataNotice({
@@ -188,6 +194,7 @@ export function BackupManager() {
           try {
             const restored = await undoLastImport(db);
             await office.reload();
+            notifyDataChanged();
             setDataNotice(
               restored ? { text: '已换回导入前的数据。', tone: 'ok' } : { text: '找不到导入前的数据。', tone: 'error' },
             );
@@ -208,14 +215,14 @@ export function BackupManager() {
       <View style={backupStyles.notes}>
         <Footnote>
           数据只存在这台手机上。导出会生成一个文件（.json），用微信、TypeX、隔空投送等发给别的手机，对方在这里导入；换手机、备份也用它。
-          {office.multiple ? '每个办公点由一台手机负责记，定期把自己办公点导出发给汇总的人，对方导入时只替换这个办公点。' : ''}
+          {office.multiple ? `每个${terms.place}由一台手机负责记，定期把自己${terms.place}导出发给汇总的人，对方导入时只替换这个${terms.place}。` : ''}
         </Footnote>
         <Footnote>{describeLastExport(data.lastExportAt)}</Footnote>
       </View>
       <Card>
         {office.multiple ? (
           <View style={backupStyles.group}>
-            <Label>导出哪些办公点</Label>
+            <Label>导出哪些{terms.place}</Label>
             <MultiChips
               options={office.offices.map((item) => ({ value: String(item.id), label: item.name }))}
               values={chosenExportOffices.map(String)}
@@ -296,7 +303,7 @@ export function BackupManager() {
           </Card>
           {pending.data.offices.length > 1 ? (
             <View style={backupStyles.group}>
-              <Label>导入哪些办公点</Label>
+              <Label>导入哪些{terms.place}</Label>
               <MultiChips
                 options={pending.data.offices.map((name) => ({ value: name, label: name }))}
                 values={importOffices}
@@ -373,18 +380,18 @@ function importPlanText({
   if (!scope.length) return '至少选一类。';
   const dataScope = scope.filter((item) => item !== 'settings');
   const names = fileOffices.filter((name) => chosenOffices.includes(name));
-  if (dataScope.length && !names.length) return '至少选一个办公点。';
+  if (dataScope.length && !names.length) return `至少选一个${currentTerms().place}。`;
   const parts: string[] = [];
   if (dataScope.length) {
     for (const name of names) {
       parts.push(exists(name) ? `${name}的${describeReplaced(dataScope, countsOf(name))}` : `${name}（本机还没有，会新建）`);
     }
   }
-  if (scope.includes('settings')) parts.push('提醒设置');
+  if (scope.includes('settings')) parts.push(SCOPE_LABEL.settings);
   const stocktakeNote = clearedStocktakes.length
     ? `会清掉${clearedStocktakes.map((name) => `「${name}」`).join('、')}进行中的盘点（已录的实盘数不保留）。`
     : '';
-  return `会替换本机的：${parts.join('；')}。没选的办公点和分类不动。${stocktakeNote}替换前会自动留一份，导错了可以撤销。`;
+  return `会替换本机的：${parts.join('；')}。没选的${currentTerms().place}和分类不动。${stocktakeNote}替换前会自动留一份，导错了可以撤销。`;
 }
 
 const backupStyles = StyleSheet.create({

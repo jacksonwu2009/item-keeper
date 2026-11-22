@@ -2,6 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { DEFAULT_BACKUP_REMINDER_DAYS } from '../lib/backupReminder';
 import type { ReminderSettings } from '../lib/reminderPlan';
+import { isScene, placeToRenameForHome, termsFor, type Scene } from '../lib/terms';
 
 export type AppSettings = ReminderSettings & {
   /** 新建食品 / 日用品时默认的库存下限 */
@@ -83,4 +84,40 @@ export async function getDataSince(db: SQLiteDatabase): Promise<string | null> {
      )`,
   );
   return row?.since ?? null;
+}
+
+/**
+ * 使用场景（家庭 / 办公）：只决定界面上的叫法（lib/terms.ts）。没选过返回 null（新装的手机，打开时让用户选）。
+ * 不放进 AppSettings：AppSettings 每项都有默认值，分不出「没选过」；备份时单独写 scene 字段（lib/backup.ts）。
+ */
+const SCENE_KEY = 'usage.scene';
+
+export async function getScene(db: SQLiteDatabase): Promise<Scene | null> {
+  const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM setting WHERE key = ?', [SCENE_KEY]);
+  if (!row) return null;
+  try {
+    const parsed: unknown = JSON.parse(row.value);
+    return isScene(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 写场景，不开事务（导入备份时在导入的事务里调）。
+ * renameDefaultPlace：切到家庭时，名字还是「默认办公点」的地点改叫「家」（已经有「家」就不改）；撤销导入时不改名，原样还原。
+ */
+export async function writeScene(db: SQLiteDatabase, scene: Scene, renameDefaultPlace = true): Promise<void> {
+  await db.runAsync(
+    'INSERT INTO setting (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+    [SCENE_KEY, JSON.stringify(scene)],
+  );
+  if (scene !== 'home' || !renameDefaultPlace) return;
+  const names = (await db.getAllAsync<{ name: string }>('SELECT name FROM office')).map((row) => row.name);
+  const from = placeToRenameForHome(names);
+  if (from) await db.runAsync('UPDATE office SET name = ? WHERE name = ?', [termsFor('home').defaultPlaceName, from]);
+}
+
+export async function saveScene(db: SQLiteDatabase, scene: Scene): Promise<void> {
+  await db.withTransactionAsync(() => writeScene(db, scene));
 }

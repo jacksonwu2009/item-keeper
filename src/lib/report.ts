@@ -8,6 +8,7 @@ import { describeConfig, hasComputerConfig } from './devicePresets';
 import { perBaseUnitPrice, roundTotalPrice } from './price';
 import { expiryStatus, isLowStock } from './status';
 import { KIND_LABEL, roundQty, type StockKind } from './stock';
+import { currentTerms } from './terms';
 import { describeAccessories, warrantyStatus, type Accessory } from './warranty';
 
 // ---------- 时间段 ----------
@@ -520,7 +521,7 @@ type OfficeNameOf = (officeId: number) => string;
 
 export function movementTable(movements: readonly ReportMovement[], officeName: OfficeNameOf): CsvTable {
   return {
-    header: ['时间', '办公点', '分类', '物品', '类型', '数量变化', '单位', '按什么单位输入', '单价', '总价', '原因/备注'],
+    header: ['时间', currentTerms().place, '分类', '物品', '类型', '数量变化', '单位', '按什么单位输入', '单价', '总价', '原因/备注'],
     rows: movements.map((movement) => [
       formatLocalTimestamp(movement.happenedAt),
       officeName(movement.officeId),
@@ -561,7 +562,7 @@ export function stockTable(
       rows.push([...base, roundQty(batch.quantity), product.unit, batch.expiryDate, batch.addedOn, product.location]);
     }
   }
-  return { header: ['办公点', '分类', '物品', '条码', '数量', '单位', '过期日期', '入库日期', '存放位置'], rows };
+  return { header: [currentTerms().place, '分类', '物品', '条码', '数量', '单位', '过期日期', '入库日期', '存放位置'], rows };
 }
 
 export function deviceTable(
@@ -571,7 +572,7 @@ export function deviceTable(
 ): CsvTable {
   return {
     header: [
-      '办公点',
+      currentTerms().place,
       '类别',
       '名称',
       '型号',
@@ -616,5 +617,5 @@ export function deviceTable(
 
 /** 导出文件名：「出入库明细-北京-2026年11月.csv」；全部办公点写「全部办公点」 */
 export function reportFileName(title: string, officeLabel: string | null, periodLabel: string | null): string {
-  return [title, officeLabel ?? '全部办公点', periodLabel].filter(Boolean).join('-') + '.csv';
+  return [title, officeLabel ?? `全部${currentTerms().place}`, periodLabel].filter(Boolean).join('-') + '.csv';
 }

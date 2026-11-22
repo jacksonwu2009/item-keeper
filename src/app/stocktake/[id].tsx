@@ -34,6 +34,7 @@ import {
 } from '../../db/stocktake';
 import { useFocusData } from '../../hooks/useFocusData';
 import { useOffice } from '../../hooks/useOffice';
+import { useTerms } from '../../hooks/useScene';
 import { notifyDataChanged } from '../../lib/dataEvents';
 import { formatDateTime, todayStr } from '../../lib/dates';
 import { shareCsv } from '../../lib/exportCsv';
@@ -42,7 +43,7 @@ import { formatBreakdown, toBaseQty, type PackUnit } from '../../lib/packs';
 import { takeScanResult } from '../../lib/scanHandoff';
 import { formatQty, parseQty } from '../../lib/stock';
 import {
-  ABSENCE_LABEL,
+  absenceLabel,
   buildStocktakeCsv,
   countDifference,
   countState,
@@ -78,6 +79,7 @@ type CountTarget = { itemId: number; unit: string | null };
 export default function StocktakeScreen() {
   const db = useSQLiteContext();
   const office = useOffice();
+  const terms = useTerms();
   const params = useLocalSearchParams<{ id: string }>();
   const stocktakeId = Number(params.id);
   const scanTarget = `stocktake-${stocktakeId}`;
@@ -127,7 +129,7 @@ export default function StocktakeScreen() {
     return (
       <Screen>
         <Stack.Screen options={{ title: '盘点' }} />
-        <Empty icon="help-circle-outline" title="找不到这次盘点" text="可能所在的办公点已经删除了。" />
+        <Empty icon="help-circle-outline" title="找不到这次盘点" text={`可能所在的${terms.place}已经删除了。`} />
       </Screen>
     );
   }
@@ -272,7 +274,7 @@ export default function StocktakeScreen() {
                       onPress={() => {
                         setMessage(null);
                         if (item.absence) {
-                          Alert.alert(item.name, `${ABSENCE_LABEL[item.absence]}，不用盘。`);
+                          Alert.alert(item.name, `${absenceLabel(item.absence)}，不用盘。`);
                           return;
                         }
                         setCountTarget({ itemId: item.id, unit: null });
@@ -336,7 +338,7 @@ function ItemRow({ item, first, onPress }: { item: StocktakeItem; first: boolean
           {item.name}
         </Text>
         <Text style={item.absence ? pageStyles.note : pageStyles.sub}>
-          {item.absence ? ABSENCE_LABEL[item.absence] : detail}
+          {item.absence ? absenceLabel(item.absence) : detail}
         </Text>
       </View>
       <RowChip text={describeDifference(item, item.unit)} tone={STATE_TONE[state]} />
@@ -360,6 +362,7 @@ function CountSheet({
   onSave: (countedQty: number) => Promise<void>;
   onClear: () => Promise<void>;
 }) {
+  const terms = useTerms();
   const isDevice = item.itemType === 'device';
   const [qtyText, setQtyText] = useState(item.countedQty === null || initialUnit ? '' : formatQty(item.countedQty));
   const [entryUnit, setEntryUnit] = useState(initialUnit ?? item.unit);
@@ -401,7 +404,7 @@ function CountSheet({
           max={99999}
           placeholder="数到几件"
           error={showErrors ? qtyError : null}
-          hint="借出去的不算，只数办公点里的。"
+          hint={`借出去的不算，只数${terms.place}里的。`}
           autoFocus
         />
       ) : (
