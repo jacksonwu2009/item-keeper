@@ -206,14 +206,14 @@ export function DeviceForm({
           required
           value={name}
           onChangeText={setName}
-          placeholder="如 MacBook Pro 14 英寸"
+          placeholder={home ? '如 客厅电视' : '如 MacBook Pro 14 英寸'}
           error={shown(errors.name)}
         />
         <Field
           label="型号"
           value={model}
           onChangeText={setModel}
-          placeholder={showConfig ? '型号编号等，如 MRX33CH/A，可不填' : '如 U2723QE，可不填'}
+          placeholder={showConfig ? '型号编号等，如 MRX33CH/A，可不填' : home ? '如 KD-65X85L，可不填' : '如 U2723QE，可不填'}
         />
         {showConfig ? (
           <View style={formStyles.config}>
