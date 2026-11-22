@@ -2,6 +2,7 @@ import { Slot, Stack } from 'expo-router';
 import { Platform } from 'react-native';
 
 import { useOffice } from '../hooks/useOffice';
+import { IOS_BEFORE_LIQUID_GLASS, IOS_LIQUID_GLASS } from '../lib/liquidGlass';
 import { TAB_TITLES, type TabRoute } from '../lib/tabs';
 import { colors } from '../theme';
 import { OfficeSwitcher } from './OfficeSwitcher';
@@ -11,7 +12,6 @@ import { OfficeSwitcher } from './OfficeSwitcher';
  * 或者滑动一次以后消失（UIKit 的已知问题，Apple 建议 iOS 26 起别再自定义标题栏底色；React Navigation 开大标题时默认也不设）。
  * 不设底色时，在页面顶部标题栏是透明的，露出来的就是页面的 colors.bg；往上滑以后顶部那条栏由系统画。
  */
-const IOS_BEFORE_LIQUID_GLASS = Platform.OS === 'ios' && Number.parseInt(String(Platform.Version), 10) < 26;
 
 /**
  * 一个底部标签外面的那层（app/(tabs) 下每个标签文件夹的 _layout 用它）：
@@ -41,7 +41,12 @@ function LargeTitleStack({ route, withOffice }: { route: TabRoute; withOffice: b
         headerTitleStyle: { color: colors.ink, fontWeight: '600' },
         headerShadowVisible: false,
         contentStyle: { backgroundColor: colors.bg },
-        headerRight: headerRightShown ? () => <OfficeSwitcher /> : undefined,
+        headerRight: headerRightShown && !IOS_LIQUID_GLASS ? () => <OfficeSwitcher /> : undefined,
+        // iOS 26 起系统给右上角的按钮套一层共享的玻璃底，办公点切换自己有样子，关掉那层底（不然像两层）
+        unstable_headerRightItems:
+          headerRightShown && IOS_LIQUID_GLASS
+            ? () => [{ type: 'custom', element: <OfficeSwitcher />, hidesSharedBackground: true }]
+            : undefined,
       }}
     >
       <Stack.Screen name="index" options={{ title: TAB_TITLES[route] }} />

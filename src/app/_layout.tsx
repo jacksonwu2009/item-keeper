@@ -9,6 +9,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { HeaderBackButton } from '../components/HeaderBackButton';
 import { DATABASE_NAME, migrateDbIfNeeded } from '../db/schema';
 import { OfficeProvider } from '../hooks/useOffice';
+import { IOS_LIQUID_GLASS } from '../lib/liquidGlass';
 import { rescheduleReminders, setupNotifications } from '../lib/notifications';
 import { colors } from '../theme';
 
@@ -55,15 +56,20 @@ export default function RootLayout() {
           <Stack
             screenOptions={({ navigation }) => ({
               headerStyle: { backgroundColor: colors.bg },
-              headerTintColor: colors.accent,
+              // iOS 26 起左上角是系统返回键（玻璃圆钮里一个箭头），箭头用深色，和别的平台那个浅灰圆钮里的箭头一样
+              headerTintColor: IOS_LIQUID_GLASS ? colors.ink : colors.accent,
               headerTitleStyle: { color: colors.ink, fontWeight: '700', fontSize: 20 },
               headerShadowVisible: false,
               headerBackTitle: '返回',
+              headerBackButtonDisplayMode: 'minimal',
               contentStyle: { backgroundColor: colors.bg },
               // 左上角：有上一页时是鸿蒙版那样的浅灰圆形返回按钮；没有上一页时和原来一样不放按钮。
               // 有没有上一页用标题栏给的 canGoBack 判断（按画标题栏时的导航状态），
-              // 不用 navigation.canGoBack()：刚跳过来那一刻它还认为没有上一页，返回按钮会漏掉
-              headerLeft: ({ canGoBack }) => (canGoBack ? <HeaderBackButton onPress={() => navigation.goBack()} /> : null),
+              // 不用 navigation.canGoBack()：刚跳过来那一刻它还认为没有上一页，返回按钮会漏掉。
+              // iOS 26 起不放自己的按钮：系统会给它再套一层玻璃底（圆里套圆），改用系统返回键（只显示箭头）
+              headerLeft: IOS_LIQUID_GLASS
+                ? undefined
+                : ({ canGoBack }) => (canGoBack ? <HeaderBackButton onPress={() => navigation.goBack()} /> : null),
             })}
           >
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
