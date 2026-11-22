@@ -143,8 +143,6 @@ function StartSheet({
 }) {
   const office = useOffice();
   const { scene, terms } = useScene();
-  // 家庭场景不盘设备（设备只记谁在用和保修，没有在库数量）
-  const kindOptions = scene === 'home' ? STOCKTAKE_KINDS.filter((kind) => kind !== 'devices') : STOCKTAKE_KINDS;
   const [officeId, setOfficeId] = useState(defaultOfficeId);
   const [kinds, setKinds] = useState<StocktakeKind[]>(['food', 'daily']);
   const [busy, setBusy] = useState(false);
@@ -189,11 +187,13 @@ function StartSheet({
       <View style={listStyles.group}>
         <Label>盘哪些</Label>
         <MultiChips
-          options={kindOptions.map((kind) => ({ value: kind, label: STOCKTAKE_KIND_LABEL[kind] }))}
+          options={STOCKTAKE_KINDS.map((kind) => ({ value: kind, label: STOCKTAKE_KIND_LABEL[kind] }))}
           values={kinds}
           onChange={setKinds}
         />
-        {kindOptions.includes('devices') ? <Text style={listStyles.hint}>设备盘的是在库数量（总数减去借出的）。</Text> : null}
+        <Text style={listStyles.hint}>
+          {scene === 'home' ? '设备盘的是一共有几件（谁在用的也算）。' : '设备盘的是在库数量（总数减去借出的）。'}
+        </Text>
       </View>
       {error ? <Text style={listStyles.error}>{error}</Text> : null}
       {openId !== null ? (

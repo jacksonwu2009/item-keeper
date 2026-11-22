@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { createDevice, issueDevice, listAssignments, listDevices, setDeviceHolder, type DeviceInput } from '../src/db/devices';
+import { listStocktakeItems, recordCount, startStocktake } from '../src/db/stocktake';
 import { buildMessage, planReminders, warrantyDueOn, type ReminderSettings } from '../src/lib/reminderPlan';
 import { deviceTable, type ReportDevice } from '../src/lib/report';
 import { setActiveScene } from '../src/lib/terms';
@@ -71,6 +72,27 @@ describe('谁在用', () => {
     await issueDevice(db, id, { person: long, quantity: 1, issuedOn: '2026-11-01', returnedOn: null, note: null });
     await setDeviceHolder(db, id, long, '2026-11-22');
     assert.equal((await listAssignments(db, id)).length, 1);
+  });
+});
+
+describe('盘设备', () => {
+  it('家庭场景数一共有几件（谁在用的也算）；办公场景数在库', async () => {
+    const db = await openDb();
+    const id = await createDevice(db, { ...tv, quantity: 2 });
+    await setDeviceHolder(db, id, '孩子', '2026-11-22');
+    const stocktakeId = await startStocktake(db, 1, ['devices']);
+    try {
+      setActiveScene('home');
+      let [item] = await listStocktakeItems(db, stocktakeId);
+      assert.equal(item.bookQty, 2);
+      await recordCount(db, item.id, 2);
+      [item] = await listStocktakeItems(db, stocktakeId);
+      assert.equal(item.expectedQty, 2);
+    } finally {
+      setActiveScene('office');
+    }
+    const [office] = await listStocktakeItems(db, stocktakeId);
+    assert.equal(office.bookQty, 1);
   });
 });
 

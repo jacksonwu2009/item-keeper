@@ -2,7 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { todayStr } from '../lib/dates';
 import { roundQty } from '../lib/stock';
-import { currentTerms } from '../lib/terms';
+import { currentScene, currentTerms } from '../lib/terms';
 import {
   adjustmentNote,
   countState,
@@ -52,7 +52,7 @@ export type StocktakeItem = {
   countedAt: string | null;
   /** 完成时对库存实际调整了多少；设备、未盘为 null */
   adjustedQty: number | null;
-  /** 现在的账面数：物品是批次合计，设备是在库数量（总数 − 借出） */
+  /** 现在的账面数：物品是批次合计；设备办公场景是在库数量（总数 − 借出），家庭场景是总数（谁在用的也算） */
   bookQty: number;
   /** 物品条码或设备序列号，搜索用 */
   code: string | null;
@@ -67,21 +67,28 @@ type StocktakeRow = Omit<Stocktake, 'kinds'> & { kinds: string };
 const STOCKTAKE_COLUMNS = `
   s.id, s.office_id AS officeId, s.kinds, s.status, s.started_at AS startedAt, s.finished_at AS finishedAt, s.note`;
 
-/** 一项现在的账面数 */
-const BOOK_QTY_SQL = `
+/**
+ * 一项现在的账面数。设备按当前使用场景：办公场景盘在库（总数 − 没还的领用），家庭场景盘一共有几件
+ * （家庭场景的「谁在用」也存成领用记录，在用的也在家里）。清点时记下的 expected_qty 是那一刻按当时场景算的。
+ */
+function bookQtySql(): string {
+  const deviceQty =
+    currentScene() === 'home'
+      ? 'd.quantity'
+      : `d.quantity - COALESCE((
+        SELECT SUM(a.quantity) FROM device_assignment a WHERE a.device_id = d.id AND a.returned_on IS NULL), 0)`;
+  return `
   CASE i.item_type
     WHEN 'product' THEN (
       SELECT COALESCE(SUM(b.quantity), 0) FROM stock_batch b WHERE b.product_id = i.item_id AND b.quantity > 0)
-    ELSE COALESCE((
-      SELECT d.quantity - COALESCE((
-        SELECT SUM(a.quantity) FROM device_assignment a WHERE a.device_id = d.id AND a.returned_on IS NULL), 0)
-        FROM device d WHERE d.id = i.item_id), 0)
+    ELSE COALESCE((SELECT ${deviceQty} FROM device d WHERE d.id = i.item_id), 0)
   END`;
+}
 
-const ITEM_COLUMNS = `
+const itemColumns = () => `
   i.id, i.stocktake_id AS stocktakeId, i.item_type AS itemType, i.item_id AS itemId, i.kind, i.name, i.unit,
   i.expected_qty AS expectedQty, i.counted_qty AS countedQty, i.counted_at AS countedAt, i.adjusted_qty AS adjustedQty,
-  ${BOOK_QTY_SQL} AS bookQty,
+  ${bookQtySql()} AS bookQty,
   CASE i.item_type
     WHEN 'product' THEN (SELECT p.barcode FROM stock_product p WHERE p.id = i.item_id)
     ELSE (SELECT d.serial_no FROM device d WHERE d.id = i.item_id)
@@ -176,7 +183,7 @@ export async function listStocktakes(db: SQLiteDatabase, officeId: number | null
 
 export async function listStocktakeItems(db: SQLiteDatabase, stocktakeId: number): Promise<StocktakeItem[]> {
   const rows = await db.getAllAsync<ItemRow>(
-    `SELECT ${ITEM_COLUMNS}
+    `SELECT ${itemColumns()}
        FROM stocktake_item i
       WHERE i.stocktake_id = ?
       ORDER BY CASE i.kind WHEN 'food' THEN 0 WHEN 'daily' THEN 1 ELSE 2 END, i.name COLLATE NOCASE, i.id`,
@@ -187,7 +194,7 @@ export async function listStocktakeItems(db: SQLiteDatabase, stocktakeId: number
 
 async function getItem(db: SQLiteDatabase, itemId: number): Promise<StocktakeItem | null> {
   const row = await db.getFirstAsync<ItemRow>(
-    `SELECT ${ITEM_COLUMNS} FROM stocktake_item i WHERE i.id = ?`,
+    `SELECT ${itemColumns()} FROM stocktake_item i WHERE i.id = ?`,
     [itemId],
   );
   return row ? toItem(row) : null;

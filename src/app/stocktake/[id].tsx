@@ -34,7 +34,7 @@ import {
 } from '../../db/stocktake';
 import { useFocusData } from '../../hooks/useFocusData';
 import { useOffice } from '../../hooks/useOffice';
-import { useTerms } from '../../hooks/useScene';
+import { useScene, useTerms } from '../../hooks/useScene';
 import { notifyDataChanged } from '../../lib/dataEvents';
 import { formatDateTime, todayStr } from '../../lib/dates';
 import { shareCsv } from '../../lib/exportCsv';
@@ -362,7 +362,9 @@ function CountSheet({
   onSave: (countedQty: number) => Promise<void>;
   onClear: () => Promise<void>;
 }) {
-  const terms = useTerms();
+  const { scene, terms } = useScene();
+  // 家庭场景设备盘一共有几件，办公场景盘在库
+  const home = scene === 'home';
   const isDevice = item.itemType === 'device';
   const [qtyText, setQtyText] = useState(item.countedQty === null || initialUnit ? '' : formatQty(item.countedQty));
   const [entryUnit, setEntryUnit] = useState(initialUnit ?? item.unit);
@@ -378,7 +380,7 @@ function CountSheet({
         ? '设备数量要是整数'
         : null;
   const breakdown = formatBreakdown(item.bookQty, item.unit, packs);
-  const bookText = `${isDevice ? '在库' : '账面'} ${formatQty(item.bookQty)} ${item.unit}${breakdown ? `（${breakdown}）` : ''}`;
+  const bookText = `${isDevice ? (home ? '一共' : '在库') : '账面'} ${formatQty(item.bookQty)} ${item.unit}${breakdown ? `（${breakdown}）` : ''}`;
 
   async function save(value: number) {
     setBusy(true);
@@ -397,14 +399,14 @@ function CountSheet({
       <Text style={sheetStyles.book}>{bookText}</Text>
       {isDevice ? (
         <NumberField
-          label="实际在库（件）"
+          label={home ? '实际有几件' : '实际在库（件）'}
           value={qtyText}
           onChangeText={setQtyText}
           suffix="件"
           max={99999}
           placeholder="数到几件"
           error={showErrors ? qtyError : null}
-          hint={`借出去的不算，只数${terms.place}里的。`}
+          hint={home ? '谁在用的也算上。' : `借出去的不算，只数${terms.place}里的。`}
           autoFocus
         />
       ) : (
@@ -459,6 +461,7 @@ function ResultView({
   scopeText: string;
   officeLabel: string | null;
 }) {
+  const home = useScene().scene === 'home';
   const [exporting, setExporting] = useState(false);
   const summary = summarizeCounts(items);
   const differences = items.filter((item) => {
@@ -508,7 +511,7 @@ function ResultView({
           )}
           {done && deviceDifferences > 0 ? (
             <Text style={pageStyles.warn}>
-              {deviceDifferences} 种设备有差异，设备数量没有自动改，请到设备里手动处理（改数量、登记领用或删除）。
+              {deviceDifferences} 种设备有差异，设备数量没有自动改，请到设备里手动处理（{home ? '改数量或删除' : '改数量、登记领用或删除'}）。
             </Text>
           ) : null}
         </Card>
