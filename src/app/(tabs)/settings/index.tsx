@@ -116,7 +116,7 @@ export default function SettingsScreen() {
         <ListCard>
           <ToggleRow
             title="到期提醒"
-            description="食品、日用品快到期和已过期时提醒"
+            description={scene === 'home' ? '食品、日用品快到期和已过期时提醒；设备保修到期前 30 天也提醒一次' : '食品、日用品快到期和已过期时提醒'}
             value={current.expiryEnabled}
             onChange={(value) => update({ expiryEnabled: value })}
           />

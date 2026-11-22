@@ -16,17 +16,24 @@ import {
 import { useFocusData } from '../../../hooks/useFocusData';
 import { usePendingDelete } from '../../../hooks/usePendingDelete';
 import { useOffice } from '../../../hooks/useOffice';
+import { useScene } from '../../../hooks/useScene';
 import { diffDays, formatDate, todayStr } from '../../../lib/dates';
 import { describeConfig } from '../../../lib/devicePresets';
 import { warrantyStatus } from '../../../lib/warranty';
 import { colors, font, radius } from '../../../theme';
 
 type ListMode = 'device' | 'person';
-type Filter = 'all' | 'out' | 'in';
+/** 办公场景按借出、在库筛；家庭场景按保修筛 */
+type Filter = 'all' | 'out' | 'in' | 'warrantySoon' | 'warrantyExpired';
+const HOME_FILTERS: Filter[] = ['all', 'warrantySoon', 'warrantyExpired'];
+const OFFICE_FILTERS: Filter[] = ['all', 'out', 'in'];
 
 export default function DevicesScreen() {
   const db = useSQLiteContext();
   const office = useOffice();
+  const { scene } = useScene();
+  // 家庭场景：没有领用、按使用人和借出 / 在库，改成看保修
+  const home = scene === 'home';
   const officeFilter = office.filterId;
   const showOffice = office.multiple && officeFilter === null;
   const loader = useCallback(async () => {
@@ -40,8 +47,11 @@ export default function DevicesScreen() {
     devices: [] as DeviceSummary[],
     active: [] as ActiveAssignment[],
   });
-  const [mode, setMode] = useState<ListMode>('device');
-  const [filter, setFilter] = useState<Filter>('all');
+  const [chosenMode, setMode] = useState<ListMode>('device');
+  const [chosenFilter, setFilter] = useState<Filter>('all');
+  const mode: ListMode = home ? 'device' : chosenMode;
+  // 换了场景，另一个场景的筛选就不算了
+  const filter: Filter = (home ? HOME_FILTERS : OFFICE_FILTERS).includes(chosenFilter) ? chosenFilter : 'all';
   const [query, setQuery] = useState('');
   const keyword = query.trim().toLowerCase();
   const today = todayStr();
@@ -59,6 +69,8 @@ export default function DevicesScreen() {
     const matched = devices.filter((device) => {
       if (filter === 'out' && device.outQty <= 0) return false;
       if (filter === 'in' && device.quantity - device.outQty <= 0) return false;
+      if (filter === 'warrantySoon' && warrantyStatus(device.warrantyUntil, today)?.level !== 'soon') return false;
+      if (filter === 'warrantyExpired' && warrantyStatus(device.warrantyUntil, today)?.level !== 'expired') return false;
       if (!keyword) return true;
       return [
         device.name,
@@ -81,7 +93,7 @@ export default function DevicesScreen() {
       groups.set(device.category, list);
     }
     return Array.from(groups, ([title, data]) => ({ title, data }));
-  }, [devices, filter, keyword]);
+  }, [devices, filter, keyword, today]);
 
   const personSections = useMemo(() => {
     const groups = new Map<string, ActiveAssignment[]>();
@@ -96,6 +108,8 @@ export default function DevicesScreen() {
   }, [active, keyword]);
 
   const totalOut = active.reduce((sum, assignment) => sum + assignment.quantity, 0);
+  const totalQty = devices.reduce((sum, device) => sum + device.quantity, 0);
+  const warrantySoon = devices.filter((device) => warrantyStatus(device.warrantyUntil, today)?.level === 'soon').length;
 
   const header = (
     <View style={deviceStyles.header}>
@@ -118,20 +132,32 @@ export default function DevicesScreen() {
         <>
           {/* 照鸿蒙版的顺序：搜索框、按设备 / 按使用人、筛选，统计数字贴着下面的列表 */}
           <SearchField
-            placeholder={mode === 'device' ? '搜索名称、型号、序列号或使用人' : '搜索使用人或设备'}
+            placeholder={home ? '搜索名称、型号、序列号或谁在用' : mode === 'device' ? '搜索名称、型号、序列号或使用人' : '搜索使用人或设备'}
             value={query}
             onChangeText={setQuery}
             clearButtonMode="while-editing"
           />
-          <Segmented
-            options={[
-              { value: 'device', label: '按设备' },
-              { value: 'person', label: '按使用人' },
-            ]}
-            value={mode}
-            onChange={setMode}
-          />
-          {mode === 'device' ? (
+          {home ? null : (
+            <Segmented
+              options={[
+                { value: 'device', label: '按设备' },
+                { value: 'person', label: '按使用人' },
+              ]}
+              value={mode}
+              onChange={setMode}
+            />
+          )}
+          {home ? (
+            <ChoiceChips
+              options={[
+                { value: 'all', label: '全部' },
+                { value: 'warrantySoon', label: '保修快到期' },
+                { value: 'warrantyExpired', label: '已过保' },
+              ]}
+              value={filter}
+              onChange={setFilter}
+            />
+          ) : mode === 'device' ? (
             <ChoiceChips
               options={[
                 { value: 'all', label: '全部' },
@@ -143,8 +169,9 @@ export default function DevicesScreen() {
             />
           ) : null}
           <Text style={deviceStyles.summary}>
-            共 {devices.length} 种设备，{devices.reduce((sum, device) => sum + device.quantity, 0)} 件；借出 {totalOut}{' '}
-            件
+            {home
+              ? `共 ${devices.length} 种设备，${totalQty} 件${warrantySoon ? `；${warrantySoon} 种保修 30 天内到期` : ''}`
+              : `共 ${devices.length} 种设备，${totalQty} 件；借出 ${totalOut} 件`}
           </Text>
           {mode === 'device' ? <Text style={deviceStyles.gestureHint}>点开看详情，长按编辑，向左滑删除</Text> : null}
         </>
@@ -156,7 +183,11 @@ export default function DevicesScreen() {
     <Empty
       icon="laptop-outline"
       title="还没有设备"
-      text="把电脑、显示器、键鼠这些登记进来，记下型号和数量；谁领走、哪天领、哪天还，都在设备详情里登记。"
+      text={
+        home
+          ? '把电视、冰箱、手机、电脑这些登记进来，记下哪天买的、保修到哪天；保修快到期时会提醒。'
+          : '把电脑、显示器、键鼠这些登记进来，记下型号和数量；谁领走、哪天领、哪天还，都在设备详情里登记。'
+      }
     />
   ) : (
     <Empty
@@ -166,7 +197,10 @@ export default function DevicesScreen() {
   );
 
   const undoBar = deletion.pending ? (
-    <UndoBar text={`已删除「${deletion.pending.label}」和它的领用记录`} onUndo={deletion.undo} />
+    <UndoBar
+      text={home ? `已删除「${deletion.pending.label}」` : `已删除「${deletion.pending.label}」和它的领用记录`}
+      onUndo={deletion.undo}
+    />
   ) : null;
 
   if (mode === 'person') {
@@ -236,7 +270,7 @@ export default function DevicesScreen() {
           const warranty = warrantyStatus(item.warrantyUntil, today);
           return (
             <SwipeRow
-              accessibilityLabel={`${item.name}，在库 ${available} 件，共 ${item.quantity} 件`}
+              accessibilityLabel={home ? `${item.name}，共 ${item.quantity} 件` : `${item.name}，在库 ${available} 件，共 ${item.quantity} 件`}
               onPress={() => router.push({ pathname: '/device/[id]', params: { id: String(item.id) } })}
               onLongPress={() => router.push({ pathname: '/device/edit/[id]', params: { id: String(item.id) } })}
               onDelete={() => deletion.remove(item.id, item.name)}
@@ -262,19 +296,36 @@ export default function DevicesScreen() {
                 ) : null}
                 {item.holders ? (
                   <Text style={deviceStyles.holders} numberOfLines={1}>
-                    使用人：{item.holders}
+                    {home ? '谁在用' : '使用人'}：{item.holders}
                   </Text>
                 ) : null}
-                {warranty && warranty.level !== 'ok' ? (
+                {home && item.purchaseDate ? (
+                  <Text style={deviceStyles.meta} numberOfLines={1}>
+                    {formatDate(item.purchaseDate)} 买的
+                  </Text>
+                ) : null}
+                {/* 家庭场景保修是重点：没过保的也写保修到哪天 */}
+                {warranty && (home || warranty.level !== 'ok') ? (
                   <View style={deviceStyles.warranty}>
-                    <Chip text={warranty.text} tone={warranty.level === 'expired' ? 'neutral' : 'warn'} />
+                    <Chip
+                      text={warranty.text}
+                      tone={warranty.level === 'expired' ? 'neutral' : warranty.level === 'soon' ? 'warn' : 'ok'}
+                    />
                   </View>
                 ) : null}
               </View>
-              <View style={deviceStyles.countBox}>
-                <Chip text={`在库 ${available}`} tone={available > 0 ? 'ok' : 'neutral'} />
-                <Text style={deviceStyles.meta}>共 {item.quantity}</Text>
-              </View>
+              {home ? (
+                item.quantity > 1 ? (
+                  <View style={deviceStyles.countBox}>
+                    <Text style={deviceStyles.meta}>共 {item.quantity}</Text>
+                  </View>
+                ) : null
+              ) : (
+                <View style={deviceStyles.countBox}>
+                  <Chip text={`在库 ${available}`} tone={available > 0 ? 'ok' : 'neutral'} />
+                  <Text style={deviceStyles.meta}>共 {item.quantity}</Text>
+                </View>
+              )}
               <Ionicons name="chevron-forward" size={18} color={colors.faint} />
             </SwipeRow>
           );

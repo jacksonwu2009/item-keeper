@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { DateField } from '../../components/DateField';
+import { ListCard, ListRow } from '../../components/ListRows';
 import { IntegerField } from '../../components/NumberField';
 import {
   Button,
@@ -27,12 +28,15 @@ import {
   listAccessories,
   listPeople,
   returnDevice,
+  setDeviceHolder,
+  HOLDER_NAME_MAX,
   updateAssignment,
   type Device,
   type DeviceAssignment,
 } from '../../db/devices';
 import { useFocusData } from '../../hooks/useFocusData';
 import { useOffice } from '../../hooks/useOffice';
+import { useScene } from '../../hooks/useScene';
 import { diffDays, formatDate, todayStr } from '../../lib/dates';
 import { hasComputerConfig } from '../../lib/devicePresets';
 import { describeAccessories, warrantyStatus, type Accessory } from '../../lib/warranty';
@@ -42,11 +46,15 @@ type SheetState =
   | { type: 'issue' }
   | { type: 'return'; assignment: DeviceAssignment }
   | { type: 'edit'; assignment: DeviceAssignment }
+  | { type: 'holder' }
   | null;
 
 export default function DeviceDetailScreen() {
   const db = useSQLiteContext();
   const office = useOffice();
+  const { scene, terms } = useScene();
+  // 家庭场景：不登记领用、退还，只记「谁在用」（还是存成领用记录），突出购买和保修
+  const home = scene === 'home';
   const { id } = useLocalSearchParams<{ id: string }>();
   const deviceId = Number(id);
   const [sheet, setSheet] = useState<SheetState>(null);
@@ -96,7 +104,8 @@ export default function DeviceDetailScreen() {
 
   function confirmDelete() {
     if (!device) return;
-    Alert.alert('删除这台设备？', `「${device.name}」和它的全部领用记录都会被删除，不能恢复。`, [
+    const what = home ? `「${device.name}」会被删除，不能恢复。` : `「${device.name}」和它的全部领用记录都会被删除，不能恢复。`;
+    Alert.alert('删除这台设备？', what, [
       { text: '取消', style: 'cancel' },
       {
         text: '删除',
@@ -122,23 +131,42 @@ export default function DeviceDetailScreen() {
             tone={warranty.level === 'expired' ? 'danger' : warranty.level === 'soon' ? 'warn' : 'ok'}
           />
         ) : null}
-        <View style={deviceDetail.counts}>
-          <Count label="总数" value={device.quantity} />
-          <Count label="借出" value={outQty} tone={outQty > 0 ? colors.info : undefined} />
-          <Count label="在库" value={available} tone={available > 0 ? colors.ok : undefined} />
-        </View>
-        <Button
-          title="登记领用"
-          icon="person-add-outline"
-          onPress={() => setSheet({ type: 'issue' })}
-          disabled={available <= 0}
-        />
-        {available <= 0 ? <Text style={deviceDetail.hint}>全部借出了，有人退还后才能再领。</Text> : null}
+        {home ? (
+          device.quantity > 1 ? (
+            <Text style={deviceDetail.sub}>共 {device.quantity} 件</Text>
+          ) : null
+        ) : (
+          <>
+            <View style={deviceDetail.counts}>
+              <Count label="总数" value={device.quantity} />
+              <Count label="借出" value={outQty} tone={outQty > 0 ? colors.info : undefined} />
+              <Count label="在库" value={available} tone={available > 0 ? colors.ok : undefined} />
+            </View>
+            <Button
+              title="登记领用"
+              icon="person-add-outline"
+              onPress={() => setSheet({ type: 'issue' })}
+              disabled={available <= 0}
+            />
+            {available <= 0 ? <Text style={deviceDetail.hint}>全部借出了，有人退还后才能再领。</Text> : null}
+          </>
+        )}
         {message ? <Text style={deviceDetail.message}>{message}</Text> : null}
       </Card>
 
-      <SectionTitle title={`正在使用（${active.length}）`} />
-      {active.length === 0 ? (
+      {home ? (
+        <ListCard>
+          <ListRow
+            title="谁在用"
+            value={active.length ? active.map((assignment) => assignment.person).join('、') : '没填'}
+            chevron
+            onPress={() => setSheet({ type: 'holder' })}
+          />
+        </ListCard>
+      ) : null}
+
+      {home ? null : <SectionTitle title={`正在使用（${active.length}）`} />}
+      {home ? null : active.length === 0 ? (
         <Card>
           <Text style={deviceDetail.empty}>没有人在用。</Text>
         </Card>
@@ -162,7 +190,7 @@ export default function DeviceDetailScreen() {
         </Card>
       )}
 
-      {history.length > 0 ? (
+      {!home && history.length > 0 ? (
         <>
           <SectionTitle title={`领用记录（${history.length}）`} />
           <Card style={deviceDetail.listCard}>
@@ -192,7 +220,7 @@ export default function DeviceDetailScreen() {
 
       <SectionTitle title="信息" />
       <GroupCard>
-        {office.multiple ? <InfoRow label="办公点" value={office.officeName(device.officeId)} /> : null}
+        {office.multiple ? <InfoRow label={terms.place} value={office.officeName(device.officeId)} /> : null}
         <InfoRow label="类别" value={device.category} />
         <InfoRow label="型号" value={device.model ?? '—'} />
         {showConfig ? <InfoRow label="芯片" value={device.chip ?? '—'} /> : null}
@@ -217,6 +245,18 @@ export default function DeviceDetailScreen() {
         <Button title="删除" icon="trash-outline" variant="danger" onPress={confirmDelete} style={deviceDetail.flex} />
       </View>
 
+      {sheet?.type === 'holder' ? (
+        <HolderSheet
+          current={active.length === 1 ? active[0].person : ''}
+          hasHolder={active.length > 0}
+          people={people}
+          onClose={() => setSheet(null)}
+          onSubmit={async (person) => {
+            await setDeviceHolder(db, device.id, person);
+            await afterChange(person ? `已改成：${person.trim()}在用` : '已清空谁在用');
+          }}
+        />
+      ) : null}
       {sheet?.type === 'issue' ? (
         <AssignmentSheet
           title="登记领用"
@@ -268,6 +308,49 @@ function Count({ label, value, tone }: { label: string; value: number; tone?: st
       <Text style={[deviceDetail.countValue, tone ? { color: tone } : null]}>{value}</Text>
       <Text style={deviceDetail.countLabel}>{label}</Text>
     </View>
+  );
+}
+
+/** 家庭场景的「谁在用」：填个名字（或点以前填过的），不用日期、不用归还；清空就是没人在用 */
+function HolderSheet({
+  current,
+  hasHolder,
+  people,
+  onClose,
+  onSubmit,
+}: {
+  current: string;
+  hasHolder: boolean;
+  people: string[];
+  onClose: () => void;
+  onSubmit: (person: string | null) => Promise<void>;
+}) {
+  const [name, setName] = useState(current);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(person: string | null) {
+    setBusy(true);
+    setError(null);
+    try {
+      await onSubmit(person);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '没存上，请重试');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Sheet visible title="谁在用" onClose={onClose}>
+      <Field label="名字" value={name} onChangeText={setName} placeholder="如 爸爸、孩子" maxLength={HOLDER_NAME_MAX} />
+      {people.length ? <ChoiceChips options={people.map((person) => ({ value: person, label: person }))} value={name.trim()} onChange={setName} /> : null}
+      <Text style={deviceDetail.hint}>不用填日期，也不用归还；换人直接改名字，没人用就清空。</Text>
+      {error ? <Text style={deviceDetail.error}>{error}</Text> : null}
+      <View style={deviceDetail.actions}>
+        <Button title="清空" variant="secondary" disabled={!hasHolder || busy} onPress={() => submit(null)} style={deviceDetail.flex} />
+        <Button title="保存" loading={busy} disabled={!name.trim()} onPress={() => submit(name)} style={deviceDetail.flex} />
+      </View>
+    </Sheet>
   );
 }
 

@@ -9,7 +9,7 @@ import { ALL_OFFICES } from '../../db/offices';
 import { getOpenStocktake, listStocktakes, startStocktake, type StocktakeListEntry } from '../../db/stocktake';
 import { useFocusData } from '../../hooks/useFocusData';
 import { useOffice } from '../../hooks/useOffice';
-import { useTerms } from '../../hooks/useScene';
+import { useScene, useTerms } from '../../hooks/useScene';
 import { formatDate, toDateStr } from '../../lib/dates';
 import {
   describeKinds,
@@ -142,7 +142,9 @@ function StartSheet({
   findOpen: (officeId: number) => Promise<number | null>;
 }) {
   const office = useOffice();
-  const terms = useTerms();
+  const { scene, terms } = useScene();
+  // 家庭场景不盘设备（设备只记谁在用和保修，没有在库数量）
+  const kindOptions = scene === 'home' ? STOCKTAKE_KINDS.filter((kind) => kind !== 'devices') : STOCKTAKE_KINDS;
   const [officeId, setOfficeId] = useState(defaultOfficeId);
   const [kinds, setKinds] = useState<StocktakeKind[]>(['food', 'daily']);
   const [busy, setBusy] = useState(false);
@@ -187,11 +189,11 @@ function StartSheet({
       <View style={listStyles.group}>
         <Label>盘哪些</Label>
         <MultiChips
-          options={STOCKTAKE_KINDS.map((kind) => ({ value: kind, label: STOCKTAKE_KIND_LABEL[kind] }))}
+          options={kindOptions.map((kind) => ({ value: kind, label: STOCKTAKE_KIND_LABEL[kind] }))}
           values={kinds}
           onChange={setKinds}
         />
-        <Text style={listStyles.hint}>设备盘的是在库数量（总数减去借出的）。</Text>
+        {kindOptions.includes('devices') ? <Text style={listStyles.hint}>设备盘的是在库数量（总数减去借出的）。</Text> : null}
       </View>
       {error ? <Text style={listStyles.error}>{error}</Text> : null}
       {openId !== null ? (

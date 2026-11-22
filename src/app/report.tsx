@@ -9,7 +9,7 @@ import { ALL_OFFICES } from '../db/offices';
 import { EMPTY_REPORT_SOURCE, loadReportSource } from '../db/report';
 import { useFocusData } from '../hooks/useFocusData';
 import { useOffice } from '../hooks/useOffice';
-import { useTerms } from '../hooks/useScene';
+import { useScene } from '../hooks/useScene';
 import { toCsv } from '../lib/csv';
 import { formatShortDate, toDateStr, todayStr } from '../lib/dates';
 import { shareCsv } from '../lib/exportCsv';
@@ -56,7 +56,9 @@ function localDay(iso: string): string {
 export default function ReportScreen() {
   const db = useSQLiteContext();
   const office = useOffice();
-  const terms = useTerms();
+  const { scene, terms } = useScene();
+  // 家庭场景：设备不看借出、在库和领用排行
+  const home = scene === 'home';
   const [officeChoice, setOfficeChoice] = useState<number>(office.filterId ?? ALL_OFFICES);
   const [periodKey, setPeriodKey] = useState<ReportPeriodKey>('thisMonth');
   const [showAllDetails, setShowAllDetails] = useState(false);
@@ -280,14 +282,18 @@ export default function ReportScreen() {
           <>
             <View style={reportStyles.statRow}>
               <BigNumber label="共" value={`${devices.total} 件`} />
-              <BigNumber label="借出" value={String(devices.out)} color={devices.out > 0 ? colors.info : colors.ink} />
-              <BigNumber label="在库" value={String(devices.inStock)} color={colors.ok} />
+              {home ? null : (
+                <>
+                  <BigNumber label="借出" value={String(devices.out)} color={devices.out > 0 ? colors.info : colors.ink} />
+                  <BigNumber label="在库" value={String(devices.inStock)} color={colors.ok} />
+                </>
+              )}
             </View>
             {devices.byCategory.map((row) => (
               <ValueRow
                 key={row.category}
                 name={row.category}
-                detail={`借出 ${row.out} · 在库 ${row.inStock}`}
+                detail={home ? undefined : `借出 ${row.out} · 在库 ${row.inStock}`}
                 value={`${row.total} 件`}
               />
             ))}
@@ -298,7 +304,7 @@ export default function ReportScreen() {
                   <ValueRow
                     key={row.config}
                     name={row.config}
-                    detail={`借出 ${row.out} · 在库 ${row.inStock}`}
+                    detail={home ? undefined : `借出 ${row.out} · 在库 ${row.inStock}`}
                     value={`${row.total} 台`}
                   />
                 ))}
@@ -334,7 +340,7 @@ export default function ReportScreen() {
             ) : (
               <Text style={reportStyles.hint}>没有 30 天内到期或已过保的设备。</Text>
             )}
-            {devices.holders.length ? (
+            {!home && devices.holders.length ? (
               <>
                 <Text style={reportStyles.subTitle}>领用排行</Text>
                 {visibleHolders.map((holder) => (

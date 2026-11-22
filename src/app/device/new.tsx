@@ -11,6 +11,7 @@ import {
   listDeviceTemplates,
   type DeviceInput,
 } from '../../db/devices';
+import { useScene } from '../../hooks/useScene';
 import { mergePresets, type DevicePreset } from '../../lib/devicePresets';
 
 /**
@@ -19,6 +20,8 @@ import { mergePresets, type DevicePreset } from '../../lib/devicePresets';
  */
 export default function NewDeviceScreen() {
   const db = useSQLiteContext();
+  // 内置的快速选择是办公电脑（以 Mac 为主），家庭场景只列自己登记过的
+  const home = useScene().scene === 'home';
   const params = useLocalSearchParams<{ serial?: string; template?: string }>();
   const serial = typeof params.serial === 'string' ? params.serial : '';
   const templateId = typeof params.template === 'string' ? Number(params.template) : null;
@@ -47,12 +50,12 @@ export default function NewDeviceScreen() {
             serialNo: serial,
           }
         : { serialNo: serial };
-      return { initial, presets: template ? [] : mergePresets(templates) };
+      return { initial, presets: template ? [] : mergePresets(templates, home ? [] : undefined) };
     }
     load()
       .then(setState)
       .catch(() => setState({ initial: { serialNo: serial }, presets: [] }));
-  }, [db, serial, templateId]);
+  }, [db, serial, templateId, home]);
 
   if (!state) return null;
 

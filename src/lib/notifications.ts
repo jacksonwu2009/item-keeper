@@ -4,10 +4,11 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { Platform } from 'react-native';
 
 import { listOffices } from '../db/offices';
-import { getDataSince, getLastExportAt, getSettings } from '../db/settings';
+import { listDevices } from '../db/devices';
+import { getDataSince, getLastExportAt, getScene, getSettings } from '../db/settings';
 import { listAllBatches, listProducts } from '../db/stock';
 import { BACKUP_REMINDER_SLOTS, backupStatus, planBackupReminders } from './backupReminder';
-import { planReminders, type PlanProduct, type PlannedReminder } from './reminderPlan';
+import { planReminders, type PlanProduct, type PlannedReminder, type PlanWarranty } from './reminderPlan';
 
 const CHANNEL_ID = 'reminders';
 
@@ -90,10 +91,28 @@ export async function loadPlanProducts(db: SQLiteDatabase, officeId: number | nu
   }));
 }
 
+/**
+ * 家庭场景要提醒保修的设备（有保修到期日的）。和物品一样，看全部地点时、有不止一个地点就在名字前面加地点。
+ * 办公场景返回空：保修提醒只在家庭场景发。
+ */
+export async function loadPlanWarranties(db: SQLiteDatabase, officeId: number | null = null): Promise<PlanWarranty[]> {
+  if ((await getScene(db)) !== 'home') return [];
+  const [devices, offices] = await Promise.all([listDevices(db, officeId), listOffices(db)]);
+  const prefix = officeId === null && offices.length > 1;
+  const officeNames = new Map(offices.map((office) => [office.id, office.name]));
+  return devices
+    .filter((device) => device.warrantyUntil)
+    .map((device) => ({
+      name: prefix ? `${officeNames.get(device.officeId) ?? ''}·${device.name}` : device.name,
+      warrantyUntil: device.warrantyUntil as string,
+    }));
+}
+
 async function rescheduleNow(db: SQLiteDatabase): Promise<PlannedReminder[]> {
-  const [settings, products, lastExportAt, dataSince] = await Promise.all([
+  const [settings, products, warranties, lastExportAt, dataSince] = await Promise.all([
     getSettings(db),
     loadPlanProducts(db),
+    loadPlanWarranties(db),
     getLastExportAt(db),
     getDataSince(db),
   ]);
@@ -104,7 +123,7 @@ async function rescheduleNow(db: SQLiteDatabase): Promise<PlannedReminder[]> {
     settings,
     now,
   );
-  const plan = [...planReminders(products, settings, now, 60, 60 - BACKUP_REMINDER_SLOTS), ...backup].sort(
+  const plan = [...planReminders(products, settings, now, 60, 60 - BACKUP_REMINDER_SLOTS, warranties), ...backup].sort(
     (left, right) => left.at.getTime() - right.at.getTime(),
   );
   if ((await getPermissionState()) !== 'granted') return plan;

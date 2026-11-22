@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { SceneChooser } from '../components/SceneOptions';
 import { getScene, saveScene } from '../db/settings';
 import { subscribeDataChanged } from '../lib/dataEvents';
+import { rescheduleReminders } from '../lib/notifications';
 import { setActiveScene, termsFor, type Scene, type Terms } from '../lib/terms';
 import { useOffice } from './useOffice';
 
@@ -56,6 +57,8 @@ export function SceneProvider({ children }: { children: ReactNode }) {
       setActiveScene(next);
       setScene(next);
       await reloadOffices();
+      // 保修提醒只在家庭场景发，换了场景重新排
+      rescheduleReminders(db).catch(() => undefined);
     },
     [db, reloadOffices],
   );

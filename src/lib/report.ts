@@ -8,7 +8,7 @@ import { describeConfig, hasComputerConfig } from './devicePresets';
 import { perBaseUnitPrice, roundTotalPrice } from './price';
 import { expiryStatus, isLowStock } from './status';
 import { KIND_LABEL, roundQty, type StockKind } from './stock';
-import { currentTerms } from './terms';
+import { currentScene, currentTerms } from './terms';
 import { describeAccessories, warrantyStatus, type Accessory } from './warranty';
 
 // ---------- 时间段 ----------
@@ -566,6 +566,22 @@ export function stockTable(
 }
 
 export function deviceTable(
+  devices: readonly ReportDevice[],
+  accessoriesByDevice: ReadonlyMap<number, Accessory[]>,
+  officeName: OfficeNameOf,
+): CsvTable {
+  const table = fullDeviceTable(devices, accessoriesByDevice, officeName);
+  if (currentScene() !== 'home') return table;
+  // 家庭场景：没有借出、在库，「使用人」叫「谁在用」
+  const dropped = new Set(['借出', '在库'].map((name) => table.header.indexOf(name)));
+  const keep = (_: unknown, index: number) => !dropped.has(index);
+  return {
+    header: table.header.filter(keep).map((name) => (name === '使用人' ? '谁在用' : name)),
+    rows: table.rows.map((row) => row.filter(keep)),
+  };
+}
+
+function fullDeviceTable(
   devices: readonly ReportDevice[],
   accessoriesByDevice: ReadonlyMap<number, Accessory[]>,
   officeName: OfficeNameOf,

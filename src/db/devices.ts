@@ -1,5 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
+import { todayStr } from '../lib/dates';
 import type { Accessory } from '../lib/warranty';
 
 export const DEVICE_CATEGORIES = ['笔记本', '台式机', '显示器', '键盘', '鼠标', '耳机', '扩展坞', '充电器', '手机', '平板', '其他'];
@@ -325,6 +326,44 @@ export async function returnDevice(
       );
     }
     await db.runAsync('UPDATE device SET updated_at = ? WHERE id = ?', [nowIso(), assignment.deviceId]);
+  });
+}
+
+/** 「谁在用」最多几个字（和人员名字差不多长） */
+export const HOLDER_NAME_MAX = 20;
+
+/**
+ * 家庭场景的「谁在用」：没还的领用记录都按今天还掉（开始日期在今天之后的按开始那天），person 不为空时再记一条
+ * 1 件、今天开始的领用。和现在一样的一个人就什么都不做。数据还是领用记录，切回办公场景时显示成这个人领用中。
+ */
+export async function setDeviceHolder(
+  db: SQLiteDatabase,
+  deviceId: number,
+  person: string | null,
+  today: string = todayStr(),
+): Promise<void> {
+  const name = person?.trim() ? person.trim() : null;
+  if (name && name.length > HOLDER_NAME_MAX) throw new Error(`名字最多 ${HOLDER_NAME_MAX} 个字`);
+  const open = await db.getAllAsync<{ id: number; person: string; issuedOn: string }>(
+    'SELECT id, person, issued_on AS issuedOn FROM device_assignment WHERE device_id = ? AND returned_on IS NULL',
+    [deviceId],
+  );
+  if (name && open.length === 1 && open[0].person === name) return;
+  if (!name && open.length === 0) return;
+  await db.withTransactionAsync(async () => {
+    for (const row of open) {
+      await db.runAsync('UPDATE device_assignment SET returned_on = ? WHERE id = ?', [
+        row.issuedOn > today ? row.issuedOn : today,
+        row.id,
+      ]);
+    }
+    if (name) {
+      await db.runAsync(
+        'INSERT INTO device_assignment (device_id, person, quantity, issued_on, returned_on, note) VALUES (?, ?, 1, ?, NULL, NULL)',
+        [deviceId, name, today],
+      );
+    }
+    await db.runAsync('UPDATE device SET updated_at = ? WHERE id = ?', [nowIso(), deviceId]);
   });
 }
 

@@ -57,6 +57,10 @@ export function currentTerms(): Terms {
   return termsFor(activeScene);
 }
 
+export function currentScene(): Scene {
+  return activeScene;
+}
+
 /** 切到家庭时，名字还是系统默认的「默认办公点」的那个地点改叫「家」；已经有叫「家」的就不改。反方向不改。 */
 export function placeToRenameForHome(names: readonly string[]): string | null {
   if (!names.includes(OFFICE_TERMS.defaultPlaceName)) return null;

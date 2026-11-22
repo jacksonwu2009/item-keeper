@@ -6,21 +6,24 @@ import { Linking, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDi
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button, Card, Chip, LIST_PRESS_DELAY, Screen, SectionTitle, TONES, type IconName, type Tone } from '../../../components/ui';
-import { listActiveAssignments, type ActiveAssignment } from '../../../db/devices';
+import { listActiveAssignments, listDevices, type ActiveAssignment, type DeviceSummary } from '../../../db/devices';
 import { DEFAULT_SETTINGS, getDataSince, getLastExportAt, getSettings } from '../../../db/settings';
 import { useFocusData } from '../../../hooks/useFocusData';
 import { useOffice } from '../../../hooks/useOffice';
+import { useScene } from '../../../hooks/useScene';
 import { backupMessage, backupStatus } from '../../../lib/backupReminder';
 import { describeDaysLeft, diffDays, formatDate, formatShortDate, formatTime, todayStr } from '../../../lib/dates';
 import {
   getPermissionState,
   loadPlanProducts,
+  loadPlanWarranties,
   requestPermission,
   rescheduleReminders,
   type PermissionState,
 } from '../../../lib/notifications';
-import { planReminders, statusForDay, type PlanProduct } from '../../../lib/reminderPlan';
+import { planReminders, statusForDay, type PlanProduct, type PlanWarranty } from '../../../lib/reminderPlan';
 import { formatQty, KIND_LABEL, isStockKind } from '../../../lib/stock';
+import { warrantyStatus } from '../../../lib/warranty';
 import { colors, font, radius } from '../../../theme';
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
@@ -43,6 +46,9 @@ function kindLabel(product: PlanProduct): string {
 export default function RemindersScreen() {
   const db = useSQLiteContext();
   const office = useOffice();
+  const { scene } = useScene();
+  // 家庭场景：设备不看借出，看保修快到期的
+  const home = scene === 'home';
   const windowSize = useWindowDimensions();
   const tilesInOneRow = windowSize.width >= TILES_ONE_ROW_MIN_WIDTH;
   const safeArea = useSafeAreaInsets();
@@ -65,20 +71,24 @@ export default function RemindersScreen() {
   const officeFilter = office.filterId;
   const showOffice = office.multiple && officeFilter === null;
   const loader = useCallback(async () => {
-    const [settings, products, active, permission, lastExportAt, dataSince] = await Promise.all([
+    const [settings, products, active, devices, warranties, permission, lastExportAt, dataSince] = await Promise.all([
       getSettings(db),
       loadPlanProducts(db, officeFilter),
       listActiveAssignments(db, officeFilter),
+      listDevices(db, officeFilter),
+      home ? loadPlanWarranties(db, officeFilter) : Promise.resolve([]),
       getPermissionState().catch((): PermissionState => 'undetermined'),
       getLastExportAt(db),
       getDataSince(db),
     ]);
-    return { settings, products, active, permission, lastExportAt, dataSince };
-  }, [db, officeFilter]);
+    return { settings, products, active, devices, warranties, permission, lastExportAt, dataSince };
+  }, [db, officeFilter, home]);
   const [data, reload, loaded] = useFocusData(loader, {
     settings: DEFAULT_SETTINGS,
     products: [] as PlanProduct[],
     active: [] as ActiveAssignment[],
+    devices: [] as DeviceSummary[],
+    warranties: [] as PlanWarranty[],
     permission: 'granted' as PermissionState,
     lastExportAt: null as string | null,
     dataSince: null as string | null,
@@ -95,8 +105,16 @@ export default function RemindersScreen() {
   const today = todayStr(now);
   // 提醒页总是把该注意的都列出来，不受「关闭某类提醒」影响
   const status = statusForDay(products, { ...settings, expiryEnabled: true, lowStockEnabled: true }, today);
-  const nextReminder = planReminders(products, settings, now, 60, 1)[0] ?? null;
-  const attention = status.expired.length + status.expiring.length + status.lowStock.length;
+  const nextReminder = planReminders(products, settings, now, 60, 1, data.warranties)[0] ?? null;
+  const warrantySoon = home
+    ? data.devices
+        .map((device) => ({ device, warranty: warrantyStatus(device.warrantyUntil, today) }))
+        .filter((entry) => entry.warranty?.level === 'soon')
+        .sort((left, right) => (left.warranty?.daysLeft ?? 0) - (right.warranty?.daysLeft ?? 0))
+    : [];
+  const attention = status.expired.length + status.expiring.length + status.lowStock.length + warrantySoon.length;
+  // 办公场景列借出中的设备；家庭场景列保修快到期的
+  const deviceCount = home ? warrantySoon.length : active.length;
 
   async function enableNotifications() {
     const state = await requestPermission();
@@ -156,9 +174,9 @@ export default function RemindersScreen() {
         <Tile label="快到期" value={status.expiring.length} tone="warn" inOneRow={tilesInOneRow} onPress={() => scrollToSection('expiring')} />
         <Tile label="库存不足" value={status.lowStock.length} tone="warn" inOneRow={tilesInOneRow} onPress={() => scrollToSection('lowStock')} />
         <Tile
-          label="借出设备"
-          value={active.reduce((sum, item) => sum + item.quantity, 0)}
-          tone="info"
+          label={home ? '快过保' : '借出设备'}
+          value={home ? warrantySoon.length : active.reduce((sum, item) => sum + item.quantity, 0)}
+          tone={home ? 'warn' : 'info'}
           inOneRow={tilesInOneRow}
           onPress={() => scrollToSection('devices')}
         />
@@ -230,7 +248,34 @@ export default function RemindersScreen() {
         </>
       ) : null}
 
-      {active.length > 0 ? (
+      {home && warrantySoon.length > 0 ? (
+        <>
+          <View onLayout={(event) => rememberSection('devices', event)}>
+            <SectionTitle title="保修快到期的设备" />
+          </View>
+          <Card style={dash.listCard}>
+            {warrantySoon.map(({ device, warranty }, index) => (
+              <Row
+                key={device.id}
+                first={index === 0}
+                title={device.name}
+                subtitle={[
+                  showOffice && office.officeName(device.officeId),
+                  device.category,
+                  device.model,
+                  device.warrantyUntil && `保修到 ${formatDate(device.warrantyUntil)}`,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+                chip={{ text: warranty?.daysLeft ? `剩 ${warranty.daysLeft} 天` : '今天到期', tone: 'warn' }}
+                onPress={() => router.push({ pathname: '/device/[id]', params: { id: String(device.id) } })}
+              />
+            ))}
+          </Card>
+        </>
+      ) : null}
+
+      {!home && active.length > 0 ? (
         <>
           <View onLayout={(event) => rememberSection('devices', event)}>
             <SectionTitle title="借出中的设备" />
@@ -257,12 +302,14 @@ export default function RemindersScreen() {
         </>
       ) : null}
 
-      {loaded && attention === 0 && active.length === 0 ? (
+      {loaded && attention === 0 && deviceCount === 0 ? (
         <Card style={dash.allGood}>
           <Ionicons name="checkmark-circle-outline" size={28} color={colors.ok} />
           <Text style={dash.allGoodText}>
             {products.length === 0
-              ? '还没有录入东西。去「食品」「日用品」扫码入库，或在「设备」里登记电脑和配件。'
+              ? home
+                ? '还没有录入东西。去「食品」「日用品」扫码入库，或在「设备」里登记家电和数码产品。'
+                : '还没有录入东西。去「食品」「日用品」扫码入库，或在「设备」里登记电脑和配件。'
               : '没有过期、快到期或库存不足的东西。'}
           </Text>
         </Card>

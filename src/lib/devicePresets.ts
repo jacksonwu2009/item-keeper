@@ -19,7 +19,13 @@ export type DevicePreset = {
 };
 
 /** 这些类别显示芯片、内存、硬盘 */
-export const CONFIG_CATEGORIES = ['笔记本', '台式机'];
+export const CONFIG_CATEGORIES = ['笔记本', '台式机', '电脑'];
+
+/** 家庭场景的设备类别（办公场景是 db/devices 的 DEVICE_CATEGORIES）。「电脑」显示芯片、内存、硬盘 */
+export const HOME_DEVICE_CATEGORIES = ['电视', '冰箱', '洗衣机', '空调', '热水器', '厨房电器', '手机', '平板', '电脑', '相机', '路由器', '其他'];
+
+/** 家庭场景配件的常用名（办公场景见 DeviceForm 的 ACCESSORY_SUGGESTIONS） */
+export const HOME_ACCESSORY_SUGGESTIONS = ['遥控器', '充电器', '电源线', '数据线', '说明书', '保修卡', '包装盒'];
 
 export function hasComputerConfig(category: string): boolean {
   return CONFIG_CATEGORIES.includes(category);

@@ -4,10 +4,13 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { DEVICE_CATEGORIES, type DeviceInput } from '../db/devices';
 import { useOffice } from '../hooks/useOffice';
+import { useScene } from '../hooks/useScene';
 import { formatDate } from '../lib/dates';
 import {
   composeChip,
   hasComputerConfig,
+  HOME_ACCESSORY_SUGGESTIONS,
+  HOME_DEVICE_CATEGORIES,
   isMacName,
   MAC_CHIP_GENERATIONS,
   MAC_CHIP_TIERS,
@@ -54,8 +57,11 @@ export function DeviceForm({
   onSubmitAndNext?: (input: DeviceInput) => Promise<void>;
 }) {
   const office = useOffice();
+  // 家庭场景：类别、配件建议换成家里常见的
+  const home = useScene().scene === 'home';
+  const categoryList = home ? HOME_DEVICE_CATEGORIES : DEVICE_CATEGORIES;
   const [officeId, setOfficeId] = useState(initial?.officeId ?? office.defaultId);
-  const [category, setCategory] = useState(initial?.category ?? '笔记本');
+  const [category, setCategory] = useState(initial?.category ?? categoryList[0]);
   const [name, setName] = useState(initial?.name ?? '');
   const [model, setModel] = useState(initial?.model ?? '');
   const [serialNo, setSerialNo] = useState(initial?.serialNo ?? '');
@@ -112,7 +118,7 @@ export function DeviceForm({
   };
   const hasErrors = Object.values(errors).some(Boolean);
   const shown = (message: string | null) => (showErrors ? message : null);
-  const categories = Array.from(new Set([...DEVICE_CATEGORIES, category])).map((value) => ({ value, label: value }));
+  const categories = Array.from(new Set([...categoryList, category])).map((value) => ({ value, label: value }));
 
   function addAccessory(accessoryName: string) {
     setAccessories((rows) => [...rows, { key: ++accessoryKey, name: accessoryName, quantity: 1 }]);
@@ -325,7 +331,9 @@ export function DeviceForm({
       <SectionTitle title="配件" />
       <Card>
         <Text style={formStyles.hint}>
-          随这件设备一起领走、一起退还的东西，比如充电器、扩展坞。数量按每件设备配几个填。单独借的备用鼠标、键盘，建议另外登记成设备。
+          {home
+            ? '随这件设备一起的东西，比如遥控器、充电器。数量按每件设备配几个填。'
+            : '随这件设备一起领走、一起退还的东西，比如充电器、扩展坞。数量按每件设备配几个填。单独借的备用鼠标、键盘，建议另外登记成设备。'}
         </Text>
         {accessories.map((row) => (
           <View key={row.key} style={formStyles.accessoryRow}>
@@ -357,7 +365,8 @@ export function DeviceForm({
         {shown(errors.accessories) ? <Text style={formStyles.error}>{errors.accessories}</Text> : null}
         <ChoiceChips
           options={[
-            ...ACCESSORY_SUGGESTIONS.filter((value) => !accessories.some((row) => row.name.trim() === value))
+            ...(home ? HOME_ACCESSORY_SUGGESTIONS : ACCESSORY_SUGGESTIONS)
+              .filter((value) => !accessories.some((row) => row.name.trim() === value))
               .slice(0, 5)
               .map((value) => ({ value, label: `+ ${value}` })),
             { value: '', label: '+ 其他' },
