@@ -1,0 +1,81 @@
+{
+ "format": "label-ocr-fixture/1",
+ "source": "第一轮准确率试验（2026-11-22）：同一批照片用 macOS Vision（和 iOS 系统文字识别同一套）识别；没有位置，置信度只有 0.3 / 0.5 / 1 三档",
+ "engine": "apple-vision",
+ "today": "2026-11-22",
+ "items": [
+  {
+   "id": "photo1",
+   "description": "纸手帕背面，清楚",
+   "lines": [
+    {"text": "产品务秘、维达纸手帜，主要原料：100%原生木菜", "score": 0.3, "box": null},
+    {"text": "产品组号：V0036 香型：自然无香", "score": 0.3, "box": null},
+    {"text": "卫生标准：GB 15979 热行标准：G8/T20808 优等品", "score": 0.5, "box": null},
+    {"text": "责任单位：维达商贸有限公司", "score": 0.5, "box": null},
+    {"text": "地址：广东省江工门市新会区会城东侯路65号", "score": 0.5, "box": null},
+    {"text": "邮政编码：529100 服务热线：4006-315-138", "score": 0.5, "box": null},
+    {"text": "保质期：三年 生产日期：见包装 检验合格", "score": 0.5, "box": null},
+    {"text": "6", "score": 1.0, "box": null},
+    {"text": "901236", "score": 0.5, "box": null}
+   ],
+   "expect": {"name": null, "spec": null, "shelfLife": {"amount": 3, "unit": "year"}, "dateElsewhere": "见包装", "production": null, "expiry": null}
+  },
+  {
+   "id": "photo2",
+   "description": "纸盒侧面，暗、糊",
+   "lines": [
+    {"text": "vinda", "score": 0.3, "box": null},
+    {"text": "超韧Serong", "score": 0.3, "box": null},
+    {"text": "湿水不易破", "score": 0.3, "box": null},
+    {"text": "三康", "score": 0.3, "box": null},
+    {"text": "LEFE", "score": 0.3, "box": null},
+    {"text": "S", "score": 0.5, "box": null},
+    {"text": "产部服：三月 B3mx B5座", "score": 0.3, "box": null}
+   ],
+   "expect": {"name": null, "spec": null, "shelfLife": null, "dateElsewhere": null, "production": null, "expiry": null}
+  },
+  {
+   "id": "photo3",
+   "description": "蛋白棒背面，字是竖着的、塑料反光",
+   "lines": [
+    {"text": "•致蒙物质本品有乳及乳制品、含麸质的谷物制品，太豆製品，教有限", "score": 0.3, "box": null},
+    {"text": "•保质期：12个月 生产日期：见包装喷码处 产品标准号：Q/XLJK", "score": 0.5, "box": null},
+    {"text": "00b5S 食品生产许可证编号：SC113440118011230贮存条件：密封", "score": 0.5, "box": null},
+    {"text": "阴凉干燥处，避免高温或阳光直射（委托方：北京幸福能量健康科技", "score": 0.5, "box": null},
+    {"text": "有限公司 委托方！", "score": 0.5, "box": null},
+    {"text": "维：北京市门头沟区石龙经济开发区永安路20号3", "score": 0.5, "box": null},
+    {"text": "号楼A-S0403室（", "score": 0.3, "box": null},
+    {"text": "群注册）◎咨询电话：40060706050受委托方", "score": 0.5, "box": null},
+    {"text": "广东西乐健康科技」", "score": 0.5, "box": null},
+    {"text": "份有限公司•受委托方地址：广州市增城区宁西街", "score": 0.5, "box": null},
+    {"text": "硬廢 脆度与濃度有直澳关茶 冬李产品割", "score": 0.3, "box": null},
+    {"text": "食用场景•早餐•說經•加班 开会 道", "score": 0.3, "box": null},
+    {"text": "全新一代蛋白医高部製練配方", "score": 0.3, "box": null},
+    {"text": "HHt8SUPERGRS", "score": 0.3, "box": null},
+    {"text": "配方来包", "score": 0.3, "box": null},
+    {"text": "原实浓室", "score": 0.3, "box": null},
+    {"text": "6 972596 16077", "score": 0.5, "box": null},
+    {"text": "式脂肪（酸）", "score": 0.5, "box": null},
+    {"text": "51.", "score": 0.5, "box": null},
+    {"text": "21", "score": 0.5, "box": null},
+    {"text": "19", "score": 0.3, "box": null},
+    {"text": "淀粉、玉米粉", "score": 0.5, "box": null},
+    {"text": "葵花籽油！", "score": 0.3, "box": null}
+   ],
+   "expect": {"name": null, "spec": null, "shelfLife": {"amount": 12, "unit": "month"}, "dateElsewhere": "见包装喷码处", "production": null, "expiry": null}
+  },
+  {
+   "id": "photo4",
+   "description": "坚果棒背面，字是竖着的，浅灰喷码日期",
+   "lines": [
+    {"text": "布超济技术开发区全光路1号-爱托方：好丽友食品（上商有限公司 地址：上海市青浦工业国区外黄校公路5151号", "score": 0.3, "box": null},
+    {"text": "生产日期", "score": 0.5, "box": null},
+    {"text": "食融产许可证期号：901243071800272 消费者最务熱线：400-683-0066（該在工作日9:00-17-00 ）", "score": 0.3, "box": null},
+    {"text": "保质斑至", "score": 0.3, "box": null},
+    {"text": "•江百象所，原店干微快，勤多", "score": 0.3, "box": null},
+    {"text": "20260924 1", "score": 0.3, "box": null}
+   ],
+   "expect": {"name": null, "spec": null, "shelfLife": null, "dateElsewhere": null, "production": "2026-09-24", "expiry": null}
+  }
+ ]
+}

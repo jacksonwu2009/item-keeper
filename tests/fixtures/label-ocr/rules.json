@@ -1,0 +1,284 @@
+{
+ "format": "label-ocr-fixture/1",
+ "source": "手写的规则用例：每条只测一两条规则；没写 box 的行没有位置，没写 score 的当 1",
+ "engine": "handwritten",
+ "today": "2026-11-22",
+ "items": [
+  {
+   "id": "name-cut-at-next-field",
+   "description": "名称在下一个字段名处截断（连写、没有空格）",
+   "lines": [{"text": "产品名称：东方树叶茉莉花茶配料：水、茉莉花茶"}],
+   "expect": {"name": "东方树叶茉莉花茶"}
+  },
+  {
+   "id": "name-cut-at-space-label",
+   "description": "名称后面空一格接着不认识的字段名",
+   "lines": [{"text": "食品名称：坚果能量棒 口味：原味"}],
+   "expect": {"name": "坚果能量棒"}
+  },
+  {
+   "id": "name-pinming",
+   "description": "品名、漏了「产」的「品名称」",
+   "lines": [{"text": "品名：苏打饼干"}, {"text": "品名称：纸手帕主要原料：原生木浆"}],
+   "expect": {"name": "苏打饼干"}
+  },
+  {
+   "id": "name-next-line",
+   "description": "「产品名称：」后面空着，名称在下一行",
+   "lines": [{"text": "产品名称："}, {"text": "茉莉花茶饮料"}, {"text": "配料：水、白砂糖"}],
+   "expect": {"name": "茉莉花茶饮料"}
+  },
+  {
+   "id": "name-plain-mingcheng-needs-start",
+   "description": "光写「名称」的要在一段开头，「委托方名称」不算",
+   "lines": [{"text": "委托方名称：某某食品有限公司"}],
+   "expect": {"name": null}
+  },
+  {
+   "id": "name-candidates-big-text",
+   "description": "没有名称字段：不猜，把字明显大的几行列成候选",
+   "lines": [
+    {"text": "东方树叶", "score": 0.99, "box": [[100, 100], [400, 100], [400, 180], [100, 180]]},
+    {"text": "茉莉花茶", "score": 0.98, "box": [[100, 200], [380, 200], [380, 260], [100, 260]]},
+    {"text": "配料：水、茉莉花茶", "score": 0.97, "box": [[100, 300], [400, 300], [400, 330], [100, 330]]},
+    {"text": "贮存条件：避免阳光直射", "score": 0.95, "box": [[100, 340], [420, 340], [420, 370], [100, 370]]},
+    {"text": "500mL", "score": 0.99, "box": [[100, 380], [200, 380], [200, 410], [100, 410]]}
+   ],
+   "expect": {"name": null, "nameCandidates": ["东方树叶", "茉莉花茶"]}
+  },
+  {
+   "id": "spec-units",
+   "description": "净含量、规格带单位；mL / L 统一写法，×12 跟上",
+   "lines": [{"text": "净含量：500ml"}],
+   "expect": {"spec": "500mL"}
+  },
+  {
+   "id": "spec-multiply",
+   "lines": [{"text": "规格：250ML×12瓶"}],
+   "expect": {"spec": "250mL×12瓶"}
+  },
+  {
+   "id": "spec-decimal-litre",
+   "lines": [{"text": "净含量:1.5L"}],
+   "expect": {"spec": "1.5L"}
+  },
+  {
+   "id": "spec-chinese-unit-with-space",
+   "lines": [{"text": "净含量 150 抽"}],
+   "expect": {"spec": "150抽"}
+  },
+  {
+   "id": "spec-no-unit",
+   "description": "没有单位的不采用（纸盒上「150抽」认成「508」）",
+   "lines": [{"text": "净含量：508"}],
+   "expect": {"spec": null}
+  },
+  {
+   "id": "spec-not-a-quantity",
+   "description": "「规格：三层 133mm×195mm」不是净含量，不采用",
+   "lines": [{"text": "产品规格：三层 133mm×195mm/张"}],
+   "expect": {"spec": null}
+  },
+  {
+   "id": "shelf-chinese-number",
+   "lines": [{"text": "保质期：十八个月"}],
+   "expect": {"shelfLife": {"amount": 18, "unit": "month"}}
+  },
+  {
+   "id": "shelf-days",
+   "lines": [{"text": "保质期:540天"}],
+   "expect": {"shelfLife": {"amount": 540, "unit": "day"}}
+  },
+  {
+   "id": "shelf-with-condition",
+   "description": "保质期后面带括号的条件、「为」",
+   "lines": [{"text": "保质期（常温）为二十四个月"}],
+   "expect": {"shelfLife": {"amount": 24, "unit": "month"}}
+  },
+  {
+   "id": "shelf-missing-char",
+   "description": "漏了「保」、或认成别的字",
+   "lines": [{"text": "群质期：12个月生产日期：见包装喷码处"}],
+   "expect": {"shelfLife": {"amount": 12, "unit": "month"}, "dateElsewhere": "见包装喷码处"}
+  },
+  {
+   "id": "shelf-until-is-expiry",
+   "description": "「保质期至」后面是到期日，不是保质期",
+   "lines": [{"text": "保质期至：2027.10.11"}],
+   "target": "production",
+   "expect": {"shelfLife": null, "production": null, "expiry": "2027-10-11"}
+  },
+  {
+   "id": "elsewhere-bottle-cap",
+   "lines": [{"text": "生产日期：见瓶盖"}],
+   "expect": {"dateElsewhere": "见瓶盖", "production": null}
+  },
+  {
+   "id": "elsewhere-with-batch",
+   "lines": [{"text": "生产日期及批号：见封口处"}],
+   "expect": {"dateElsewhere": "见封口处"}
+  },
+  {
+   "id": "elsewhere-joined-text",
+   "description": "「见包装检验合格」连写，在「检验合格」处截断",
+   "lines": [{"text": "保质期：三年 生产日期：见包装检验合格"}],
+   "expect": {"dateElsewhere": "见包装", "shelfLife": {"amount": 3, "unit": "year"}}
+  },
+  {
+   "id": "inkjet-two-dates-shelf-agrees",
+   "description": "喷码两个日期没写字，正好差一个保质期（商品资料里 12 个月）：互相印证，直接分好",
+   "lines": [{"text": "20261012 A13 20271011"}],
+   "shelfLife": {"amount": 12, "unit": "month"},
+   "target": "production",
+   "expect": {"production": "2026-10-12", "expiry": "2027-10-11", "confirmed": true, "options": 0}
+  },
+  {
+   "id": "inkjet-two-dates-no-shelf",
+   "description": "不知道保质期：分不清，列出来让人选，建议前一个当生产日期",
+   "lines": [{"text": "20261012 A13 20271011"}],
+   "target": "production",
+   "expect": {"production": null, "expiry": null, "options": 2, "suggested": 0}
+  },
+  {
+   "id": "inkjet-two-dates-no-shelf-want-expiry",
+   "lines": [{"text": "20261012 A13 20271011"}],
+   "target": "expiry",
+   "expect": {"production": null, "expiry": null, "options": 2, "suggested": 1}
+  },
+  {
+   "id": "labelled-same-line",
+   "description": "同一行写着生产日期、保质期至：直接分好",
+   "lines": [{"text": "生产日期：2026.10.12 保质期至：2027.10.11"}],
+   "expect": {"production": "2026-10-12", "expiry": "2027-10-11", "confirmed": false}
+  },
+  {
+   "id": "labelled-same-line-with-shelf",
+   "lines": [{"text": "保质期：12个月"}, {"text": "生产日期：2026.10.12 保质期至：2027.10.11"}],
+   "expect": {"production": "2026-10-12", "expiry": "2027-10-11", "confirmed": true}
+  },
+  {
+   "id": "labelled-but-disagree",
+   "description": "两个日期差的和保质期对不上：列出来让人选，不猜",
+   "lines": [{"text": "保质期：12个月"}, {"text": "生产日期：2026.10.12 保质期至：2027.04.11"}],
+   "expect": {"production": null, "expiry": null, "options": 2, "suggested": 0}
+  },
+  {
+   "id": "english-mfg-exp",
+   "lines": [{"text": "MFG 2026/09/01 EXP 2027/08/31"}],
+   "expect": {"production": "2026-09-01", "expiry": "2027-08-31"}
+  },
+  {
+   "id": "english-pd-bb",
+   "lines": [{"text": "PD:2026.03.01"}, {"text": "BB 2027.03.01"}],
+   "expect": {"production": "2026-03-01", "expiry": "2027-03-01"}
+  },
+  {
+   "id": "date-formats",
+   "description": "2026年10月12日；只有一个没写字的日期，要的是生产日期就填生产日期",
+   "lines": [{"text": "2026年10月12日"}],
+   "target": "production",
+   "expect": {"production": "2026-10-12", "dates": ["2026-10-12"]}
+  },
+  {
+   "id": "date-dash-short",
+   "lines": [{"text": "生产日期 2026-9-24"}],
+   "expect": {"production": "2026-09-24"}
+  },
+  {
+   "id": "date-compact-with-time",
+   "lines": [{"text": "生产日期：2026092411"}],
+   "expect": {"production": "2026-09-24"}
+  },
+  {
+   "id": "date-not-in-long-number",
+   "description": "条码、许可证号里的数字不当日期",
+   "lines": [{"text": "SC20261012345678"}, {"text": "6920261012345"}, {"text": "服务热线：4006-315-138"}],
+   "expect": {"dates": []}
+  },
+  {
+   "id": "date-too-old",
+   "description": "早于 5 年前的不认",
+   "lines": [{"text": "生产日期：2019.01.01"}],
+   "expect": {"dates": [], "production": null}
+  },
+  {
+   "id": "single-date-future",
+   "description": "只认出一个没写字的日期：在今天以后的一定是到期日",
+   "lines": [{"text": "2027.03.01"}],
+   "target": "production",
+   "expect": {"production": null, "expiry": "2027-03-01"}
+  },
+  {
+   "id": "single-date-want-expiry",
+   "description": "只认出一个没写字的日期：填进点了「拍日期」的那一格",
+   "lines": [{"text": "2026.10.12"}],
+   "target": "expiry",
+   "expect": {"production": null, "expiry": "2026-10-12"}
+  },
+  {
+   "id": "production-in-future-not-trusted",
+   "description": "写着生产日期但在今天以后：不按生产日期算",
+   "lines": [{"text": "生产日期：2027.01.05"}],
+   "target": "production",
+   "expect": {"production": null, "expiry": "2027-01-05"}
+  },
+  {
+   "id": "fuzzy-production-key",
+   "description": "「生产口期」（日认成口）",
+   "lines": [{"text": "生产口期：2026.10.12"}],
+   "expect": {"production": "2026-10-12"}
+  },
+  {
+   "id": "position-same-row",
+   "description": "日期没和字段名在同一行文字里：按位置找同一排左边最近的字段名",
+   "lines": [
+    {"text": "生产日期：", "box": [[100, 100], [200, 100], [200, 130], [100, 130]]},
+    {"text": "保质期至：", "box": [[100, 140], [200, 140], [200, 170], [100, 170]]},
+    {"text": "2027.10.11", "box": [[210, 141], [330, 141], [330, 169], [210, 169]]},
+    {"text": "2026.10.12", "box": [[210, 99], [330, 99], [330, 131], [210, 131]]}
+   ],
+   "expect": {"production": "2026-10-12", "expiry": "2027-10-11"}
+  },
+  {
+   "id": "position-below",
+   "description": "日期在「生产日期」正下方",
+   "lines": [
+    {"text": "生产日期", "box": [[100, 100], [220, 100], [220, 130], [100, 130]]},
+    {"text": "20260924", "box": [[105, 140], [235, 140], [235, 170], [105, 170]]}
+   ],
+   "expect": {"production": "2026-09-24"}
+  },
+  {
+   "id": "position-far-away-ignored",
+   "description": "离得很远的字段名不算",
+   "lines": [
+    {"text": "保质期至", "box": [[600, 900], [700, 900], [700, 930], [600, 930]]},
+    {"text": "20260924", "box": [[100, 100], [230, 100], [230, 130], [100, 130]]}
+   ],
+   "target": "production",
+   "expect": {"production": "2026-09-24", "expiry": null}
+  },
+  {
+   "id": "producer-is-not-production-label",
+   "description": "「生产商」「生产许可证」不是生产日期的字段名",
+   "lines": [
+    {"text": "生产商：某某食品有限公司", "box": [[100, 100], [400, 100], [400, 130], [100, 130]]},
+    {"text": "2027.03.01", "box": [[100, 140], [230, 140], [230, 170], [100, 170]]}
+   ],
+   "target": "production",
+   "expect": {"production": null, "expiry": "2027-03-01"}
+  },
+  {
+   "id": "quality-poor",
+   "description": "一行像样的字都没有：提示重拍",
+   "lines": [{"text": "缆", "score": 0.15}, {"text": "330T-85", "score": 0.41}, {"text": "", "score": 0}],
+   "expect": {"poor": true}
+  },
+  {
+   "id": "quality-ok-single-line",
+   "description": "拍日期的小框里只有一行喷码也不算糊",
+   "lines": [{"text": "20261012", "score": 0.93}],
+   "expect": {"poor": false}
+  }
+ ]
+}
