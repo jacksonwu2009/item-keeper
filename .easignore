@@ -1,0 +1,56 @@
+# EAS 云端构建（eas build）上传项目时用这个文件，不用 .gitignore（有它就不看任何 .gitignore）。
+# 内容和 .gitignore 一样，只差一点：拍照识别的模型（modules/label-ocr/models/）和 iOS 用的 ONNX Runtime
+# （modules/label-ocr/ios/Frameworks/）不进 git，但打包要用，所以这里不忽略，会一起上传。
+# 打包前先运行 scripts/fetch-ocr-models.sh 和 modules/label-ocr/ios/scripts/fetch-onnxruntime.sh，见 modules/label-ocr/ios/README.md。
+# 改 .gitignore 时这里也要跟着改。
+
+# dependencies
+node_modules
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+
+# 使用指南里只给同事看的内容，不上传
+*.local.json
+*.local.html
+*.pem
+
+# local env files
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/ios
+/android
+
+# 本地原生模块打包时生成的
+modules/*/android/build/
+modules/*/android/.cxx/
+
+# iOS 拍照识别：macOS 上测试工具的编译产物，不用上传
+modules/label-ocr/ios/tests/.build/
