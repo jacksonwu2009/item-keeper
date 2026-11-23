@@ -5,7 +5,7 @@ import { isLabelOcrAvailable } from '../../modules/label-ocr';
 import { expiryFromShelfLife, formatDate, todayStr, type ShelfLife, type ShelfLifeUnit } from '../lib/dates';
 import type { DateRole } from '../lib/labelParse';
 import { planExpiryFill, type ExpiryFill } from '../lib/labelScan';
-import { colors, font } from '../theme';
+import { colors, font, radius } from '../theme';
 import { DateField } from './DateField';
 import { LabelCamera, type DateScanResult } from './LabelCamera';
 import { NumberField } from './NumberField';
@@ -131,7 +131,14 @@ export function ExpiryInput({
 
   const scanButton = (target: DateRole) =>
     canScan ? (
-      <Button title="拍日期" icon="camera-outline" variant="secondary" compact onPress={() => setScanTarget(target)} />
+      <Button
+        title="拍日期"
+        icon="camera-outline"
+        variant="secondary"
+        compact
+        style={expiryStyles.scanButton}
+        onPress={() => setScanTarget(target)}
+      />
     ) : null;
 
   return (
@@ -214,6 +221,8 @@ export function ExpiryInput({
 
 // 照鸿蒙版 StockInputs.ets 的 ExpiryInput：分段选填法，下面的日期、保质期上下排，间隔 12
 const expiryStyles = StyleSheet.create({
+  // 「拍日期」和旁边的日期框一样高、一样的圆角，排在一起是一个整体
+  scanButton: { alignSelf: 'stretch', minHeight: 44, borderRadius: radius.sm },
   wrap: { gap: 12 },
   computed: { fontSize: font.small, color: colors.muted },
   computedDate: { color: colors.accent, fontWeight: '700' },
