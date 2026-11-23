@@ -4,9 +4,10 @@ import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useRef, useState } from 'react';
-import { Linking, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { isLabelOcrAvailable } from '../../modules/label-ocr';
 import { CircleIconButton } from '../components/CircleIconButton';
 import { Button } from '../components/ui';
 import { findDeviceBySerial } from '../db/devices';
@@ -108,6 +109,21 @@ export default function ScanScreen() {
     />
   );
 
+  // 食品、日用品没有条码的：直接拍包装背面的标签，进新增页核对（条码空着）
+  const canScanLabel = !deviceMode && !target && isLabelOcrAvailable();
+  const labelEntry = canScanLabel ? (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="没有条码？拍包装识别"
+      onPress={() => router.replace({ pathname: '/stock/new', params: { kind, scanLabel: '1' } })}
+      style={({ pressed }) => [scanStyles.labelEntry, pressed && scanStyles.pressed]}
+    >
+      <Ionicons name="camera-outline" size={18} color={colors.accent} />
+      <Text style={scanStyles.labelEntryText}>没有条码？拍包装识别</Text>
+      <Ionicons name="chevron-forward" size={16} color={colors.accent} />
+    </Pressable>
+  ) : null;
+
   // 手动输入：照鸿蒙版扫码页下面那张白色卡片，浅灰输入框加浅主色的「确定」胶囊
   const manualEntry = (
     <View style={scanStyles.manual}>
@@ -132,6 +148,7 @@ export default function ScanScreen() {
           style={scanStyles.manualButton}
         />
       </View>
+      {labelEntry}
     </View>
   );
 
@@ -250,6 +267,15 @@ const scanStyles = StyleSheet.create({
     fontSize: font.body,
   },
   manualButton: { minHeight: 44 },
+  labelEntry: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 40,
+    paddingTop: 4,
+  },
+  labelEntryText: { flex: 1, color: colors.accent, fontSize: font.body, fontWeight: '500' },
+  pressed: { opacity: 0.6 },
   permissionColumn: { width: '100%', maxWidth: CONTENT_MAX_WIDTH, alignSelf: 'center', gap: 24 },
   permissionCard: { alignItems: 'center', gap: 12, padding: 24, borderRadius: radius.lg, backgroundColor: colors.surface },
   permissionTitle: { color: colors.ink, fontSize: font.heading, fontWeight: '500', textAlign: 'center' },

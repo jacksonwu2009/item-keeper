@@ -11,9 +11,11 @@ import { isStockKind, KIND_LABEL } from '../../lib/stock';
 
 export default function NewStockScreen() {
   const db = useSQLiteContext();
-  const params = useLocalSearchParams<{ kind?: string; barcode?: string }>();
+  const params = useLocalSearchParams<{ kind?: string; barcode?: string; scanLabel?: string }>();
   const kind = isStockKind(params.kind) ? params.kind : 'food';
   const barcode = typeof params.barcode === 'string' ? params.barcode : undefined;
+  // 扫码页点「没有条码？拍包装识别」进来：一打开就拍
+  const scanLabelOnOpen = params.scanLabel === '1';
   const [settings, setSettings] = useState<AppSettings | null>(null);
 
   useEffect(() => {
@@ -29,6 +31,7 @@ export default function NewStockScreen() {
         initial={{ kind, barcode }}
         settings={settings}
         withFirstBatch
+        scanLabelOnOpen={scanLabelOnOpen}
         submitLabel="保存"
         onSubmit={async (input, firstBatch) => {
           if (input.barcode) {

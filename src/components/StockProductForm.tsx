@@ -61,12 +61,15 @@ export function StockProductForm({
   withFirstBatch,
   submitLabel,
   onSubmit,
+  scanLabelOnOpen = false,
 }: {
   initial: Partial<StockProductInput> & { kind: StockKind };
   settings: AppSettings;
   withFirstBatch: boolean;
   submitLabel: string;
   onSubmit: (input: StockProductInput, firstBatch: BatchInput | null) => Promise<void>;
+  /** 一打开就进拍包装识别的相机（扫码页点「没有条码？拍包装识别」进来的） */
+  scanLabelOnOpen?: boolean;
 }) {
   const db = useSQLiteContext();
   const office = useOffice();
@@ -100,7 +103,7 @@ export function StockProductForm({
   const [shelfUnit, setShelfUnit] = useState<ShelfLifeUnit>(initial.shelfLife?.unit ?? 'month');
   // 拍包装识别（新建、手机上能用时）
   const canScanLabel = withFirstBatch && isLabelOcrAvailable();
-  const [labelCameraOpen, setLabelCameraOpen] = useState(false);
+  const [labelCameraOpen, setLabelCameraOpen] = useState(scanLabelOnOpen && canScanLabel);
   const [labelScan, setLabelScan] = useState<LabelScanFill | null>(null);
   const [nameCandidates, setNameCandidates] = useState<string[]>([]);
   const [expiryFill, setExpiryFill] = useState<{ key: number; fill: ExpiryFill } | null>(null);
@@ -311,14 +314,25 @@ export function StockProductForm({
             <Text style={formStyles.scanBannerTitle}>
               {labelScan.count ? `已从照片填入 ${labelScan.count} 项，请核对` : '照片里没认出能填的，请手动填'}
             </Text>
-            <Text style={formStyles.scanBannerSub}>
-              标了「识别」的格子是照片里认出来的，点开能改 ·{' '}
-              <Text style={formStyles.scanBannerLink} onPress={() => setLabelCameraOpen(true)} accessibilityRole="button">
-                重拍
-              </Text>
-            </Text>
+            <Text style={formStyles.scanBannerSub}>标了「识别」的格子是照片里认出来的，点开能改</Text>
           </View>
+          <Button title="重拍" icon="camera-outline" variant="secondary" compact onPress={() => setLabelCameraOpen(true)} />
         </View>
+      ) : canScanLabel ? (
+        // 新增物品时常驻的入口：扫码进来、手动添加、有没有条码都能拍
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="拍包装识别"
+          onPress={() => setLabelCameraOpen(true)}
+          style={({ pressed }) => [formStyles.scanBanner, pressed && formStyles.pressed]}
+        >
+          <Ionicons name="camera-outline" size={28} color={colors.info} />
+          <View style={formStyles.scanBannerText}>
+            <Text style={formStyles.scanBannerTitle}>拍包装识别</Text>
+            <Text style={formStyles.scanBannerSub}>拍包装背面的标签，自动填名称、规格、保质期和生产日期；没有条码也能用</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.info} />
+        </Pressable>
       ) : null}
       <Segmented
         options={[
@@ -631,7 +645,6 @@ const formStyles = StyleSheet.create({
   scanBannerText: { flex: 1, gap: 2 },
   scanBannerTitle: { fontSize: font.body, fontWeight: '600', color: colors.info },
   scanBannerSub: { fontSize: font.small, color: colors.muted, lineHeight: 18 },
-  scanBannerLink: { color: colors.info, fontWeight: '600' },
   candidates: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: -8 },
   candidatesLabel: { fontSize: font.small, color: colors.muted },
   candidate: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.pill, backgroundColor: colors.surfaceSunken },
