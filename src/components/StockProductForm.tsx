@@ -6,7 +6,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { isLabelOcrAvailable } from '../../modules/label-ocr';
 import type { AppSettings } from '../db/settings';
-import { listLocations, validShelfLife, type BatchInput, type StockProductInput } from '../db/stock';
+import { findByBarcode, listLocations, validShelfLife, type BarcodeMatch, type BatchInput, type StockProductInput } from '../db/stock';
 import {
   EMPTY_LOOKUP_FIELDS,
   lookupBarcode,
@@ -18,7 +18,7 @@ import {
 import type { ShelfLife, ShelfLifeUnit } from '../lib/dates';
 import { planExpiryFill, type ExpiryFill, type ScanTag } from '../lib/labelScan';
 import { toBaseQty, validatePacks, type PackUnit } from '../lib/packs';
-import { convertPriceUnit, derivePrice, EMPTY_PRICE, type PriceDraft } from '../lib/price';
+import { convertPriceUnit, derivePrice, EMPTY_PRICE, storedPriceDraft, type EntryPrice, type PriceDraft } from '../lib/price';
 import { takeScanResult, takeScanResultWithPrefix } from '../lib/scanHandoff';
 import { DEFAULT_UNITS, formatQty, KIND_LABEL, parseQty, type StockKind } from '../lib/stock';
 import { colors, CONTENT_MAX_WIDTH, font, radius } from '../theme';
@@ -26,6 +26,7 @@ import { useOffice } from '../hooks/useOffice';
 import { CircleIconButton } from './CircleIconButton';
 import { ExpiryInput, type ExpiryValue } from './ExpiryInput';
 import { LabelCamera, type LabelScanResult } from './LabelCamera';
+import { draftPrice, StockInPriceFields, type StockInPriceRecord } from './MovementPriceEditor';
 import { NumberField } from './NumberField';
 import { OfficeChooser } from './OfficeSwitcher';
 import { PriceFields } from './PriceFields';
@@ -62,14 +63,24 @@ export function StockProductForm({
   submitLabel,
   onSubmit,
   scanLabelOnOpen = false,
+  onUseExisting,
+  lastStockIn = null,
 }: {
   initial: Partial<StockProductInput> & { kind: StockKind };
   settings: AppSettings;
   withFirstBatch: boolean;
   submitLabel: string;
-  onSubmit: (input: StockProductInput, firstBatch: BatchInput | null) => Promise<void>;
+  /** lastStockInPrice：改了「最近一次入库的价格」才有（null 是清掉价格），没改是 undefined */
+  onSubmit: (input: StockProductInput, firstBatch: BatchInput | null, lastStockInPrice?: EntryPrice | null) => Promise<void>;
   /** 一打开就进拍包装识别的相机（扫码页点「没有条码？拍包装识别」进来的） */
   scanLabelOnOpen?: boolean;
+  /**
+   * 新建时：扫到、输完条码先在本机（这个办公点的物品条码、包装条码）里找，有就提示已经录过，
+   * 点「去入库」「打开它」调这个（不建重复的物品）；本机没有才查网上的商品库。不传就不先查本机（改资料时）
+   */
+  onUseExisting?: (match: BarcodeMatch, action: 'in' | 'open') => void;
+  /** 改资料时：最近一次入库，在「最近一次入库的价格」里改它的单价、总价，保存时改那条记录 */
+  lastStockIn?: StockInPriceRecord | null;
 }) {
   const db = useSQLiteContext();
   const office = useOffice();
@@ -117,6 +128,13 @@ export function StockProductForm({
       ? initial.barcode
       : null;
   const [lookup, setLookup] = useState<LookupState>(autoLookupCode ? 'loading' : 'idle');
+  const checkLocal = !!onUseExisting;
+  // 先查本机：确认过的条码（扫到、输完离开输入框、带进来的）和查到的结果；换了办公点会重查
+  const [confirmedCode, setConfirmedCode] = useState(checkLocal ? (initial.barcode ?? '').trim() : '');
+  const [localMatch, setLocalMatch] = useState<{ code: string; officeId: number; match: BarcodeMatch | null } | null>(null);
+  // 最近一次入库的价格（改资料时）：改过才保存
+  const [lastInDraft, setLastInDraft] = useState<PriceDraft>(() => (lastStockIn ? storedPriceDraft(lastStockIn) : EMPTY_PRICE));
+  const [lastInEdited, setLastInEdited] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -159,10 +177,39 @@ export function StockProductForm({
   );
 
   useEffect(() => {
-    if (!autoLookupCode || lookedUp.current === autoLookupCode) return;
+    // 要先查本机的，查完本机没有再查商品库（见下面）
+    if (!autoLookupCode || checkLocal || lookedUp.current === autoLookupCode) return;
     lookedUp.current = autoLookupCode;
     applyLookup(autoLookupCode).catch(() => setLookup('notfound'));
-  }, [autoLookupCode, applyLookup]);
+  }, [autoLookupCode, checkLocal, applyLookup]);
+
+  // 先查本机：物品条码、包装条码，只在选的办公点里找；本机有就提示，不查商品库；没有再查商品库
+  useEffect(() => {
+    if (!checkLocal || !confirmedCode) return;
+    let cancelled = false;
+    const code = confirmedCode;
+    findByBarcode(db, code, officeId)
+      .catch(() => null)
+      .then((match) => {
+        if (cancelled) return;
+        setLocalMatch({ code, officeId, match });
+        if (match) setLookup('idle');
+        else runLookup(code);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [checkLocal, confirmedCode, officeId, db, runLookup]);
+
+  /** 条码定下来了（扫到、输完）：要先查本机的去查本机，否则直接查商品库 */
+  const confirmBarcode = useCallback(
+    (raw: string) => {
+      const code = raw.trim();
+      if (checkLocal) setConfirmedCode(code);
+      else runLookup(code);
+    },
+    [checkLocal, runLookup],
+  );
 
   // 从扫码页回来时取走扫到的条码
   useFocusEffect(
@@ -170,14 +217,14 @@ export function StockProductForm({
       const code = takeScanResult(SCAN_TARGET);
       if (code) {
         setBarcode(code);
-        runLookup(code);
+        confirmBarcode(code);
       }
       const packScan = takeScanResultWithPrefix(PACK_SCAN_PREFIX);
       if (packScan) {
         const key = Number(packScan.target.slice(PACK_SCAN_PREFIX.length));
         setPackRows((rows) => rows.map((row) => (row.key === key ? { ...row, barcode: packScan.code } : row)));
       }
-    }, [runLookup]),
+    }, [confirmBarcode]),
   );
 
   /** 拍包装识别回来：认出来的填上（名称、规格直接填，日期、保质期填进「这次入库」），不保存，等人核对 */
@@ -258,6 +305,7 @@ export function StockProductForm({
     if (hasErrors) return;
     setSubmitting(true);
     try {
+      const lastStockInPrice = lastStockIn && lastInEdited ? draftPrice(lastStockIn, recordUnit, lastInDraft) : undefined;
       await onSubmit(
         {
           officeId,
@@ -283,6 +331,7 @@ export function StockProductForm({
               price,
             }
           : null,
+        lastStockInPrice,
       );
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : '保存失败，请重试');
@@ -302,6 +351,13 @@ export function StockProductForm({
   const nameTag = scanTagFor(labelScan, labelScan?.name ?? null, name);
   const specTag = scanTagFor(labelScan, labelScan?.spec ?? null, spec);
   const otherNames = nameCandidates.filter((candidate) => candidate !== name);
+  // 本机已经有这个条码：条码框里还是查的那个、办公点也没换才显示
+  const existing =
+    localMatch && localMatch.code === confirmedCode && localMatch.officeId === officeId && barcode.trim() === confirmedCode
+      ? localMatch.match
+      : null;
+  // 入库记录是按当时的最小单位记的：显示用打开表单时的单位
+  const recordUnit = initial.unit ?? '件';
 
   return (
     <Screen contentStyle={formStyles.page}>
@@ -351,9 +407,9 @@ export function StockProductForm({
             setBarcode(value);
             setLookup('idle');
           }}
-          // 离开输入框、按回车（扫码枪扫完会带回车）时查商品库。网页版不支持 onEndEditing，所以用这两个
-          onBlur={() => runLookup(barcode.trim())}
-          onSubmitEditing={() => runLookup(barcode.trim())}
+          // 离开输入框、按回车（扫码枪扫完会带回车）时查本机、商品库。网页版不支持 onEndEditing，所以用这两个
+          onBlur={() => confirmBarcode(barcode)}
+          onSubmitEditing={() => confirmBarcode(barcode)}
           placeholder="扫码或手动输入，可不填"
           keyboardType="number-pad"
           right={
@@ -366,16 +422,34 @@ export function StockProductForm({
             />
           }
         />
+        {existing && onUseExisting ? (
+          // 本机已经录过这个条码（物品的或包装的）：不再建一个，去它那里入库或打开看
+          <View style={formStyles.existing}>
+            <Text style={formStyles.existingText}>
+              这个条码已经是「{existing.product.name}」{existing.pack ? `的${existing.pack.unit}` : ''}了
+            </Text>
+            <View style={formStyles.existingActions}>
+              <Button title="去入库" compact onPress={() => onUseExisting(existing, 'in')} style={formStyles.flex} />
+              <Button
+                title="打开它"
+                compact
+                variant="secondary"
+                onPress={() => onUseExisting(existing, 'open')}
+                style={formStyles.flex}
+              />
+            </View>
+          </View>
+        ) : null}
         {/* 拍包装识别填过以后，商品库没查到的那句不再显示（上面横幅已经说了从照片填了什么） */}
-        {lookup !== 'idle' && !(labelScan && lookup === 'notfound') ? (
+        {lookup !== 'idle' && !existing && !(labelScan && lookup === 'notfound') ? (
           <Text style={[formStyles.lookup, lookup === 'found' && { color: colors.ok }]}>
             {lookup === 'loading'
               ? '正在查商品库…'
               : lookup === 'found'
                 ? '已从商品库带出名称，请核对。'
                 : canScanLabel
-                  ? '商品库里没有这个条码，可以点上面的「拍包装识别」自动填，或者手动填名称；保存后再扫就能直接认出来。如果这是某个已录物品的整箱条码，到那个物品的「编辑 → 包装规格」里扫它。'
-                  : '商品库里没有这个条码，请手动填名称；保存后再扫就能直接认出来。如果这是某个已录物品的整箱条码，到那个物品的「编辑 → 包装规格」里扫它。'}
+                  ? '商品库里没查到这个条码，可以用上面的「拍包装识别」，或手动填。'
+                  : '商品库里没查到这个条码，请手动填名称。'}
           </Text>
         ) : null}
         <Field
@@ -532,6 +606,23 @@ export function StockProductForm({
         </View>
       </Card>
 
+      {!withFirstBatch && lastStockIn ? (
+        <>
+          <SectionTitle title="最近一次入库的价格" />
+          <Card style={formStyles.card}>
+            <StockInPriceFields
+              record={lastStockIn}
+              baseUnit={recordUnit}
+              draft={lastInDraft}
+              onChange={(draft) => {
+                setLastInDraft(draft);
+                setLastInEdited(true);
+              }}
+            />
+          </Card>
+        </>
+      ) : null}
+
       {withFirstBatch ? (
         <>
           <SectionTitle title="这次入库" />
@@ -643,4 +734,9 @@ const formStyles = StyleSheet.create({
   candidate: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.pill, backgroundColor: colors.surfaceSunken },
   candidateText: { fontSize: font.small, color: colors.ink },
   pressed: { opacity: 0.6 },
+  flex: { flex: 1 },
+  // 本机已经有这个条码：浅黄底一块，下面两个按钮
+  existing: { gap: 10, padding: 12, borderRadius: radius.sm, backgroundColor: colors.warnSoft, marginTop: -4 },
+  existingText: { fontSize: font.body, color: colors.warn, fontWeight: '500' },
+  existingActions: { flexDirection: 'row', gap: 8 },
 });

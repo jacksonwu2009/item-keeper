@@ -88,6 +88,8 @@ export type BatchInput = {
   entry?: EntryQty | null;
   /** 入库价格，可不填 */
   price?: EntryPrice | null;
+  /** 入库：按「生产日期+保质期」填时的保质期。商品资料里还没记保质期就记进去，下次入库默认用这种填法 */
+  shelfLife?: ShelfLife | null;
 };
 
 export type BarcodeMatch = { product: StockProduct; pack: PackUnit | null };
@@ -396,6 +398,13 @@ export async function stockIn(db: SQLiteDatabase, productId: number, batch: Batc
     }
     await recordMovement(db, productId, 'in', batch.quantity, batch.expiryDate, batch.note ?? null, batch.entry, batch.price);
     await db.runAsync('UPDATE stock_product SET updated_at = ? WHERE id = ?', [nowIso(), productId]);
+    const shelfLife = validShelfLife(batch.shelfLife);
+    if (shelfLife) {
+      await db.runAsync(
+        'UPDATE stock_product SET shelf_life_amount = ?, shelf_life_unit = ? WHERE id = ? AND shelf_life_amount IS NULL',
+        [shelfLife.amount, shelfLife.unit, productId],
+      );
+    }
   });
 }
 
@@ -478,6 +487,31 @@ export async function listMovements(db: SQLiteDatabase, productId: number, limit
     `SELECT ${MOVEMENT_COLUMNS} FROM stock_movement WHERE product_id = ? ORDER BY happened_at DESC, id DESC LIMIT ?`,
     [productId, limit],
   );
+}
+
+/** 最近一次入库（入库记录、数量为正）；没入过库是 null。入库面板按它带出过期日期，编辑页改它的价格 */
+export async function getLastStockIn(db: SQLiteDatabase, productId: number): Promise<StockMovement | null> {
+  return db.getFirstAsync<StockMovement>(
+    `SELECT ${MOVEMENT_COLUMNS} FROM stock_movement
+      WHERE product_id = ? AND type = 'in' AND delta > 0
+      ORDER BY happened_at DESC, id DESC LIMIT 1`,
+    [productId],
+  );
+}
+
+/** 改一条入库记录的单价、总价（price 为 null 是清掉价格）。出库、调整的记录没有价格，不能改 */
+export async function updateMovementPrice(db: SQLiteDatabase, movementId: number, price: EntryPrice | null): Promise<void> {
+  const movement = await db.getFirstAsync<{ type: MovementType; delta: number }>(
+    'SELECT type, delta FROM stock_movement WHERE id = ?',
+    [movementId],
+  );
+  if (!movement) throw new Error('这条记录不存在了');
+  if (movement.type !== 'in' || !(movement.delta > 0)) throw new Error('只有入库记录能改价格');
+  await db.runAsync('UPDATE stock_movement SET unit_price = ?, total_price = ? WHERE id = ?', [
+    price ? roundUnitPrice(price.unitPrice) : null,
+    price ? roundTotalPrice(price.totalPrice) : null,
+    movementId,
+  ]);
 }
 
 export type LastPurchasePrice = {

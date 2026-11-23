@@ -117,3 +117,13 @@ export function defaultPriceDraft(lastPerBaseUnit: number | null, unitSize: numb
   if (lastPerBaseUnit === null || !(unitSize > 0)) return EMPTY_PRICE;
   return { source: 'unit', text: toInputText(roundUnitPrice(lastPerBaseUnit * unitSize)) };
 }
+
+/**
+ * 改一条入库记录的价格时，输入框一开始显示的：有总价就从总价算单价（单价是四舍五入过的，反过来乘会差几分），
+ * 只记了单价就从单价算总价，都没记就空着
+ */
+export function storedPriceDraft(stored: { unitPrice: number | null; totalPrice: number | null }): PriceDraft {
+  if (stored.totalPrice !== null) return { source: 'total', text: toInputText(stored.totalPrice) };
+  if (stored.unitPrice !== null) return { source: 'unit', text: toInputText(stored.unitPrice) };
+  return EMPTY_PRICE;
+}

@@ -7,6 +7,7 @@ import {
   UNIT_PRICE_DECIMALS,
   type PriceDraft,
 } from '../lib/price';
+import type { ScanTag } from '../lib/labelScan';
 import { colors, font } from '../theme';
 import { NumberField } from './NumberField';
 
@@ -21,6 +22,7 @@ export function PriceFields({
   qty,
   unit,
   hint,
+  tag,
 }: {
   draft: PriceDraft;
   onChange: (draft: PriceDraft) => void;
@@ -28,6 +30,8 @@ export function PriceFields({
   /** 单价按这个单位算，如「箱」「瓶」 */
   unit: string;
   hint?: string | null;
+  /** 价格是自动带出来的（如按上次进价）：标在单价后面，人改过就不传 */
+  tag?: ScanTag | null;
 }) {
   const { unitText, totalText } = derivePrice(draft, qty);
   return (
@@ -42,6 +46,7 @@ export function PriceFields({
             max={PRICE_MAX}
             buttons={false}
             placeholder="选填"
+            tag={tag}
           />
         </View>
         <View style={priceStyles.cell}>

@@ -185,9 +185,17 @@ export function IconButton({
   );
 }
 
-/** 拍照识别填的格子：标签后面的小字「识别」（蓝）或「没认出来」（黄） */
+const SCAN_TAG_CHIP: Record<ScanTag, { text: string; tone: Tone }> = {
+  recognized: { text: '识别', tone: 'info' },
+  missing: { text: '没认出来', tone: 'warn' },
+  last: { text: '按上次', tone: 'neutral' },
+  saved: { text: '按资料', tone: 'neutral' },
+};
+
+/** 自动填的格子：标签后面的小字「识别」（蓝）、「没认出来」（黄）、「按上次」「按资料」（灰） */
 export function ScanTagChip({ tag }: { tag: ScanTag }) {
-  return tag === 'recognized' ? <Chip text="识别" tone="info" /> : <Chip text="没认出来" tone="warn" />;
+  const chip = SCAN_TAG_CHIP[tag];
+  return <Chip text={chip.text} tone={chip.tone} />;
 }
 
 /** 照片里认出来的格子：浅蓝底、蓝边（照效果图） */

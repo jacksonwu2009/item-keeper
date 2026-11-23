@@ -115,7 +115,8 @@ export function ExpiryInput({
       if (!knownShelfLife) setShelfAmount('');
     }
     const nextTags: Tags = { ...tags };
-    delete nextTags.shelfLife;
+    // 保质期还是商品资料里的（标「按资料」）就留着标；别的标记按这次拍的重来
+    if (nextTags.shelfLife !== 'saved') delete nextTags.shelfLife;
     if (plan.tags.expiry) nextTags.expiry = plan.tags.expiry;
     if (plan.tags.productionDate) nextTags.productionDate = plan.tags.productionDate;
     if (plan.tags.shelfLife === 'missing') nextTags.shelfLife = 'missing';

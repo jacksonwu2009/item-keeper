@@ -9,6 +9,7 @@ import {
   formatPrice,
   perBaseUnitPrice,
   roundUnitPrice,
+  storedPriceDraft,
 } from '../src/lib/price';
 
 describe('入库单价、总价互算', () => {
@@ -67,5 +68,19 @@ describe('入库单价、总价互算', () => {
     assert.equal(formatPrice(48), '48.00');
     assert.equal(formatPrice(0.0833), '0.0833');
     assert.equal(roundUnitPrice(33.333333), 33.33);
+  });
+});
+
+describe('改入库记录的价格：输入框一开始显示的', () => {
+  it('有总价就从总价算单价，算出来和记的单价一样', () => {
+    // 当时填的总价 29.99（12 瓶），单价存成 2.5；从单价反算会变成 30
+    const draft = storedPriceDraft({ unitPrice: 2.5, totalPrice: 29.99 });
+    assert.deepEqual(draft, { source: 'total', text: '29.99' });
+    assert.deepEqual(derivePrice(draft, 12).price, { unitPrice: 2.5, totalPrice: 29.99 });
+  });
+
+  it('只有单价从单价算；都没记就空着', () => {
+    assert.deepEqual(storedPriceDraft({ unitPrice: 0.0833, totalPrice: null }), { source: 'unit', text: '0.0833' });
+    assert.deepEqual(storedPriceDraft({ unitPrice: null, totalPrice: null }), EMPTY_PRICE);
   });
 });

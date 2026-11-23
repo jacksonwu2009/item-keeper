@@ -1,7 +1,9 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+
+import { isLabelOcrAvailable } from '../../../modules/label-ocr';
 
 import { BatchPicker, pickedAllocation, type PickerBatch } from '../../components/BatchPicker';
 import { DateField } from '../../components/DateField';
@@ -20,6 +22,7 @@ import {
   SectionTitle,
   Sheet,
 } from '../../components/ui';
+import { MovementPriceSheet } from '../../components/MovementPriceEditor';
 import { NumberField } from '../../components/NumberField';
 import { PriceFields } from '../../components/PriceFields';
 import { SwipeRow, UndoBar } from '../../components/SwipeRow';
@@ -29,6 +32,7 @@ import {
   deleteBatch,
   deleteProduct,
   getLastPurchasePrice,
+  getLastStockIn,
   getProduct,
   listBatches,
   listMovements,
@@ -37,6 +41,7 @@ import {
   stockIn,
   stockOut,
   updateBatch,
+  updateMovementPrice,
   type EntryQty,
   type LastPurchasePrice,
   type StockBatch,
@@ -48,6 +53,7 @@ import { useOffice } from '../../hooks/useOffice';
 import { useTerms } from '../../hooks/useScene';
 import { usePendingDelete } from '../../hooks/usePendingDelete';
 import { formatDate, formatDateTime, formatShelfLife, formatShortDate, toDateStr, todayStr, type ShelfLife } from '../../lib/dates';
+import { stockInExpiryDefaults } from '../../lib/stockInDefaults';
 import { rescheduleReminders } from '../../lib/notifications';
 import { describePacks, formatBreakdown, toBaseQty, type PackUnit } from '../../lib/packs';
 import {
@@ -62,30 +68,37 @@ import { expiryStatus, isLowStock } from '../../lib/status';
 import { formatQty, KIND_LABEL, NOTE_INPUT_MAX, outNote, parseQty, roundQty, type BatchAllocation } from '../../lib/stock';
 import { colors, font, radius } from '../../theme';
 
-type SheetState = { type: 'in' } | { type: 'out' } | { type: 'batch'; batch: StockBatch } | null;
+type SheetState =
+  | { type: 'in' }
+  | { type: 'out' }
+  | { type: 'batch'; batch: StockBatch }
+  | { type: 'price'; movement: StockMovement }
+  | null;
 
 export default function StockDetailScreen() {
   const db = useSQLiteContext();
   const office = useOffice();
   const terms = useTerms();
-  const params = useLocalSearchParams<{ id: string; scanned?: string; unit?: string }>();
+  // in=1：新增页扫到本机已有的条码，点「去入库」过来，一打开就是入库面板
+  const params = useLocalSearchParams<{ id: string; scanned?: string; unit?: string; in?: string }>();
   /** 扫的是整箱等包装上的条码时，入库默认按这个单位 */
   const scannedUnit = typeof params.unit === 'string' ? params.unit : null;
   const productId = Number(params.id);
   const [showScanBanner, setShowScanBanner] = useState(params.scanned === '1');
-  const [sheet, setSheet] = useState<SheetState>(null);
+  const [sheet, setSheet] = useState<SheetState>(params.in === '1' ? { type: 'in' } : null);
   const [message, setMessage] = useState<string | null>(null);
 
   const loader = useCallback(async () => {
-    const [product, batches, movements, packs, settings, lastPrice] = await Promise.all([
+    const [product, batches, movements, packs, settings, lastPrice, lastIn] = await Promise.all([
       getProduct(db, productId),
       listBatches(db, productId),
       listMovements(db, productId, 100),
       listPacks(db, productId),
       getSettings(db),
       getLastPurchasePrice(db, productId),
+      getLastStockIn(db, productId),
     ]);
-    return { product, batches, movements, packs, settings, lastPrice };
+    return { product, batches, movements, packs, settings, lastPrice, lastIn };
   }, [db, productId]);
   const [data, reload, loaded] = useFocusData(loader, {
     product: null as StockProduct | null,
@@ -94,8 +107,9 @@ export default function StockDetailScreen() {
     packs: [] as PackUnit[],
     settings: DEFAULT_SETTINGS,
     lastPrice: null as LastPurchasePrice | null,
+    lastIn: null as StockMovement | null,
   });
-  const { product, movements, packs, settings, lastPrice } = data;
+  const { product, movements, packs, settings, lastPrice, lastIn } = data;
   const [showAllMovements, setShowAllMovements] = useState(false);
   const batchDeletion = usePendingDelete<number>(
     (batchId) => deleteBatch(db, batchId),
@@ -262,8 +276,17 @@ export default function StockDetailScreen() {
           </Card>
         ) : (
           <Card style={detailStyles.listCard}>
+            {movements.some((movement) => movement.type === 'in') ? (
+              <Text style={[detailStyles.batchHint, detailStyles.movementHint]}>点一条入库记录可以改价格</Text>
+            ) : null}
             {(showAllMovements ? movements : movements.slice(0, 8)).map((movement, index) => (
-              <MovementRow key={movement.id} movement={movement} unit={product.unit} first={index === 0} />
+              <MovementRow
+                key={movement.id}
+                movement={movement}
+                unit={product.unit}
+                first={index === 0}
+                onEditPrice={movement.type === 'in' && movement.delta > 0 ? () => openSheet({ type: 'price', movement }) : null}
+              />
             ))}
             {movements.length > 8 ? (
               <Button
@@ -331,9 +354,10 @@ export default function StockDetailScreen() {
             isFood={product.kind === 'food'}
             shelfLife={shelfLife}
             lastPrice={lastPrice}
+            lastIn={lastIn}
             onClose={() => setSheet(null)}
-            onSubmit={async (quantity, expiryDate, entry, price) => {
-              await stockIn(db, product.id, { quantity, expiryDate, entry, price });
+            onSubmit={async (quantity, expiryDate, entry, price, usedShelfLife) => {
+              await stockIn(db, product.id, { quantity, expiryDate, entry, price, shelfLife: usedShelfLife });
               const asEntered = entry.unit !== product.unit ? `${formatQty(entry.qty)} ${entry.unit}，` : '';
               const priceNote = price ? `，总价 ${formatPrice(price.totalPrice)}` : '';
               await afterChange(`已入库 ${asEntered}${formatQty(quantity)} ${product.unit}${priceNote}`);
@@ -354,6 +378,17 @@ export default function StockDetailScreen() {
                   ? `只有 ${formatQty(result.consumed)} ${product.unit}，已全部出库`
                   : `已出库 ${formatQty(result.consumed)} ${product.unit}`,
               );
+            }}
+          />
+        ) : null}
+        {sheet?.type === 'price' ? (
+          <MovementPriceSheet
+            record={sheet.movement}
+            baseUnit={product.unit}
+            onClose={() => setSheet(null)}
+            onSave={async (price) => {
+              await updateMovementPrice(db, sheet.movement.id, price);
+              await afterChange(price ? `价格已更新，总价 ${formatPrice(price.totalPrice)}` : '已清掉这条入库的价格');
             }}
           />
         ) : null}
@@ -399,7 +434,18 @@ function describeMovementPrice(movement: StockMovement, unit: string): string | 
   return parts.length ? parts.join('，') : null;
 }
 
-function MovementRow({ movement, unit, first }: { movement: StockMovement; unit: string; first: boolean }) {
+function MovementRow({
+  movement,
+  unit,
+  first,
+  onEditPrice,
+}: {
+  movement: StockMovement;
+  unit: string;
+  first: boolean;
+  /** 入库记录：点了改价格；别的记录没有价格，是 null */
+  onEditPrice: (() => void) | null;
+}) {
   const positive = movement.delta > 0;
   const enteredInPack =
     movement.inputUnit && movement.inputUnit !== unit && movement.inputQty !== null
@@ -414,7 +460,13 @@ function MovementRow({ movement, unit, first }: { movement: StockMovement; unit:
     .filter(Boolean)
     .join(' · ');
   return (
-    <View style={[detailStyles.movementRow, !first && detailStyles.movementDivider]}>
+    <Pressable
+      accessibilityRole={onEditPrice ? 'button' : undefined}
+      accessibilityHint={onEditPrice ? '改这条入库的价格' : undefined}
+      disabled={!onEditPrice}
+      onPress={onEditPrice ?? undefined}
+      style={({ pressed }) => [detailStyles.movementRow, !first && detailStyles.movementDivider, pressed && detailStyles.pressed]}
+    >
       <View style={detailStyles.flex}>
         <Text style={detailStyles.batchDate}>
           {MOVEMENT_LABEL[movement.type]}
@@ -431,7 +483,7 @@ function MovementRow({ movement, unit, first }: { movement: StockMovement; unit:
         {positive ? '+' : ''}
         {formatQty(movement.delta)} {unit}
       </Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -442,6 +494,7 @@ function StockInSheet({
   isFood,
   shelfLife,
   lastPrice,
+  lastIn,
   onClose,
   onSubmit,
 }: {
@@ -452,8 +505,17 @@ function StockInSheet({
   /** 商品资料里的保质期：有就默认按「生产日期+保质期」填，生产日期空着等人选或拍 */
   shelfLife: ShelfLife | null;
   lastPrice: LastPurchasePrice | null;
+  /** 上一次入库：过期日期的填法、到期日按它带出来（见 lib/stockInDefaults.ts） */
+  lastIn: StockMovement | null;
   onClose: () => void;
-  onSubmit: (quantity: number, expiryDate: string | null, entry: EntryQty, price: EntryPrice | null) => Promise<void>;
+  /** shelfLife：按「生产日期+保质期」填时的保质期，商品资料里还没有就记进去 */
+  onSubmit: (
+    quantity: number,
+    expiryDate: string | null,
+    entry: EntryQty,
+    price: EntryPrice | null,
+    shelfLife: ShelfLife | null,
+  ) => Promise<void>;
 }) {
   /** 1 个这种单位等于多少最小单位（1 箱 = 24 瓶） */
   const unitSize = (entry: string) => toBaseQty(1, entry, unit, packs) ?? 1;
@@ -462,6 +524,12 @@ function StockInSheet({
   // 同一物品默认用上一次的进价，换算成这次的单位
   const [priceDraft, setPriceDraft] = useState<PriceDraft>(() =>
     defaultPriceDraft(lastPrice?.perBaseUnit ?? null, unitSize(defaultUnit)),
+  );
+  // 单价是按上次进价带出来的、还没改过：标「按上次」（换单位时跟着换算，还算按上次）
+  const [priceFromLast, setPriceFromLast] = useState(!!lastPrice);
+  // 过期日期按上次入库带出来（填法、到期日或保质期），带出的格子标出来
+  const [expiryDefaults] = useState(() =>
+    stockInExpiryDefaults({ last: lastIn, shelfLife, isFood, canScan: isLabelOcrAvailable() }),
   );
   const [expiry, setExpiry] = useState<ExpiryValue>({ expiry: null, error: null, shelfLife: null });
   const [showErrors, setShowErrors] = useState(false);
@@ -491,9 +559,13 @@ function StockInSheet({
       />
       <PriceFields
         draft={priceDraft}
-        onChange={setPriceDraft}
+        onChange={(draft) => {
+          setPriceDraft(draft);
+          setPriceFromLast(false);
+        }}
         qty={qty}
         unit={entryUnit}
+        tag={priceFromLast ? 'last' : null}
         hint={
           lastPrice
             ? `已按上次进价填好（${purchaseDay(lastPrice.happenedAt)}，每${lastPrice.unit} ${formatPrice(lastPrice.unitPrice)}），价格变了直接改。`
@@ -501,10 +573,10 @@ function StockInSheet({
         }
       />
       <ExpiryInput
-        initialMode={shelfLife ? 'shelf' : isFood ? 'date' : 'none'}
+        initialMode={expiryDefaults.mode}
+        fill={expiryDefaults.fill}
         initialShelfLife={shelfLife}
-        initialProductionDate={shelfLife ? null : undefined}
-        shelfLifeHint={shelfLife ? `保质期按商品资料里记的（${formatShelfLife(shelfLife)}）填好了，这一批不一样可以改` : null}
+        initialProductionDate={null}
         allowNone
         onChange={setExpiry}
       />
@@ -518,7 +590,7 @@ function StockInSheet({
           if (qtyError || expiry.error || qty === null || baseQty === null) return;
           setBusy(true);
           try {
-            await onSubmit(baseQty, expiry.expiry, { qty, unit: entryUnit }, price);
+            await onSubmit(baseQty, expiry.expiry, { qty, unit: entryUnit }, price, expiry.shelfLife);
           } finally {
             setBusy(false);
           }
@@ -706,6 +778,8 @@ const detailStyles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   movementDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line },
+  movementHint: { paddingTop: 10, paddingHorizontal: 16 },
+  pressed: { opacity: 0.6 },
   // 批次：每一批一张卡片，和外面列表的一行一样，左滑删除的样子也一样
   batchList: { gap: 8 },
   batchHint: { fontSize: font.small, color: colors.faint, textAlign: 'center' },

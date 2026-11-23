@@ -66,8 +66,11 @@ export function dateScanProblem(result: LabelParseResult): ScanProblem | null {
   return null;
 }
 
-/** 拍照识别填的格子：recognized = 照片里认出来的（蓝底、标「识别」），missing = 没认出来，要人填 */
-export type ScanTag = 'recognized' | 'missing';
+/**
+ * 自动填的格子标什么：recognized = 照片里认出来的（蓝底、标「识别」），missing = 没认出来，要人填；
+ * last = 按这个物品上一次入库带出来的（标「按上次」），saved = 按商品资料里记的（标「按资料」）。人改过就不再标。
+ */
+export type ScanTag = 'recognized' | 'missing' | 'last' | 'saved';
 
 export type ExpiryFill = {
   /** 过期日期的填法：直接填到期日，还是生产日期 + 保质期 */

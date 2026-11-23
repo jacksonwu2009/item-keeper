@@ -24,8 +24,10 @@ import {
   createProduct,
   findByBarcode,
   getLastPurchasePrice,
+  getLastStockIn,
   getProduct,
   productShelfLife,
+  updateMovementPrice,
   updateProduct,
   listBatches,
   listMovements,
@@ -225,6 +227,52 @@ describe('数据层（真实 SQLite）', () => {
       ],
     );
     assert.equal(await getLastPurchasePrice(db, 999), null);
+  });
+
+  it('最近一次入库带出过期日期；入库记录能改价格（单价、总价、清掉），出库记录不能', async () => {
+    const db = await openDb();
+    const id = await createProduct(db, product({ packs: [{ unit: '箱', size: 24, barcode: null }] }), {
+      quantity: 24,
+      expiryDate: '2027-01-31',
+      entry: { qty: 1, unit: '箱' },
+      price: { unitPrice: 48, totalPrice: 48 },
+    });
+    assert.equal((await getLastStockIn(db, 999)), null);
+    let last = await getLastStockIn(db, id);
+    assert.deepEqual(last && [last.expiryDate, last.inputQty, last.inputUnit, last.unitPrice], ['2027-01-31', 1, '箱', 48]);
+    // 出库不算入库；再入一次没记过期日期的，最近一次就是它
+    await stockOut(db, id, 2, '用掉');
+    await stockIn(db, id, { quantity: 6, expiryDate: null, entry: { qty: 6, unit: '瓶' } });
+    last = await getLastStockIn(db, id);
+    assert.deepEqual(last && [last.delta, last.expiryDate, last.unitPrice], [6, null, null]);
+
+    // 补上价格：单价按 4 位、总价按 2 位存
+    await updateMovementPrice(db, last!.id, { unitPrice: 2.33333, totalPrice: 13.999 });
+    last = await getLastStockIn(db, id);
+    assert.deepEqual(last && [last.unitPrice, last.totalPrice], [2.33, 14]);
+    assert.deepEqual((await getLastPurchasePrice(db, id))?.unitPrice, 2.33);
+    // 清掉价格
+    await updateMovementPrice(db, last!.id, null);
+    last = await getLastStockIn(db, id);
+    assert.deepEqual(last && [last.unitPrice, last.totalPrice], [null, null]);
+
+    const out = (await listMovements(db, id)).find((movement) => movement.type === 'out');
+    await assert.rejects(updateMovementPrice(db, out!.id, { unitPrice: 1, totalPrice: 2 }), /只有入库记录能改价格/);
+    await assert.rejects(updateMovementPrice(db, 999, null), /不存在/);
+  });
+
+  it('入库按「生产日期+保质期」填：商品资料里没有保质期就记进去，有了不改', async () => {
+    const db = await openDb();
+    const id = await createProduct(db, product({}), null);
+    await stockIn(db, id, { quantity: 1, expiryDate: '2027-06-30', shelfLife: { amount: 180, unit: 'day' } });
+    assert.deepEqual(productShelfLife((await getProduct(db, id))!), { amount: 180, unit: 'day' });
+    // 这一批的保质期不一样：商品资料里的不跟着改
+    await stockIn(db, id, { quantity: 1, expiryDate: '2027-07-30', shelfLife: { amount: 12, unit: 'month' } });
+    assert.deepEqual(productShelfLife((await getProduct(db, id))!), { amount: 180, unit: 'day' });
+    // 不合理的保质期不记
+    const other = await createProduct(db, product({ name: '雪碧' }), null);
+    await stockIn(db, other, { quantity: 1, expiryDate: '2027-06-30', shelfLife: { amount: 0, unit: 'day' } });
+    assert.equal(productShelfLife((await getProduct(db, other))!), null);
   });
 
   it('备份提醒：上次导出时间只在本机，导入别人的设置不会改它；最早录入时间', async () => {
