@@ -1,0 +1,46 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.labelocr'
+version = '1.0.0'
+
+// 模型不进 git：由 scripts/fetch-ocr-models.sh 下载到 modules/label-ocr/models/（iOS 也从这里打包），
+// 这里把那个目录当作 assets 打进安装包，App 里的路径是 PP-OCRv6_small/det/inference.onnx 这样
+def modelsDir = file("${projectDir}/../models")
+def requiredModelFiles = [
+  'PP-OCRv6_small/det/inference.onnx',
+  'PP-OCRv6_small/det/inference.yml',
+  'PP-OCRv6_small/rec/inference.onnx',
+  'PP-OCRv6_small/rec/inference.yml',
+]
+
+android {
+  namespace "expo.modules.labelocr"
+  defaultConfig {
+    versionCode 1
+    versionName "1.0.0"
+    consumerProguardFiles "proguard-rules.pro"
+  }
+  sourceSets {
+    main {
+      assets.srcDirs += [modelsDir]
+    }
+  }
+}
+
+def checkLabelOcrModels = tasks.register('checkLabelOcrModels') {
+  doLast {
+    def missing = requiredModelFiles.findAll { !new File(modelsDir, it).isFile() }
+    if (!missing.isEmpty()) {
+      throw new GradleException("拍照识别的模型文件不在 ${modelsDir}：${missing.join('、')}。先运行 scripts/fetch-ocr-models.sh")
+    }
+  }
+}
+tasks.named('preBuild').configure { dependsOn checkLabelOcrModels }
+
+dependencies {
+  // PaddleOCR 官方安卓示例（deploy/ppocr-android）用的版本
+  implementation "com.microsoft.onnxruntime:onnxruntime-android:1.21.1"
+}

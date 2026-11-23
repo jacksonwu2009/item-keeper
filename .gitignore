@@ -43,3 +43,9 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# 拍照识别的模型（几十 MB），用 scripts/fetch-ocr-models.sh 下载
+modules/label-ocr/models/
+# 本地原生模块打包时生成的
+modules/*/android/build/
+modules/*/android/.cxx/

@@ -11,6 +11,7 @@
 #   ARCHS=armeabi-v7a,arm64-v8a scripts/build-android.sh   兼容老手机
 #
 # 产物：dist/item-keeper-<版本>.apk。release 包用调试签名，只适合自己装，不能上架。
+# 拍照识别的模型不在 git 里，打包前先下载（已有且校验对的不再下），见 scripts/fetch-ocr-models.sh。
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -18,6 +19,8 @@ cd "$(dirname "$0")/.."
 : "${ANDROID_HOME:=$HOME/Library/Android/sdk}"
 : "${ARCHS:=arm64-v8a}"
 export JAVA_HOME ANDROID_HOME ANDROID_SDK_ROOT="$ANDROID_HOME" NODE_ENV=production
+
+scripts/fetch-ocr-models.sh
 
 CI=1 npx expo prebuild --platform android --no-install
 git checkout -- package.json 2>/dev/null || true   # prebuild 会改 scripts，保持原样

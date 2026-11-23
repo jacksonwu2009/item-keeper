@@ -35,10 +35,19 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "扫描商品条码和设备序列号需要使用相机",
+          "cameraPermission": "扫描条码、拍包装识别文字需要使用相机",
           "recordAudioAndroid": false
         }
       ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "从相册选包装照片识别文字，照片只在手机上处理",
+          "cameraPermission": "扫描条码、拍包装识别文字需要使用相机",
+          "microphonePermission": false
+        }
+      ],
+      "./modules/label-ocr/app.plugin.js",
       [
         "expo-notifications",
         {
