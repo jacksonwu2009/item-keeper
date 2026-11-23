@@ -180,8 +180,11 @@ export function StockProductForm({
   /** 拍包装识别回来：认出来的填上（名称、规格直接填，日期、保质期填进「这次入库」），不保存，等人核对 */
   function applyLabelScan({ label, dates }: LabelScanResult) {
     setLabelCameraOpen(false);
-    if (label.name) setName(label.name);
-    if (label.spec) setSpec(label.spec);
+    // 重拍时：上一次照片填的、没改过的换成这一次的（这次没认出就清空）；手动填的不动
+    const replace = (current: string, previous: string | null | undefined, next: string | null) =>
+      next ?? (previous && current === previous ? '' : current);
+    setName((current) => replace(current, labelScan?.name, label.name));
+    setSpec((current) => replace(current, labelScan?.spec, label.spec));
     setNameCandidates(label.nameCandidates);
     const fill = planExpiryFill({
       dates: dates ?? { production: null, expiry: null, confirmed: false },
@@ -350,7 +353,8 @@ export function StockProductForm({
             />
           }
         />
-        {lookup !== 'idle' ? (
+        {/* 拍包装识别填过以后，商品库没查到的那句不再显示（上面横幅已经说了从照片填了什么） */}
+        {lookup !== 'idle' && !(labelScan && lookup === 'notfound') ? (
           <Text style={[formStyles.lookup, lookup === 'found' && { color: colors.ok }]}>
             {lookup === 'loading'
               ? '正在查商品库…'

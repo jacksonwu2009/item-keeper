@@ -526,8 +526,8 @@ export function decideDates(
       let note = '';
       if (item.role === 'production') note = '旁边写着「生产」';
       else if (item.role === 'expiry') note = '旁边写着「保质期至 / 有效期至 / EXP」';
-      else if (item.date > today) note = '在今天以后，像是到期日';
       else if (index > 0) note = `比前一个晚${describeGap(diffDays(item.date, sorted[index - 1].date))}，像是保质期至`;
+      else if (item.date > today) note = '在今天以后，像是到期日';
       else if (sorted.length > 1) note = '排在前面，像是生产日期';
       return { date: item.date, role: item.role, note };
     });
