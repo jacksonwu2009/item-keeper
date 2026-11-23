@@ -83,3 +83,9 @@ export function validatePacks(baseUnit: string, packs: PackUnit[]): string | nul
   if (new Set(barcodes).size !== barcodes.length) return '两个包装用了同一个条码';
   return null;
 }
+
+/** 没设包装规格时举的例子：「1 箱 = 12 瓶」；最小单位就是箱时换成提 */
+export function packExample(baseUnit: string): string {
+  const pack = ['箱', '提', '包'].find((unit) => unit !== baseUnit) ?? '箱';
+  return `1 ${pack} = 12 ${baseUnit}`;
+}

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { describePacks, formatBreakdown, toBaseQty, unitOptions, validatePacks, type PackUnit } from '../src/lib/packs';
+import { describePacks, formatBreakdown, packExample, toBaseQty, unitOptions, validatePacks, type PackUnit } from '../src/lib/packs';
 
 const packs: PackUnit[] = [
   { unit: '提', size: 6, barcode: null },
@@ -51,5 +51,15 @@ describe('包装单位换算', () => {
       ]) ?? '',
       /同一个条码/,
     );
+  });
+});
+
+describe('没设包装规格时举的例子', () => {
+  it('按最小单位举「1 箱 = 12 瓶」', () => {
+    assert.equal(packExample('瓶'), '1 箱 = 12 瓶');
+  });
+
+  it('最小单位就是箱时换成提', () => {
+    assert.equal(packExample('箱'), '1 提 = 12 箱');
   });
 });

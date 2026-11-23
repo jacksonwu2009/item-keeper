@@ -64,7 +64,7 @@ export async function loadReportSource(
         [officeId, officeId],
       ),
       db.getAllAsync<ReportMovement>(
-        `SELECT m.id, m.product_id AS productId, p.office_id AS officeId, p.kind, p.name AS productName, p.unit,
+        `SELECT m.id, m.product_id AS productId, p.office_id AS officeId, p.kind, p.category, p.name AS productName, p.unit,
                 m.type, m.delta, m.happened_at AS happenedAt, m.note, m.input_qty AS inputQty,
                 m.input_unit AS inputUnit, m.unit_price AS unitPrice, m.total_price AS totalPrice
            FROM stock_movement m JOIN stock_product p ON p.id = m.product_id
@@ -100,6 +100,7 @@ export async function loadReportSource(
       id: product.id,
       officeId: product.officeId,
       kind: product.kind,
+      category: product.category,
       name: product.name,
       barcode: product.barcode,
       unit: product.unit,

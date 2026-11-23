@@ -40,7 +40,7 @@ export async function collectBackup(
       kind: 'food' | 'daily';
       barcode: string | null;
       name: string;
-      brand: string | null;
+      category: string | null;
       spec: string | null;
       unit: string;
       location: string | null;
@@ -52,7 +52,7 @@ export async function collectBackup(
       createdAt: string;
       updatedAt: string;
     }>(
-      `SELECT id, office_id AS officeId, kind, barcode, name, brand, spec, unit, location,
+      `SELECT id, office_id AS officeId, kind, barcode, name, category, spec, unit, location,
               low_stock_threshold AS lowStockThreshold, expiry_lead_days AS expiryLeadDays,
               shelf_life_amount AS shelfLifeAmount, shelf_life_unit AS shelfLifeUnit,
               note, created_at AS createdAt, updated_at AS updatedAt
@@ -173,7 +173,7 @@ async function keptProducts(db: SQLiteDatabase, officeId: number, replacedKinds:
 async function insertProduct(db: SQLiteDatabase, officeId: number, product: BackupProduct): Promise<void> {
   const result = await db.runAsync(
     `INSERT INTO stock_product
-       (office_id, kind, barcode, name, brand, spec, unit, location, low_stock_threshold, expiry_lead_days, note, created_at, updated_at,
+       (office_id, kind, barcode, name, category, spec, unit, location, low_stock_threshold, expiry_lead_days, note, created_at, updated_at,
         shelf_life_amount, shelf_life_unit)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
@@ -181,7 +181,7 @@ async function insertProduct(db: SQLiteDatabase, officeId: number, product: Back
       product.kind,
       product.barcode,
       product.name,
-      product.brand,
+      product.category,
       product.spec,
       product.unit,
       product.location,

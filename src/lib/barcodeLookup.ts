@@ -19,23 +19,36 @@ function clean(value: unknown): string | null {
   return trimmed ? trimmed : null;
 }
 
-export type LookupFields = { name: string; brand: string; spec: string };
+export type LookupFields = { name: string; spec: string };
 
-export const EMPTY_LOOKUP_FIELDS: LookupFields = { name: '', brand: '', spec: '' };
+export const EMPTY_LOOKUP_FIELDS: LookupFields = { name: '', spec: '' };
 
 /**
- * 新扫的条码查完后，表单上的名称、品牌、规格各填什么：
+ * 新扫的条码查完后，表单上的名称、规格各填什么：
  * 空着的、或者还是上一次扫码带出来的（没手动改过），换成这次查到的（这次没查到的那一项清空，免得留着上一个物品的信息）；
  * 手动填过、改过的不动。
  */
 export function mergeLookupFields(current: LookupFields, previousAuto: LookupFields, next: LookupFields): LookupFields {
   const pick = (key: keyof LookupFields) => (current[key] === '' || current[key] === previousAuto[key] ? next[key] : current[key]);
-  return { name: pick('name'), brand: pick('brand'), spec: pick('spec') };
+  return { name: pick('name'), spec: pick('spec') };
 }
 
-/** 查商品库的结果换成表单里的三项（没查到就都是空的） */
+/**
+ * 物品不记品牌：商品库带出的品牌，名称里没有就拼到名称前面（如「农夫山泉饮用天然水」）；
+ * 挨着的是英文字母、数字时中间空一格；只有品牌没有名称时名称就是品牌
+ */
+export function nameWithBrand(name: string | null, brand: string | null): string {
+  const base = name?.trim() ?? '';
+  const prefix = brand?.trim() ?? '';
+  if (!prefix || base.toLowerCase().includes(prefix.toLowerCase())) return base;
+  if (!base) return prefix;
+  const gap = /[A-Za-z0-9]$/.test(prefix) || /^[A-Za-z0-9]/.test(base) ? ' ' : '';
+  return `${prefix}${gap}${base}`;
+}
+
+/** 查商品库的结果换成表单里的两项（没查到就都是空的） */
 export function lookupFieldsOf(info: BarcodeInfo | null): LookupFields {
-  return { name: info?.name ?? '', brand: info?.brand ?? '', spec: info?.spec ?? '' };
+  return { name: nameWithBrand(info?.name ?? null, info?.brand ?? null), spec: info?.spec ?? '' };
 }
 
 export function looksLikeProductBarcode(code: string): boolean {

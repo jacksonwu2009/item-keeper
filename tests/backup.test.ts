@@ -29,7 +29,7 @@ const source: BackupSource = {
       kind: 'food',
       barcode: '6901234567892',
       name: '纯牛奶',
-      brand: '某牌',
+      category: '乳品',
       spec: '250ml×12',
       unit: '盒',
       location: '冰箱',
@@ -45,7 +45,7 @@ const source: BackupSource = {
       kind: 'daily',
       barcode: null,
       name: '抽纸',
-      brand: null,
+      category: null,
       spec: null,
       unit: '包',
       location: null,
@@ -163,12 +163,12 @@ describe('备份导入校验', () => {
   it('容忍多余字段和缺省的可选字段', () => {
     const data = exported();
     data.products[0].totalQty = 6;
-    delete data.products[0].brand;
+    delete data.products[0].category;
     delete data.products[1].movements;
     const result = parseBackup(JSON.stringify(data));
     assert.equal(result.ok, true);
     if (!result.ok) return;
-    assert.equal(result.data.products[0].brand, null);
+    assert.equal(result.data.products[0].category, null);
     assert.deepEqual(result.data.products[1].movements, []);
     assert.equal('totalQty' in result.data.products[0], false);
   });
@@ -263,6 +263,28 @@ describe('备份导入校验', () => {
       assert.equal(rejected.ok, false, `${amount} ${unit}`);
       if (!rejected.ok) assert.match(rejected.error, /保质期/);
     }
+  });
+
+  it('分类随备份往返；不写品牌；老备份里的品牌不读，没有分类的导入后是没选', () => {
+    const data = exported();
+    assert.deepEqual(
+      data.products.map((item: Record<string, unknown>) => item.category),
+      ['乳品', null],
+    );
+    assert.equal('brand' in data.products[0], false);
+    const old = exported();
+    for (const item of old.products) {
+      delete item.category;
+      item.brand = '某牌';
+    }
+    const result = parseBackup(JSON.stringify(old));
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.deepEqual(
+      result.data.products.map((item) => item.category),
+      [null, null],
+    );
+    assert.equal('brand' in result.data.products[0], false);
   });
 
   it('旧版本的备份直接拒绝', () => {

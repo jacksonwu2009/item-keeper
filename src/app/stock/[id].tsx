@@ -55,7 +55,7 @@ import { usePendingDelete } from '../../hooks/usePendingDelete';
 import { formatDate, formatDateTime, formatShelfLife, formatShortDate, toDateStr, todayStr, type ShelfLife } from '../../lib/dates';
 import { stockInExpiryDefaults } from '../../lib/stockInDefaults';
 import { rescheduleReminders } from '../../lib/notifications';
-import { describePacks, formatBreakdown, toBaseQty, type PackUnit } from '../../lib/packs';
+import { describePacks, formatBreakdown, packExample, toBaseQty, type PackUnit } from '../../lib/packs';
 import {
   convertPriceUnit,
   defaultPriceDraft,
@@ -79,13 +79,15 @@ export default function StockDetailScreen() {
   const db = useSQLiteContext();
   const office = useOffice();
   const terms = useTerms();
-  // in=1：新增页扫到本机已有的条码，点「去入库」过来，一打开就是入库面板
-  const params = useLocalSearchParams<{ id: string; scanned?: string; unit?: string; in?: string }>();
+  // in=1：一打开就是入库面板；known=1：新增页扫到本机已有的条码跳过来的，入库面板上说一句
+  const params = useLocalSearchParams<{ id: string; scanned?: string; unit?: string; in?: string; known?: string }>();
   /** 扫的是整箱等包装上的条码时，入库默认按这个单位 */
   const scannedUnit = typeof params.unit === 'string' ? params.unit : null;
   const productId = Number(params.id);
   const [showScanBanner, setShowScanBanner] = useState(params.scanned === '1');
   const [sheet, setSheet] = useState<SheetState>(params.in === '1' ? { type: 'in' } : null);
+  // 从新增页跳过来的那一句只在第一次弹出的入库面板上显示
+  const [knownNotice, setKnownNotice] = useState(params.known === '1' && params.in === '1');
   const [message, setMessage] = useState<string | null>(null);
 
   const loader = useCallback(async () => {
@@ -131,6 +133,7 @@ export default function StockDetailScreen() {
 
   async function afterChange(note?: string) {
     setSheet(null);
+    setKnownNotice(false);
     setShowScanBanner(false);
     setMessage(note ?? null);
     await reload();
@@ -194,8 +197,8 @@ export default function StockDetailScreen() {
             <View style={detailStyles.flex}>
               <Text style={detailStyles.kind}>{KIND_LABEL[product.kind]}</Text>
               <Text style={detailStyles.title}>{product.name}</Text>
-              {product.brand || product.spec ? (
-                <Text style={detailStyles.sub}>{[product.brand, product.spec].filter(Boolean).join(' · ')}</Text>
+              {product.category || product.spec ? (
+                <Text style={detailStyles.sub}>{[product.category, product.spec].filter(Boolean).join(' · ')}</Text>
               ) : null}
             </View>
             <View style={detailStyles.qtyBox}>
@@ -304,7 +307,17 @@ export default function StockDetailScreen() {
         <GroupCard>
           {office.multiple ? <InfoRow label={terms.place} value={office.officeName(product.officeId)} /> : null}
           <InfoRow label="条码" value={product.barcode ?? '—'} />
-          <InfoRow label="包装规格" value={packs.length ? describePacks(product.unit, packs) : '—'} />
+          {product.spec ? <InfoRow label="规格" value={product.spec} /> : null}
+          <InfoRow
+            label="包装规格"
+            value={
+              packs.length ? (
+                describePacks(product.unit, packs)
+              ) : (
+                <Text style={detailStyles.infoHint}>没设，在「编辑」里加，如 {packExample(product.unit)}</Text>
+              )
+            }
+          />
           {packs
             .filter((pack) => pack.barcode)
             .map((pack) => (
@@ -355,7 +368,11 @@ export default function StockDetailScreen() {
             shelfLife={shelfLife}
             lastPrice={lastPrice}
             lastIn={lastIn}
-            onClose={() => setSheet(null)}
+            notice={knownNotice ? `已有「${product.name}」，${scannedPack ? `按${scannedPack.unit}` : '直接'}入库` : null}
+            onClose={() => {
+              setSheet(null);
+              setKnownNotice(false);
+            }}
             onSubmit={async (quantity, expiryDate, entry, price, usedShelfLife) => {
               await stockIn(db, product.id, { quantity, expiryDate, entry, price, shelfLife: usedShelfLife });
               const asEntered = entry.unit !== product.unit ? `${formatQty(entry.qty)} ${entry.unit}，` : '';
@@ -495,6 +512,7 @@ function StockInSheet({
   shelfLife,
   lastPrice,
   lastIn,
+  notice,
   onClose,
   onSubmit,
 }: {
@@ -507,6 +525,8 @@ function StockInSheet({
   lastPrice: LastPurchasePrice | null;
   /** 上一次入库：过期日期的填法、到期日按它带出来（见 lib/stockInDefaults.ts） */
   lastIn: StockMovement | null;
+  /** 面板最上面的一句（新增页扫到本机已有的条码跳过来时说明一下），没有是 null */
+  notice: string | null;
   onClose: () => void;
   /** shelfLife：按「生产日期+保质期」填时的保质期，商品资料里还没有就记进去 */
   onSubmit: (
@@ -546,6 +566,11 @@ function StockInSheet({
 
   return (
     <Sheet visible title="入库" onClose={onClose}>
+      {notice ? (
+        <View style={detailStyles.banner}>
+          <Text style={detailStyles.bannerText}>{notice}</Text>
+        </View>
+      ) : null}
       <UnitQtyField
         label="数量"
         baseUnit={unit}
@@ -807,6 +832,7 @@ const detailStyles = StyleSheet.create({
   },
   error: { fontSize: font.small, color: colors.danger },
   hintText: { fontSize: font.small, color: colors.faint },
+  infoHint: { fontSize: font.body, color: colors.faint, flexShrink: 1, textAlign: 'right' },
   group: { gap: 8 },
   breakdown: { fontSize: font.small, color: colors.accent, fontWeight: '600', marginTop: 2 },
 });

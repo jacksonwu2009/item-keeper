@@ -34,6 +34,7 @@ function product(overrides: Partial<ReportProduct> & { id: number; name: string 
   return {
     officeId: 1,
     kind: 'food',
+    category: null,
     barcode: null,
     unit: '瓶',
     location: null,
@@ -52,6 +53,7 @@ function movement(overrides: Partial<ReportMovement> & Pick<ReportMovement, 'pro
     id: movementId,
     officeId: 1,
     kind: 'food',
+    category: null,
     productName: `物品${overrides.productId}`,
     unit: '瓶',
     happenedAt: '2026-11-10T02:00:00.000Z',
@@ -337,30 +339,36 @@ describe('导出表格', () => {
           inputUnit: '箱',
           unitPrice: 48,
           totalPrice: 96,
+          category: '饮料冲调',
         }),
         movement({ productId: 1, productName: '可乐', type: 'out', delta: -3, note: '用掉', officeId: 2 }),
       ],
       officeName,
     );
-    assert.equal(table.header.length, 11);
-    assert.deepEqual(table.rows[0].slice(1), ['北京', '食品', '可乐', '入库', 48, '瓶', '2 箱', 48, 96, null]);
-    assert.deepEqual(table.rows[1].slice(1), ['上海', '食品', '可乐', '出库', -3, '瓶', null, null, null, '用掉']);
+    assert.equal(table.header.length, 12);
+    assert.deepEqual(table.header.slice(1, 5), ['办公点', '大类', '分类', '物品']);
+    assert.deepEqual(table.rows[0].slice(1), ['北京', '食品', '饮料冲调', '可乐', '入库', 48, '瓶', '2 箱', 48, 96, null]);
+    assert.deepEqual(table.rows[1].slice(1), ['上海', '食品', null, '可乐', '出库', -3, '瓶', null, null, null, '用掉']);
     assert.equal(table.rows[0][0], formatLocalTimestamp('2026-11-10T02:00:00.000Z'));
   });
 
   it('当前库存：每批一行，没有批次的物品也列一行', () => {
     const table = stockTable(
-      [product({ id: 1, name: '牛奶', barcode: '690', location: '冰箱' }), product({ id: 2, name: '面包', totalQty: 0 })],
+      [
+        product({ id: 1, name: '牛奶', barcode: '690', location: '冰箱', category: '乳品' }),
+        product({ id: 2, name: '面包', totalQty: 0 }),
+      ],
       [
         { productId: 1, quantity: 6, expiryDate: '2026-11-25', addedOn: '2026-11-18' },
         { productId: 1, quantity: 4, expiryDate: null, addedOn: '2026-11-10' },
       ],
       officeName,
     );
+    assert.deepEqual(table.header.slice(0, 4), ['办公点', '大类', '分类', '物品']);
     assert.deepEqual(table.rows, [
-      ['北京', '食品', '牛奶', { text: '690' }, 6, '瓶', '2026-11-25', '2026-11-18', '冰箱'],
-      ['北京', '食品', '牛奶', { text: '690' }, 4, '瓶', null, '2026-11-10', '冰箱'],
-      ['北京', '食品', '面包', null, 0, '瓶', null, null, null],
+      ['北京', '食品', '乳品', '牛奶', { text: '690' }, 6, '瓶', '2026-11-25', '2026-11-18', '冰箱'],
+      ['北京', '食品', '乳品', '牛奶', { text: '690' }, 4, '瓶', null, '2026-11-10', '冰箱'],
+      ['北京', '食品', null, '面包', null, 0, '瓶', null, null, null],
     ]);
   });
 
@@ -419,7 +427,7 @@ describe('报表取数（真实 SQLite）', () => {
       kind: 'food',
       barcode: null,
       name: '可乐',
-      brand: null,
+      category: null,
       spec: null,
       unit: '瓶',
       location: null,

@@ -27,7 +27,7 @@ const cola: StockProductInput = {
   kind: 'food',
   barcode: null,
   name: '可乐',
-  brand: null,
+  category: null,
   spec: null,
   unit: '瓶',
   location: null,

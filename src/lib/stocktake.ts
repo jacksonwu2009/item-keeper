@@ -228,7 +228,7 @@ export function buildStocktakeCsv(items: readonly CsvItem[], status: StocktakeSt
       describeAdjustment(item, status),
     ];
   });
-  return toCsv(['分类', '名称', '单位', '账面数量', '实盘数量', '差异', '结果', '是否已调整库存'], rows);
+  return toCsv(['大类', '名称', '单位', '账面数量', '实盘数量', '差异', '结果', '是否已调整库存'], rows);
 }
 
 export type OpenStocktakeScope = { officeName: string | null; kinds: readonly StocktakeKind[] };

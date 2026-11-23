@@ -40,7 +40,7 @@ async function officeNames(db: Db): Promise<string[]> {
 async function addMilk(db: Db, officeId = 1): Promise<void> {
   await createProduct(
     db,
-    { officeId, kind: 'food', barcode: null, name: '牛奶', brand: null, spec: null, unit: '瓶', location: null, lowStockThreshold: null, expiryLeadDays: null, note: null, packs: [] },
+    { officeId, kind: 'food', barcode: null, name: '牛奶', category: null, spec: null, unit: '瓶', location: null, lowStockThreshold: null, expiryLeadDays: null, note: null, packs: [] },
     { quantity: 2, expiryDate: null },
   );
 }
@@ -309,7 +309,7 @@ describe('备份里的场景', () => {
     assert.deepEqual(await officeNames(named), ['上海', '北京']);
 
     const used = await openDb();
-    await createProduct(used, { officeId: 1, kind: 'daily', barcode: null, name: '纸巾', brand: null, spec: null, unit: '包', location: null, lowStockThreshold: null, expiryLeadDays: null, note: null, packs: [] }, { quantity: 1, expiryDate: null });
+    await createProduct(used, { officeId: 1, kind: 'daily', barcode: null, name: '纸巾', category: null, spec: null, unit: '包', location: null, lowStockThreshold: null, expiryLeadDays: null, note: null, packs: [] }, { quantity: 1, expiryDate: null });
     await replaceData(used, file, { scope: ['food'], offices: ['北京'] });
     assert.deepEqual(await officeNames(used), ['默认办公点', '北京']);
   });

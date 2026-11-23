@@ -70,7 +70,8 @@ export type BackupProduct = {
   kind: 'food' | 'daily';
   barcode: string | null;
   name: string;
-  brand: string | null;
+  /** 分类（1.9.5 起）：老备份里没有，导入后是没选。老备份里的 brand（品牌）导入时不读 */
+  category: string | null;
   spec: string | null;
   unit: string;
   location: string | null;
@@ -244,7 +245,7 @@ export function buildBackup(
       kind: product.kind,
       barcode: product.barcode,
       name: product.name,
-      brand: product.brand,
+      category: product.category,
       spec: product.spec,
       unit: product.unit,
       location: product.location,
@@ -525,7 +526,7 @@ function parseProduct(raw: unknown, index: number, exportedAt: string, offices: 
     kind: raw.kind,
     barcode: optText(raw.barcode, where, '条码'),
     name,
-    brand: optText(raw.brand, where, '品牌'),
+    category: optText(raw.category, where, '分类'),
     spec: optText(raw.spec, where, '规格'),
     unit,
     location: optText(raw.location, where, '存放位置'),

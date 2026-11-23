@@ -71,6 +71,8 @@ export type ReportProduct = {
   id: number;
   officeId: number;
   kind: StockKind;
+  /** 分类（粮油米面等），没选是 null */
+  category: string | null;
   name: string;
   barcode: string | null;
   unit: string;
@@ -94,6 +96,7 @@ export type ReportMovement = {
   productId: number;
   officeId: number;
   kind: StockKind;
+  category: string | null;
   productName: string;
   unit: string;
   type: 'in' | 'out' | 'adjust';
@@ -521,11 +524,13 @@ type OfficeNameOf = (officeId: number) => string;
 
 export function movementTable(movements: readonly ReportMovement[], officeName: OfficeNameOf): CsvTable {
   return {
-    header: ['时间', currentTerms().place, '分类', '物品', '类型', '数量变化', '单位', '按什么单位输入', '单价', '总价', '原因/备注'],
+    // 大类是食品 / 日用品，分类是粮油米面这些
+    header: ['时间', currentTerms().place, '大类', '分类', '物品', '类型', '数量变化', '单位', '按什么单位输入', '单价', '总价', '原因/备注'],
     rows: movements.map((movement) => [
       formatLocalTimestamp(movement.happenedAt),
       officeName(movement.officeId),
       KIND_LABEL[movement.kind],
+      movement.category,
       movement.productName,
       MOVEMENT_TYPE_LABEL[movement.type],
       roundQty(movement.delta),
@@ -552,7 +557,13 @@ export function stockTable(
   }
   const rows: CsvCell[][] = [];
   for (const product of products) {
-    const base: CsvCell[] = [officeName(product.officeId), KIND_LABEL[product.kind], product.name, textCell(product.barcode)];
+    const base: CsvCell[] = [
+      officeName(product.officeId),
+      KIND_LABEL[product.kind],
+      product.category,
+      product.name,
+      textCell(product.barcode),
+    ];
     const productBatches = batchesByProduct.get(product.id) ?? [];
     if (!productBatches.length) {
       rows.push([...base, 0, product.unit, null, null, product.location]);
@@ -562,7 +573,7 @@ export function stockTable(
       rows.push([...base, roundQty(batch.quantity), product.unit, batch.expiryDate, batch.addedOn, product.location]);
     }
   }
-  return { header: [currentTerms().place, '分类', '物品', '条码', '数量', '单位', '过期日期', '入库日期', '存放位置'], rows };
+  return { header: [currentTerms().place, '大类', '分类', '物品', '条码', '数量', '单位', '过期日期', '入库日期', '存放位置'], rows };
 }
 
 export function deviceTable(

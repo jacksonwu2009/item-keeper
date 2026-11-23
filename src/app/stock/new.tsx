@@ -32,14 +32,12 @@ export default function NewStockScreen() {
         settings={settings}
         withFirstBatch
         scanLabelOnOpen={scanLabelOnOpen}
-        // 条码本机已经录过：「去入库」打开它就是入库面板（扫的是包装条码时按那个包装入库），「打开它」只打开
-        onUseExisting={(match, action) =>
+        // 条码本机已经录过：直接打开它、弹出入库面板（扫的是包装条码时按那个包装入库），不建重复的物品；
+        // 用 replace，返回时不回到空的新增页
+        onUseExisting={(match) =>
           router.replace({
             pathname: '/stock/[id]',
-            params:
-              action === 'in'
-                ? { id: String(match.product.id), in: '1', ...(match.pack ? { unit: match.pack.unit } : {}) }
-                : { id: String(match.product.id) },
+            params: { id: String(match.product.id), in: '1', known: '1', ...(match.pack ? { unit: match.pack.unit } : {}) },
           })
         }
         submitLabel="保存"

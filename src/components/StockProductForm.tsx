@@ -15,6 +15,7 @@ import {
   mergeLookupFields,
   type LookupFields,
 } from '../lib/barcodeLookup';
+import { CATEGORIES, categoryForKind } from '../lib/categories';
 import type { ShelfLife, ShelfLifeUnit } from '../lib/dates';
 import { planExpiryFill, type ExpiryFill, type ScanTag } from '../lib/labelScan';
 import { toBaseQty, validatePacks, type PackUnit } from '../lib/packs';
@@ -75,10 +76,10 @@ export function StockProductForm({
   /** 一打开就进拍包装识别的相机（扫码页点「没有条码？拍包装识别」进来的） */
   scanLabelOnOpen?: boolean;
   /**
-   * 新建时：扫到、输完条码先在本机（这个办公点的物品条码、包装条码）里找，有就提示已经录过，
-   * 点「去入库」「打开它」调这个（不建重复的物品）；本机没有才查网上的商品库。不传就不先查本机（改资料时）
+   * 新建时：扫到、输完条码先在本机（这个办公点的物品条码、包装条码）里找，找到了就调这个
+   * （新增页直接打开它去入库，不建重复的物品）；本机没有才查网上的商品库。不传就不先查本机（改资料时）
    */
-  onUseExisting?: (match: BarcodeMatch, action: 'in' | 'open') => void;
+  onUseExisting?: (match: BarcodeMatch) => void;
   /** 改资料时：最近一次入库，在「最近一次入库的价格」里改它的单价、总价，保存时改那条记录 */
   lastStockIn?: StockInPriceRecord | null;
 }) {
@@ -88,7 +89,7 @@ export function StockProductForm({
   const [kind, setKind] = useState<StockKind>(initial.kind);
   const [barcode, setBarcode] = useState(initial.barcode ?? '');
   const [name, setName] = useState(initial.name ?? '');
-  const [brand, setBrand] = useState(initial.brand ?? '');
+  const [category, setCategory] = useState<string | null>(initial.category ?? null);
   const [spec, setSpec] = useState(initial.spec ?? '');
   const [unit, setUnit] = useState(initial.unit ?? '件');
   const [location, setLocation] = useState(initial.location ?? '');
@@ -129,9 +130,12 @@ export function StockProductForm({
       : null;
   const [lookup, setLookup] = useState<LookupState>(autoLookupCode ? 'loading' : 'idle');
   const checkLocal = !!onUseExisting;
-  // 先查本机：确认过的条码（扫到、输完离开输入框、带进来的）和查到的结果；换了办公点会重查
+  // 先查本机：确认过的条码（扫到、输完离开输入框、带进来的）；换了办公点会重查
   const [confirmedCode, setConfirmedCode] = useState(checkLocal ? (initial.barcode ?? '').trim() : '');
-  const [localMatch, setLocalMatch] = useState<{ code: string; officeId: number; match: BarcodeMatch | null } | null>(null);
+  const barcodeRef = useRef(barcode);
+  const onUseExistingRef = useRef(onUseExisting);
+  // 已经跳去本机那个物品了：不再跳第二次
+  const usedExisting = useRef(false);
   // 最近一次入库的价格（改资料时）：改过才保存
   const [lastInDraft, setLastInDraft] = useState<PriceDraft>(() => (lastStockIn ? storedPriceDraft(lastStockIn) : EMPTY_PRICE));
   const [lastInEdited, setLastInEdited] = useState(false);
@@ -139,20 +143,22 @@ export function StockProductForm({
   const [showErrors, setShowErrors] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const lookedUp = useRef<string | null>(null);
-  // 上一次扫码从商品库带出来的名称、品牌、规格：再扫别的条码时，没手动改过的这几项换成新查到的
+  // 上一次扫码从商品库带出来的名称、规格：再扫别的条码时，没手动改过的这两项换成新查到的
   const autoFilled = useRef<LookupFields>(EMPTY_LOOKUP_FIELDS);
-  const fieldsRef = useRef<LookupFields>({ name, brand, spec });
+  const fieldsRef = useRef<LookupFields>({ name, spec });
   useEffect(() => {
-    fieldsRef.current = { name, brand, spec };
-  }, [name, brand, spec]);
+    fieldsRef.current = { name, spec };
+    barcodeRef.current = barcode;
+    onUseExistingRef.current = onUseExisting;
+  });
 
   useEffect(() => {
     listLocations(db).then(setLocations).catch(() => undefined);
   }, [db]);
 
   /**
-   * 查商品库，把结果填进名称、品牌、规格：空着的、还是上一次扫码带出来的换成这次的（这次没查到就清空），手动填过的不动。
-   * 只在 await 之后改状态。
+   * 查商品库，把结果填进名称、规格（品牌拼进名称）：空着的、还是上一次扫码带出来的换成这次的（这次没查到就清空），
+   * 手动填过的不动。只在 await 之后改状态。
    */
   const applyLookup = useCallback(async (code: string) => {
     const info = await lookupBarcode(code);
@@ -162,7 +168,6 @@ export function StockProductForm({
     const merged = mergeLookupFields(fieldsRef.current, autoFilled.current, next);
     autoFilled.current = next;
     setName(merged.name);
-    setBrand(merged.brand);
     setSpec(merged.spec);
   }, []);
 
@@ -183,7 +188,7 @@ export function StockProductForm({
     applyLookup(autoLookupCode).catch(() => setLookup('notfound'));
   }, [autoLookupCode, checkLocal, applyLookup]);
 
-  // 先查本机：物品条码、包装条码，只在选的办公点里找；本机有就提示，不查商品库；没有再查商品库
+  // 先查本机：物品条码、包装条码，只在选的办公点里找；本机有就直接去那个物品（不查商品库）；没有再查商品库
   useEffect(() => {
     if (!checkLocal || !confirmedCode) return;
     let cancelled = false;
@@ -191,10 +196,16 @@ export function StockProductForm({
     findByBarcode(db, code, officeId)
       .catch(() => null)
       .then((match) => {
-        if (cancelled) return;
-        setLocalMatch({ code, officeId, match });
-        if (match) setLookup('idle');
-        else runLookup(code);
+        // 查的时候条码框又改了：等改完确认了再查
+        if (cancelled || barcodeRef.current.trim() !== code) return;
+        if (!match) {
+          runLookup(code);
+          return;
+        }
+        if (usedExisting.current) return;
+        usedExisting.current = true;
+        setLookup('idle');
+        onUseExistingRef.current?.(match);
       });
     return () => {
       cancelled = true;
@@ -312,7 +323,7 @@ export function StockProductForm({
           kind,
           barcode: barcode.trim() || null,
           name,
-          brand,
+          category: categoryForKind(kind, category),
           spec,
           unit,
           location,
@@ -351,11 +362,6 @@ export function StockProductForm({
   const nameTag = scanTagFor(labelScan, labelScan?.name ?? null, name);
   const specTag = scanTagFor(labelScan, labelScan?.spec ?? null, spec);
   const otherNames = nameCandidates.filter((candidate) => candidate !== name);
-  // 本机已经有这个条码：条码框里还是查的那个、办公点也没换才显示
-  const existing =
-    localMatch && localMatch.code === confirmedCode && localMatch.officeId === officeId && barcode.trim() === confirmedCode
-      ? localMatch.match
-      : null;
   // 入库记录是按当时的最小单位记的：显示用打开表单时的单位
   const recordUnit = initial.unit ?? '件';
 
@@ -395,7 +401,11 @@ export function StockProductForm({
           { value: 'daily', label: KIND_LABEL.daily },
         ]}
         value={kind}
-        onChange={setKind}
+        onChange={(next) => {
+          setKind(next);
+          // 分类食品、日用品各一套：选过的不属于新的那类就清空（「其他」两边都有，留着）
+          setCategory((current) => categoryForKind(next, current));
+        }}
       />
       <OfficeChooser value={officeId} onChange={setOfficeId} />
 
@@ -422,26 +432,8 @@ export function StockProductForm({
             />
           }
         />
-        {existing && onUseExisting ? (
-          // 本机已经录过这个条码（物品的或包装的）：不再建一个，去它那里入库或打开看
-          <View style={formStyles.existing}>
-            <Text style={formStyles.existingText}>
-              这个条码已经是「{existing.product.name}」{existing.pack ? `的${existing.pack.unit}` : ''}了
-            </Text>
-            <View style={formStyles.existingActions}>
-              <Button title="去入库" compact onPress={() => onUseExisting(existing, 'in')} style={formStyles.flex} />
-              <Button
-                title="打开它"
-                compact
-                variant="secondary"
-                onPress={() => onUseExisting(existing, 'open')}
-                style={formStyles.flex}
-              />
-            </View>
-          </View>
-        ) : null}
         {/* 拍包装识别填过以后，商品库没查到的那句不再显示（上面横幅已经说了从照片填了什么） */}
-        {lookup !== 'idle' && !existing && !(labelScan && lookup === 'notfound') ? (
+        {lookup !== 'idle' && !(labelScan && lookup === 'notfound') ? (
           <Text style={[formStyles.lookup, lookup === 'found' && { color: colors.ok }]}>
             {lookup === 'loading'
               ? '正在查商品库…'
@@ -477,14 +469,16 @@ export function StockProductForm({
             ))}
           </View>
         ) : null}
-        <View style={formStyles.twoCols}>
-          <View style={formStyles.col}>
-            <Field label="品牌" value={brand} onChangeText={setBrand} placeholder="可不填" />
-          </View>
-          <View style={formStyles.col}>
-            <Field label="规格" value={spec} onChangeText={setSpec} placeholder="如 250ml×12" tag={specTag} />
-          </View>
+        <View style={formStyles.group}>
+          <Label>分类（可不选，再点一下取消）</Label>
+          <ChoiceChips
+            options={CATEGORIES[kind].map((value) => ({ value, label: value }))}
+            value={category}
+            onChange={(value) => setCategory((current) => (current === value ? null : value))}
+          />
         </View>
+        {/* 一件东西本身的规格；整箱几瓶在下面「包装规格」里设 */}
+        <Field label="规格" value={spec} onChangeText={setSpec} placeholder="如 550ml" tag={specTag} />
         {!withFirstBatch ? (
           <View style={formStyles.group}>
             <NumberField
@@ -694,8 +688,6 @@ export function StockProductForm({
 const formStyles = StyleSheet.create({
   page: { width: '100%', maxWidth: CONTENT_MAX_WIDTH, alignSelf: 'center' },
   card: { gap: 16 },
-  twoCols: { flexDirection: 'row', gap: 12 },
-  col: { flex: 1, minWidth: 0 },
   group: { gap: 8 },
   lookup: { fontSize: font.small, color: colors.muted },
   error: { fontSize: font.small, color: colors.danger },
@@ -734,9 +726,4 @@ const formStyles = StyleSheet.create({
   candidate: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.pill, backgroundColor: colors.surfaceSunken },
   candidateText: { fontSize: font.small, color: colors.ink },
   pressed: { opacity: 0.6 },
-  flex: { flex: 1 },
-  // 本机已经有这个条码：浅黄底一块，下面两个按钮
-  existing: { gap: 10, padding: 12, borderRadius: radius.sm, backgroundColor: colors.warnSoft, marginTop: -4 },
-  existingText: { fontSize: font.body, color: colors.warn, fontWeight: '500' },
-  existingActions: { flexDirection: 'row', gap: 8 },
 });

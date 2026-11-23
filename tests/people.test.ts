@@ -511,7 +511,7 @@ describe('部门的迁移', () => {
       PRAGMA user_version = 10;
     `);
     await migrateDbIfNeeded(db);
-    assert.deepEqual(await db.getFirstAsync('PRAGMA user_version'), { user_version: 12 });
+    assert.deepEqual(await db.getFirstAsync('PRAGMA user_version'), { user_version: 13 });
     assert.deepEqual(await roster(db), [
       ['张三', null, null, '行政部'],
       ['李四', null, null, null],

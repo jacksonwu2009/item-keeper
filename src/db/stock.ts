@@ -11,7 +11,8 @@ export type StockProduct = {
   kind: StockKind;
   barcode: string | null;
   name: string;
-  brand: string | null;
+  /** 分类（固定选项见 lib/categories.ts），没选是 null */
+  category: string | null;
   spec: string | null;
   unit: string;
   location: string | null;
@@ -67,7 +68,8 @@ export type StockProductInput = {
   kind: StockKind;
   barcode: string | null;
   name: string;
-  brand: string | null;
+  /** 分类，没选是 null */
+  category: string | null;
   spec: string | null;
   unit: string;
   location: string | null;
@@ -95,7 +97,7 @@ export type BatchInput = {
 export type BarcodeMatch = { product: StockProduct; pack: PackUnit | null };
 
 const PRODUCT_COLUMNS = `
-  p.id, p.office_id AS officeId, p.kind, p.barcode, p.name, p.brand, p.spec, p.unit, p.location,
+  p.id, p.office_id AS officeId, p.kind, p.barcode, p.name, p.category, p.spec, p.unit, p.location,
   p.low_stock_threshold AS lowStockThreshold,
   p.expiry_lead_days AS expiryLeadDays,
   p.shelf_life_amount AS shelfLifeAmount, p.shelf_life_unit AS shelfLifeUnit,
@@ -267,7 +269,7 @@ function productParams(input: StockProductInput) {
     input.kind,
     emptyToNull(input.barcode),
     input.name.trim(),
-    emptyToNull(input.brand),
+    emptyToNull(input.category),
     emptyToNull(input.spec),
     input.unit.trim() || '件',
     emptyToNull(input.location),
@@ -289,7 +291,7 @@ export async function createProduct(
     const shelfLife = validShelfLife(input.shelfLife);
     const result = await db.runAsync(
       `INSERT INTO stock_product
-         (office_id, kind, barcode, name, brand, spec, unit, location, low_stock_threshold, expiry_lead_days, note, created_at, updated_at,
+         (office_id, kind, barcode, name, category, spec, unit, location, low_stock_threshold, expiry_lead_days, note, created_at, updated_at,
           shelf_life_amount, shelf_life_unit)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [...productParams(input), now, now, shelfLife?.amount ?? null, shelfLife?.unit ?? null],
@@ -318,7 +320,7 @@ export async function updateProduct(db: SQLiteDatabase, id: number, input: Stock
   await db.withTransactionAsync(async () => {
     await db.runAsync(
       `UPDATE stock_product
-          SET office_id = ?, kind = ?, barcode = ?, name = ?, brand = ?, spec = ?, unit = ?, location = ?,
+          SET office_id = ?, kind = ?, barcode = ?, name = ?, category = ?, spec = ?, unit = ?, location = ?,
               low_stock_threshold = ?, expiry_lead_days = ?, note = ?, updated_at = ?
         WHERE id = ?`,
       [...productParams(input), nowIso(), id],

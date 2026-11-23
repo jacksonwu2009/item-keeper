@@ -17,7 +17,7 @@ import {
   listDeviceTemplates,
   returnDevice,
 } from '../src/db/devices';
-import { splitLegacyDeviceModels } from '../src/db/schema';
+import { migrateDbIfNeeded, splitLegacyDeviceModels } from '../src/db/schema';
 import { getDataSince, getLastExportAt, getSettings, setLastExportAt } from '../src/db/settings';
 import { createOffice, deleteOffice, listOffices } from '../src/db/offices';
 import {
@@ -36,7 +36,7 @@ import {
   stockOut,
   type StockProductInput,
 } from '../src/db/stock';
-import { openDb, plain } from './helpers/memoryDb';
+import { openDb, openRawDb, plain } from './helpers/memoryDb';
 
 
 function product(overrides: Partial<StockProductInput>): StockProductInput {
@@ -45,7 +45,7 @@ function product(overrides: Partial<StockProductInput>): StockProductInput {
     kind: 'food',
     barcode: null,
     name: '可乐',
-    brand: null,
+    category: null,
     spec: null,
     unit: '瓶',
     location: null,
@@ -416,6 +416,63 @@ describe('手机之间按办公点传数据（真实 SQLite）', () => {
     // 不合理的当没填
     const odd = await createProduct(db, product({ name: '雪碧', shelfLife: { amount: 0, unit: 'month' } }), null);
     assert.equal(productShelfLife((await getProduct(db, odd))!), null);
+  });
+
+  it('分类：新建、修改、清空都存得上，随备份往返', async () => {
+    const db = await openDb();
+    const id = await createProduct(db, product({ category: '饮料冲调' }), null);
+    assert.equal((await getProduct(db, id))?.category, '饮料冲调');
+    await updateProduct(db, id, product({ category: '零食' }));
+    assert.equal((await listProducts(db, 'food', null))[0].category, '零食');
+
+    const file = JSON.parse(JSON.stringify(await collectBackup(db)));
+    assert.equal(file.products[0].category, '零食');
+    const restored = await openDb();
+    await replaceData(restored, file, { scope: ['food'], offices: file.offices });
+    assert.equal((await listProducts(restored, 'food', null))[0].category, '零食');
+
+    await updateProduct(db, id, product({ category: null }));
+    assert.equal((await getProduct(db, id))?.category, null);
+  });
+
+  it('升级到 v13：加上分类、删掉品牌列，别的列和数据都在', async () => {
+    const db = openRawDb();
+    await migrateDbIfNeeded(db);
+    // 退回 v12 的样子：有 brand、没有 category
+    await db.execAsync(`
+      ALTER TABLE stock_product DROP COLUMN category;
+      ALTER TABLE stock_product ADD COLUMN brand TEXT;
+      PRAGMA user_version = 12;
+    `);
+    await db.runAsync(
+      `INSERT INTO stock_product
+         (office_id, kind, barcode, name, brand, spec, unit, location, low_stock_threshold, expiry_lead_days, note,
+          created_at, updated_at, shelf_life_amount, shelf_life_unit)
+       VALUES (1, 'food', '690', '矿泉水', '某牌', '550ml', '瓶', '储物柜', 6, 3, '备注', '2026-11-01', '2026-11-02', 12, 'month')`,
+    );
+    const productId = (await db.getFirstAsync<{ id: number }>('SELECT id FROM stock_product'))!.id;
+    await db.runAsync("INSERT INTO stock_pack (product_id, unit, size, barcode, sort) VALUES (?, '箱', 12, '1690', 0)", [productId]);
+    await db.runAsync("INSERT INTO stock_batch (product_id, quantity, expiry_date, added_on) VALUES (?, 12, '2027-01-01', '2026-11-02')", [
+      productId,
+    ]);
+
+    await migrateDbIfNeeded(db);
+
+    assert.deepEqual(await db.getFirstAsync('PRAGMA user_version'), { user_version: 13 });
+    const columns = (await db.getAllAsync<{ name: string }>('PRAGMA table_info(stock_product)')).map((column) => column.name);
+    assert.equal(columns.includes('brand'), false);
+    assert.equal(columns.includes('category'), true);
+    const migrated = (await getProduct(db, productId))!;
+    assert.deepEqual(
+      [migrated.name, migrated.barcode, migrated.spec, migrated.unit, migrated.location, migrated.lowStockThreshold, migrated.expiryLeadDays],
+      ['矿泉水', '690', '550ml', '瓶', '储物柜', 6, 3],
+    );
+    assert.deepEqual([migrated.note, migrated.category, migrated.createdAt, migrated.updatedAt], ['备注', null, '2026-11-01', '2026-11-02']);
+    assert.deepEqual(productShelfLife(migrated), { amount: 12, unit: 'month' });
+    assert.equal((await findByBarcode(db, '1690', 1))?.product.id, productId);
+    assert.equal((await listBatches(db, productId))[0].quantity, 12);
+    // 再跑一次不出错
+    await migrateDbIfNeeded(db);
   });
 
   it('设备的发票号随备份导入', async () => {

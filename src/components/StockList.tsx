@@ -2,13 +2,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useMemo, useState } from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
+import { FlatList, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { DEFAULT_SETTINGS, getSettings } from '../db/settings';
 import { deleteProduct, listAllPacks, listProducts, type StockProductSummary } from '../db/stock';
 import { useFocusData } from '../hooks/useFocusData';
 import { usePendingDelete } from '../hooks/usePendingDelete';
 import { useOffice } from '../hooks/useOffice';
+import { usedCategories } from '../lib/categories';
 import { todayStr } from '../lib/dates';
 import { formatBreakdown, type PackUnit } from '../lib/packs';
 import { rescheduleReminders } from '../lib/notifications';
@@ -16,7 +17,7 @@ import { expiryStatus, isLowStock } from '../lib/status';
 import { formatQty, KIND_LABEL, type StockKind } from '../lib/stock';
 import { colors, font, radius } from '../theme';
 import { SwipeRow, UndoBar } from './SwipeRow';
-import { Chip, Empty, LARGE_TITLE_SCROLL_INSET, ListActions, SearchField, Segmented } from './ui';
+import { Chip, ChoiceChips, Empty, LARGE_TITLE_SCROLL_INSET, ListActions, SearchField, Segmented } from './ui';
 
 type Filter = 'all' | 'attention' | 'low';
 
@@ -46,6 +47,8 @@ export function StockList({ kind }: { kind: StockKind }) {
   });
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
+  // 分类筛选：'' 是全部分类
+  const [categoryFilter, setCategoryFilter] = useState('');
   const deletion = usePendingDelete<number>(
     (id) => deleteProduct(db, id),
     () => {
@@ -55,6 +58,10 @@ export function StockList({ kind }: { kind: StockKind }) {
   );
   const today = todayStr();
   const label = KIND_LABEL[kind];
+  // 这个列表里实际用到的分类；少于 2 个不显示分类那一排。选的分类已经没有物品用了（改了、删了）就当全部分类
+  const categories = useMemo(() => usedCategories(kind, products), [kind, products]);
+  const showCategories = categories.length >= 2;
+  const activeCategory = showCategories && categories.includes(categoryFilter) ? categoryFilter : '';
 
   const rows = useMemo(() => {
     const keyword = query.trim().toLowerCase();
@@ -68,12 +75,13 @@ export function StockList({ kind }: { kind: StockKind }) {
       .filter(({ product, expiry, low }) => {
         if (product.id === deletion.pending?.key) return false;
         if (keyword) {
-          const haystack = [product.name, product.brand, product.spec, product.location, product.barcode]
+          const haystack = [product.name, product.category, product.spec, product.location, product.barcode]
             .filter(Boolean)
             .join(' ')
             .toLowerCase();
           if (!haystack.includes(keyword)) return false;
         }
+        if (activeCategory && product.category !== activeCategory) return false;
         if (filter === 'attention') return expiry?.level === 'expired' || expiry?.level === 'soon';
         if (filter === 'low') return low;
         return true;
@@ -84,7 +92,7 @@ export function StockList({ kind }: { kind: StockKind }) {
           row.expiry?.level === 'expired' ? 0 : row.expiry?.level === 'soon' ? 1 : row.low ? 2 : 3;
         return rank(a) - rank(b) || a.product.name.localeCompare(b.product.name, 'zh');
       });
-  }, [products, query, filter, today, settings.expiryLeadDays, packsByProduct, deletion.pending]);
+  }, [products, query, filter, activeCategory, today, settings.expiryLeadDays, packsByProduct, deletion.pending]);
 
   const scan = () => router.push({ pathname: '/scan', params: { kind } });
   const addManually = () => router.push({ pathname: '/stock/new', params: { kind } });
@@ -95,7 +103,7 @@ export function StockList({ kind }: { kind: StockKind }) {
       {products.length > 0 ? (
         <>
           <SearchField
-            placeholder={`搜索${label}名称、品牌、位置或条码`}
+            placeholder={`搜索${label}名称、分类、位置或条码`}
             value={query}
             onChangeText={setQuery}
             returnKeyType="search"
@@ -110,6 +118,16 @@ export function StockList({ kind }: { kind: StockKind }) {
             value={filter}
             onChange={setFilter}
           />
+          {showCategories ? (
+            // 一排，放不下左右滑
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <ChoiceChips
+                options={[{ value: '', label: '全部分类' }, ...categories.map((value) => ({ value, label: value }))]}
+                value={activeCategory}
+                onChange={setCategoryFilter}
+              />
+            </ScrollView>
+          ) : null}
           <Text style={listStyles.gestureHint}>点开看详情，长按编辑，向左滑删除</Text>
         </>
       ) : null}
@@ -155,11 +173,11 @@ export function StockList({ kind }: { kind: StockKind }) {
               <Text style={listStyles.name} numberOfLines={1}>
                 {product.name}
               </Text>
-              {showOffice || product.brand || product.spec || product.location ? (
+              {showOffice || product.category || product.spec || product.location ? (
                 <Text style={listStyles.meta} numberOfLines={1}>
                   {[
                     showOffice && office.officeName(product.officeId),
-                    product.brand,
+                    product.category,
                     product.spec,
                     product.location && `放在 ${product.location}`,
                   ]

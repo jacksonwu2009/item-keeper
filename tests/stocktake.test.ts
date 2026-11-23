@@ -42,7 +42,7 @@ function product(overrides: Partial<StockProductInput>): StockProductInput {
     kind: 'food',
     barcode: null,
     name: '可乐',
-    brand: null,
+    category: null,
     spec: null,
     unit: '瓶',
     location: null,
@@ -160,7 +160,7 @@ describe('盘点纯函数', () => {
       'done',
     );
     const lines = text.replace('﻿', '').trim().split('\r\n');
-    assert.equal(lines[0], '分类,名称,单位,账面数量,实盘数量,差异,结果,是否已调整库存');
+    assert.equal(lines[0], '大类,名称,单位,账面数量,实盘数量,差异,结果,是否已调整库存');
     assert.equal(lines[1], '食品,可乐,瓶,10,8,-2,盘亏,是（-2）');
     assert.equal(lines[2], '设备,显示器,件,3,2,-1,盘亏,否（设备要手动处理）');
     assert.equal(lines[3], '日用品,抽纸,包,,,,未盘,否');
