@@ -11,7 +11,8 @@ import Foundation
 /// - 识别输入：高 48（rec/inference.yml 的 RecResizeImg.image_shape），宽按比例、最多 3200，一次一行。
 /// - 字典：rec/inference.yml 的 PostProcess.character_dict，末尾补空格；第 0 类是 CTC 空白。
 /// - 竖着的框（高 / 宽 ≥ 1.5）转 90° 再识别（官方 QuadTextCrop）。
-/// - 方向：不加方向分类模型，拿字最多的三行两个方向各认一次，置信度明显高的方向就是整张图的方向。
+/// - 方向：不加方向分类模型，拿字最多的三行两个方向各认一次，置信度明显高的方向就是整张图的方向；
+///   不是正着的，把整张图转正再检测、识别一遍（电脑上 PaddleOCR 也是先判断整图方向、转正再检测）。
 final class OcrEngine {
   static let model = "PP-OCRv6_small"
   static let detMinSide = 64
@@ -76,7 +77,8 @@ final class OcrEngine {
   func run(_ image: Raster) throws -> Output {
     let detStart = Clock.nowMs()
     let boxes = try detect(image)
-    let detMs = Clock.nowMs() - detStart
+    let firstDetMs = Clock.nowMs() - detStart
+    var secondDetMs = 0.0
 
     let recStart = Clock.nowMs()
     var cache: [Int: (String, Double)] = [:]
@@ -90,18 +92,10 @@ final class OcrEngine {
 
     let vertical = boxes.indices.filter { isVertical(boxes[$0]) }
     let horizontal = boxes.indices.filter { !isVertical(boxes[$0]) }
-    let pageVertical = vertical.count > horizontal.count
     // start 是从框的第几个角开始当左上角：0 不转，1 逆时针转 90°，2 转 180°，3 顺时针转 90°
-    let pageStart: Int
-    let startOf: (Int) -> Int
-    if pageVertical {
-      pageStart = try vote(boxes, vertical, defaultStart: 1, otherStart: 3, recognize)
-      startOf = { _ in pageStart }
-    } else {
-      pageStart = try vote(boxes, horizontal, defaultStart: 0, otherStart: 2, recognize)
-      // 横排为主的图里少数竖着的框：照官方逆时针转 90°（整张倒着时反过来）
-      startOf = { index in self.isVertical(boxes[index]) ? (pageStart == 0 ? 1 : 3) : pageStart }
-    }
+    let pageStart = vertical.count > horizontal.count
+      ? try vote(boxes, vertical, defaultStart: 1, otherStart: 3, recognize)
+      : try vote(boxes, horizontal, defaultStart: 0, otherStart: 2, recognize)
     // 为了让字正过来，整张图顺时针转了多少度
     let rotation: Int
     switch pageStart {
@@ -110,24 +104,45 @@ final class OcrEngine {
     case 3: rotation = 90
     default: rotation = 0
     }
+
     var lines: [Line] = []
-    for index in boxes.indices {
-      let start = startOf(index)
-      let (text, score) = try recognize(index, start)
-      if text.allSatisfy({ $0.isWhitespace }) { continue }
-      let corners = rotated(boxes[index], start).map {
-        toPageFrame($0, width: image.width, height: image.height, rotation: rotation)
+    let page: Raster
+    if rotation == 0 {
+      // 字是正的：照官方，竖着的框逆时针转 90° 再认
+      page = image
+      for index in boxes.indices {
+        let start = isVertical(boxes[index]) ? 1 : 0
+        let (text, score) = try recognize(index, start)
+        if !isBlank(text) {
+          lines.append(Line(text: text, score: score, corners: rotated(boxes[index], start)))
+        }
       }
-      lines.append(Line(text: text, score: score, corners: corners))
+    } else {
+      // 包装侧着或倒着拍：整张图转正再检测一遍（检测模型对正着的字准得多：侧着检测时漏行、并行），
+      // 相当于电脑上 PaddleOCR 先做整图方向判断再检测
+      let secondStart = Clock.nowMs()
+      page = image.rotatedClockwise(rotation)
+      let uprightBoxes = try detect(page)
+      secondDetMs = Clock.nowMs() - secondStart
+      for box in uprightBoxes {
+        let corners = rotated(box, isVertical(box) ? 1 : 0)
+        let (text, score) = try recognizeCrop(page.cropQuad(corners))
+        if !isBlank(text) {
+          lines.append(Line(text: text, score: score, corners: corners))
+        }
+      }
     }
-    let recMs = Clock.nowMs() - recStart
+    // 识别时间含判断方向；转正后的第二次检测算进检测时间
+    let recMs = Clock.nowMs() - recStart - secondDetMs
     let order = DbPostProcess.sortReadingOrder(lines.map(\.corners))
-    let swapsSides = rotation == 90 || rotation == 270
     return Output(
-      lines: order.map { lines[$0] },
-      width: swapsSides ? image.height : image.width,
-      height: swapsSides ? image.width : image.height,
-      rotation: rotation, detMs: detMs, recMs: recMs)
+      lines: order.map { lines[$0] }, width: page.width, height: page.height,
+      rotation: rotation, detMs: firstDetMs + secondDetMs, recMs: recMs)
+  }
+
+  /// 和 Kotlin 的 isBlank 一样：空的或全是空白（含全角空格）
+  private func isBlank(_ text: String) -> Bool {
+    text.unicodeScalars.allSatisfy { $0.properties.isWhitespace }
   }
 
   private func isVertical(_ box: [PointD]) -> Bool {
@@ -165,16 +180,6 @@ final class OcrEngine {
       otherScore += try recognize(index, otherStart).1
     }
     return otherScore > defaultScore + 0.05 * Double(sample.count) ? otherStart : defaultStart
-  }
-
-  /// 把原图里的点换到「整张图顺时针转了 rotation 度」以后的坐标
-  private func toPageFrame(_ point: PointD, width: Int, height: Int, rotation: Int) -> PointD {
-    switch rotation {
-    case 90: return PointD(x: Double(height) - point.y, y: point.x)
-    case 180: return PointD(x: Double(width) - point.x, y: Double(height) - point.y)
-    case 270: return PointD(x: point.y, y: Double(width) - point.x)
-    default: return point
-    }
   }
 
   private func detect(_ image: Raster) throws -> [[PointD]] {

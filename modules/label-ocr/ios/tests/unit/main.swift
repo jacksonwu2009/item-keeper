@@ -166,6 +166,20 @@ if let modelsPath {
   }
 }
 
+// MARK: - 整张图顺时针转（方向判断后转正再检测用）：和 EXIF 的 6、3、8 是同一种转法
+
+do {
+  let (width, height) = (5, 3)
+  let raster = Raster(width: width, height: height, pixels: (0..<(width * height * 3)).map { UInt8($0 % 256) })
+  for (degrees, orientation) in [(90, 6), (180, 3), (270, 8)] {
+    let rotated = raster.rotatedClockwise(degrees)
+    let expected = ImageInput.applyOrientation(raster, orientation: orientation)
+    check(rotated.width == expected.width && rotated.height == expected.height && rotated.pixels == expected.pixels,
+          "顺时针 \(degrees)° 和 EXIF 方向 \(orientation) 一样")
+  }
+  check(raster.rotatedClockwise(0).pixels == raster.pixels, "转 0° 不变")
+}
+
 // MARK: - 读图：EXIF 方向和 crop（拿 ImageIO 自己按方向摆正的结果当参考）
 
 func makeTestImage(width: Int, height: Int) -> CGImage {

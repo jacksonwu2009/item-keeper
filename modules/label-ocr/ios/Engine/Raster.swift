@@ -141,4 +141,36 @@ struct Raster {
     let tensor = toTensor(dstW: dstW, dstH: targetHeight, order: "RGB", scale: 1 / 255, mean: half, std: half)
     return (tensor, dstW)
   }
+
+  /// 整张图顺时针转 degrees 度（0 / 90 / 180 / 270）
+  func rotatedClockwise(_ degrees: Int) -> Raster {
+    guard degrees == 90 || degrees == 180 || degrees == 270 else { return self }
+    let outW = degrees == 180 ? width : height
+    let outH = degrees == 180 ? height : width
+    var out = [UInt8](repeating: 0, count: pixels.count)
+    let (width, height) = (self.width, self.height)
+    pixels.withUnsafeBufferPointer { source in
+      out.withUnsafeMutableBufferPointer { target in
+        for y in 0..<outH {
+          for x in 0..<outW {
+            let sx: Int
+            let sy: Int
+            switch degrees {
+            // 新图 (x, y) 取原图 (y, 高 − 1 − x)
+            case 90: (sx, sy) = (y, height - 1 - x)
+            case 180: (sx, sy) = (width - 1 - x, height - 1 - y)
+            // 新图 (x, y) 取原图 (宽 − 1 − y, x)
+            default: (sx, sy) = (width - 1 - y, x)
+            }
+            let from = (sy * width + sx) * 3
+            let to = (y * outW + x) * 3
+            target[to] = source[from]
+            target[to + 1] = source[from + 1]
+            target[to + 2] = source[from + 2]
+          }
+        }
+      }
+    }
+    return Raster(width: outW, height: outH, pixels: out)
+  }
 }
