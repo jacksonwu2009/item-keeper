@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { StockProductForm } from '../../../components/StockProductForm';
 import { Empty, Screen } from '../../../components/ui';
 import { getSettings, type AppSettings } from '../../../db/settings';
-import { getProduct, listPacks, updateProduct, type StockProduct } from '../../../db/stock';
+import { getProduct, listPacks, productShelfLife, updateProduct, type StockProduct } from '../../../db/stock';
 import type { PackUnit } from '../../../lib/packs';
 import { rescheduleReminders } from '../../../lib/notifications';
 
@@ -35,7 +35,7 @@ export default function EditStockScreen() {
   const product = state.product;
   return (
     <StockProductForm
-      initial={{ ...product, packs: state.packs }}
+      initial={{ ...product, packs: state.packs, shelfLife: productShelfLife(product) }}
       settings={state.settings}
       withFirstBatch={false}
       submitLabel="保存修改"

@@ -1,54 +1,127 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { expiryFromShelfLife, formatDate, todayStr, type ShelfLifeUnit } from '../lib/dates';
+import { isLabelOcrAvailable } from '../../modules/label-ocr';
+import { expiryFromShelfLife, formatDate, todayStr, type ShelfLife, type ShelfLifeUnit } from '../lib/dates';
+import type { DateRole } from '../lib/labelParse';
+import { planExpiryFill, type ExpiryFill } from '../lib/labelScan';
 import { colors, font } from '../theme';
 import { DateField } from './DateField';
+import { LabelCamera, type DateScanResult } from './LabelCamera';
 import { NumberField } from './NumberField';
-import { ChoiceChips, Segmented } from './ui';
+import { Button, ChoiceChips, Segmented } from './ui';
 
 export type ExpiryMode = 'date' | 'shelf' | 'none';
 
-export type ExpiryValue = { expiry: string | null; error: string | null };
+/** expiry 是算出来的到期日；shelfLife 是「生产日期+保质期」填法下填的保质期（别的填法是 null），新建物品时记进商品资料 */
+export type ExpiryValue = { expiry: string | null; error: string | null; shelfLife: ShelfLife | null };
+
+type Tags = ExpiryFill['tags'];
 
 /**
  * 过期日期的三种填法：直接选到期日 / 按包装上的「生产日期 + 保质期」算 / 不记录。
  * 计算结果通过 onChange 往上报。
+ *
+ * 拍照识别（手机上能用时）：日期格子右边有「拍日期」，拍喷码认出日期直接填；能分清生产日期、到期日的分好，
+ * 和保质期对上了提示一下。认出来的格子浅蓝底、标「识别」，改过就不再标。
+ * 拍包装识别出的结果由上层通过 fill 传进来（换 key 重新挂载时用作初始值）。
  */
 export function ExpiryInput({
   initialMode,
   initialExpiry = null,
+  initialProductionDate,
+  initialShelfLife = null,
+  shelfLifeHint,
+  fill = null,
   allowNone,
   onChange,
 }: {
   initialMode: ExpiryMode;
   initialExpiry?: string | null;
+  /** 生产日期的初始值；不给就是今天 */
+  initialProductionDate?: string | null;
+  /** 保质期的初始值（商品资料里的）；不给就是 12 个月 */
+  initialShelfLife?: ShelfLife | null;
+  /** 保质期下面的一句说明，例如「按商品资料填好了」 */
+  shelfLifeHint?: string | null;
+  /** 拍包装识别出来的：填法、日期、保质期和哪几格标「识别」 */
+  fill?: ExpiryFill | null;
   allowNone: boolean;
   onChange: (value: ExpiryValue) => void;
 }) {
-  const [mode, setMode] = useState<ExpiryMode>(initialMode);
-  const [expiry, setExpiry] = useState<string | null>(initialExpiry);
-  const [productionDate, setProductionDate] = useState<string | null>(todayStr());
-  const [shelfAmount, setShelfAmount] = useState('12');
-  const [shelfUnit, setShelfUnit] = useState<ShelfLifeUnit>('month');
+  const [mode, setMode] = useState<ExpiryMode>(fill?.mode ?? initialMode);
+  const [expiry, setExpiry] = useState<string | null>(fill ? fill.expiry : initialExpiry);
+  const [productionDate, setProductionDate] = useState<string | null>(
+    fill ? fill.productionDate : initialProductionDate === undefined ? todayStr() : initialProductionDate,
+  );
+  const startShelf = fill ? fill.shelfLife : initialShelfLife;
+  const [shelfAmount, setShelfAmount] = useState(fill && !fill.shelfLife ? '' : String(startShelf?.amount ?? 12));
+  const [shelfUnit, setShelfUnit] = useState<ShelfLifeUnit>(startShelf?.unit ?? 'month');
+  const [tags, setTags] = useState<Tags>(fill?.tags ?? {});
+  const [note, setNote] = useState<string | null>(fill?.note ?? null);
+  const [shelfEdited, setShelfEdited] = useState(false);
+  const [scanTarget, setScanTarget] = useState<DateRole | null>(null);
+  const canScan = isLabelOcrAvailable();
 
+  const amount = Number(shelfAmount);
+  const shelfValid = shelfAmount.trim() !== '' && Number.isInteger(amount) && amount > 0;
+  // 保质期是真知道的（商品资料里的、照片认出的、人填过的），不是默认的 12 个月：拍日期时拿它和喷码上的日期互相印证
+  const shelfKnown = !!initialShelfLife || !!fill?.shelfLife || shelfEdited;
+  const knownShelfLife: ShelfLife | null = shelfKnown && shelfValid ? { amount, unit: shelfUnit } : null;
   let result: ExpiryValue;
   if (mode === 'none') {
-    result = { expiry: null, error: null };
+    result = { expiry: null, error: null, shelfLife: null };
   } else if (mode === 'date') {
-    result = expiry ? { expiry, error: null } : { expiry: null, error: '请选择过期日期' };
+    result = expiry ? { expiry, error: null, shelfLife: null } : { expiry: null, error: '请选择过期日期', shelfLife: null };
+  } else if (!productionDate) {
+    result = { expiry: null, error: '请选择生产日期', shelfLife: shelfValid ? { amount, unit: shelfUnit } : null };
+  } else if (!shelfValid) {
+    result = { expiry: null, error: '保质期请填正整数', shelfLife: null };
   } else {
-    const amount = Number(shelfAmount);
-    if (!productionDate) result = { expiry: null, error: '请选择生产日期' };
-    else if (!Number.isInteger(amount) || amount <= 0) result = { expiry: null, error: '保质期请填正整数' };
-    else result = { expiry: expiryFromShelfLife(productionDate, amount, shelfUnit), error: null };
+    result = {
+      expiry: expiryFromShelfLife(productionDate, amount, shelfUnit),
+      error: null,
+      shelfLife: { amount, unit: shelfUnit },
+    };
   }
 
   useEffect(() => {
     onChange(result);
     // 只在算出来的结果变化时上报
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result.expiry, result.error]);
+  }, [result.expiry, result.error, result.shelfLife?.amount, result.shelfLife?.unit]);
+
+  function untag(field: keyof Tags) {
+    setTags((current) => {
+      if (!current[field]) return current;
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+    setNote(null);
+  }
+
+  /** 拍日期回来：按认出的日期填，能分清的分好 */
+  function applyDateScan(scan: DateScanResult) {
+    setScanTarget(null);
+    const plan = planExpiryFill({ dates: scan, shelfLife: knownShelfLife, shelfLifeRecognized: false, dateElsewhere: null });
+    if (!plan) return;
+    setMode(plan.mode);
+    if (plan.mode === 'date') {
+      setExpiry(plan.expiry);
+    } else {
+      setProductionDate(plan.productionDate);
+      // 不知道保质期（只是默认的 12 个月）：清空让人照包装填，免得算错到期日
+      if (!knownShelfLife) setShelfAmount('');
+    }
+    const nextTags: Tags = { ...tags };
+    delete nextTags.shelfLife;
+    if (plan.tags.expiry) nextTags.expiry = plan.tags.expiry;
+    if (plan.tags.productionDate) nextTags.productionDate = plan.tags.productionDate;
+    if (plan.tags.shelfLife === 'missing') nextTags.shelfLife = 'missing';
+    setTags(nextTags);
+    setNote(plan.note);
+  }
 
   const modeOptions: { value: ExpiryMode; label: string }[] = [
     { value: 'date', label: '选到期日' },
@@ -56,20 +129,52 @@ export function ExpiryInput({
   ];
   if (allowNone) modeOptions.push({ value: 'none', label: '不记录' });
 
+  const scanButton = (target: DateRole) =>
+    canScan ? (
+      <Button title="拍日期" icon="camera-outline" variant="secondary" compact onPress={() => setScanTarget(target)} />
+    ) : null;
+
   return (
     <View style={expiryStyles.wrap}>
       <Segmented options={modeOptions} value={mode} onChange={setMode} />
-      {mode === 'date' ? <DateField label="过期日期" value={expiry} onChange={setExpiry} required /> : null}
+      {mode === 'date' ? (
+        <DateField
+          label="过期日期"
+          value={expiry}
+          onChange={(value) => {
+            setExpiry(value);
+            untag('expiry');
+          }}
+          required
+          tag={tags.expiry}
+          right={scanButton('expiry')}
+        />
+      ) : null}
       {mode === 'shelf' ? (
         <View style={expiryStyles.wrap}>
-          <DateField label="生产日期" value={productionDate} onChange={setProductionDate} required />
+          <DateField
+            label="生产日期"
+            value={productionDate}
+            onChange={(value) => {
+              setProductionDate(value);
+              untag('productionDate');
+            }}
+            required
+            tag={tags.productionDate}
+            right={scanButton('production')}
+          />
           <NumberField
             label="保质期"
             required
             value={shelfAmount}
-            onChangeText={setShelfAmount}
+            onChangeText={(value) => {
+              setShelfAmount(value);
+              setShelfEdited(true);
+              untag('shelfLife');
+            }}
             min={1}
             max={9999}
+            tag={tags.shelfLife}
           />
           <ChoiceChips
             options={[
@@ -78,8 +183,13 @@ export function ExpiryInput({
               { value: 'year', label: '年' },
             ]}
             value={shelfUnit}
-            onChange={setShelfUnit}
+            onChange={(value) => {
+              setShelfUnit(value);
+              setShelfEdited(true);
+              untag('shelfLife');
+            }}
           />
+          {shelfLifeHint && !shelfEdited ? <Text style={expiryStyles.note}>{shelfLifeHint}</Text> : null}
           {result.expiry ? (
             <Text style={expiryStyles.computed}>
               到期日：<Text style={expiryStyles.computedDate}>{formatDate(result.expiry)}</Text>
@@ -87,7 +197,17 @@ export function ExpiryInput({
           ) : null}
         </View>
       ) : null}
+      {note ? <Text style={note.startsWith('✓') ? expiryStyles.confirmed : expiryStyles.scanNote}>{note}</Text> : null}
       {mode === 'none' ? <Text style={expiryStyles.note}>不记过期日期，只按库存数量提醒。</Text> : null}
+      {scanTarget ? (
+        <LabelCamera
+          mode="date"
+          target={scanTarget}
+          shelfLife={knownShelfLife}
+          onDone={applyDateScan}
+          onClose={() => setScanTarget(null)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -98,4 +218,6 @@ const expiryStyles = StyleSheet.create({
   computed: { fontSize: font.small, color: colors.muted },
   computedDate: { color: colors.accent, fontWeight: '700' },
   note: { fontSize: font.small, color: colors.faint },
+  confirmed: { fontSize: font.small, color: colors.ok, fontWeight: '600' },
+  scanNote: { fontSize: font.small, color: colors.warn, lineHeight: 18 },
 });

@@ -2,9 +2,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View, type StyleProp, type TextStyle } from 'react-native';
 
+import type { ScanTag } from '../lib/labelScan';
 import { parseNumberText, sanitizeNumberText, stepNumberText } from '../lib/number';
 import { colors, font, radius } from '../theme';
-import { Label } from './ui';
+import { Label, RECOGNIZED_INPUT_STYLE } from './ui';
 
 type NumberFieldProps = {
   label?: string;
@@ -31,6 +32,8 @@ type NumberFieldProps = {
   inputStyle?: StyleProp<TextStyle>;
   /** 不能改：输入框和 − / + 都不能点 */
   disabled?: boolean;
+  /** 拍照识别填的：recognized 时浅蓝底，标签后面标「识别」；missing 标「没认出来」 */
+  tag?: ScanTag | null;
 };
 
 /** 数字输入框：左右是 − / + 按钮，中间可以直接输入，只接受数字（和小数点）。 */
@@ -53,6 +56,7 @@ export function NumberField({
   onBlur,
   inputStyle,
   disabled = false,
+  tag,
 }: NumberFieldProps) {
   const current = parseNumberText(value);
   const atMin = current !== null && current <= min;
@@ -61,7 +65,11 @@ export function NumberField({
 
   return (
     <View style={numberStyles.field}>
-      {label ? <Label required={required}>{label}</Label> : null}
+      {label ? (
+        <Label required={required} tag={tag}>
+          {label}
+        </Label>
+      ) : null}
       <View style={numberStyles.row}>
         {buttons ? (
           <StepButton
@@ -83,7 +91,13 @@ export function NumberField({
           accessibilityLabel={accessibilityLabel ?? label}
           selectTextOnFocus
           onBlur={onBlur}
-          style={[numberStyles.input, buttons && numberStyles.inputCentered, inputStyle, error ? numberStyles.inputError : null]}
+          style={[
+            numberStyles.input,
+            buttons && numberStyles.inputCentered,
+            tag === 'recognized' ? RECOGNIZED_INPUT_STYLE : null,
+            inputStyle,
+            error ? numberStyles.inputError : null,
+          ]}
         />
         {buttons ? (
           <StepButton

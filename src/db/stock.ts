@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-import { todayStr } from '../lib/dates';
+import { todayStr, type ShelfLife, type ShelfLifeUnit } from '../lib/dates';
 import type { PackUnit } from '../lib/packs';
 import { perBaseUnitPrice, roundTotalPrice, roundUnitPrice, type EntryPrice } from '../lib/price';
 import { allocationError, planAllocatedConsumption, roundQty, type BatchAllocation, type StockKind } from '../lib/stock';
@@ -17,6 +17,9 @@ export type StockProduct = {
   location: string | null;
   lowStockThreshold: number | null;
   expiryLeadDays: number | null;
+  /** 保质期（如 12 个月），没填是 null；数量和单位要么都有要么都没有 */
+  shelfLifeAmount: number | null;
+  shelfLifeUnit: ShelfLifeUnit | null;
   note: string | null;
   createdAt: string;
   updatedAt: string;
@@ -73,6 +76,8 @@ export type StockProductInput = {
   note: string | null;
   /** 包装规格（如 1 箱 = 24 瓶）。库存按 unit（最小单位）记。 */
   packs: PackUnit[];
+  /** 保质期；不给（undefined）时改资料不动原来的，给 null 是清空 */
+  shelfLife?: ShelfLife | null;
 };
 
 export type BatchInput = {
@@ -91,6 +96,7 @@ const PRODUCT_COLUMNS = `
   p.id, p.office_id AS officeId, p.kind, p.barcode, p.name, p.brand, p.spec, p.unit, p.location,
   p.low_stock_threshold AS lowStockThreshold,
   p.expiry_lead_days AS expiryLeadDays,
+  p.shelf_life_amount AS shelfLifeAmount, p.shelf_life_unit AS shelfLifeUnit,
   p.note, p.created_at AS createdAt, p.updated_at AS updatedAt`;
 
 const BATCH_COLUMNS = `
@@ -238,6 +244,21 @@ export async function listAllBatches(db: SQLiteDatabase): Promise<StockBatch[]> 
   return db.getAllAsync<StockBatch>(`SELECT ${BATCH_COLUMNS} FROM stock_batch WHERE quantity > 0`);
 }
 
+const SHELF_LIFE_UNITS: ShelfLifeUnit[] = ['day', 'month', 'year'];
+
+/** 保质期合不合理：正整数、单位是 天 / 个月 / 年；不合理的当没填 */
+export function validShelfLife(value: ShelfLife | null | undefined): ShelfLife | null {
+  if (!value || !SHELF_LIFE_UNITS.includes(value.unit)) return null;
+  if (!Number.isInteger(value.amount) || value.amount <= 0 || value.amount > 9999) return null;
+  return { amount: value.amount, unit: value.unit };
+}
+
+/** 商品资料里的保质期，没填是 null */
+export function productShelfLife(product: Pick<StockProduct, 'shelfLifeAmount' | 'shelfLifeUnit'>): ShelfLife | null {
+  if (product.shelfLifeAmount === null || product.shelfLifeUnit === null) return null;
+  return validShelfLife({ amount: product.shelfLifeAmount, unit: product.shelfLifeUnit });
+}
+
 function productParams(input: StockProductInput) {
   return [
     input.officeId,
@@ -263,11 +284,13 @@ export async function createProduct(
   let productId = 0;
   await db.withTransactionAsync(async () => {
     const now = nowIso();
+    const shelfLife = validShelfLife(input.shelfLife);
     const result = await db.runAsync(
       `INSERT INTO stock_product
-         (office_id, kind, barcode, name, brand, spec, unit, location, low_stock_threshold, expiry_lead_days, note, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [...productParams(input), now, now],
+         (office_id, kind, barcode, name, brand, spec, unit, location, low_stock_threshold, expiry_lead_days, note, created_at, updated_at,
+          shelf_life_amount, shelf_life_unit)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [...productParams(input), now, now, shelfLife?.amount ?? null, shelfLife?.unit ?? null],
     );
     productId = result.lastInsertRowId;
     await savePacks(db, productId, input.packs);
@@ -298,6 +321,14 @@ export async function updateProduct(db: SQLiteDatabase, id: number, input: Stock
         WHERE id = ?`,
       [...productParams(input), nowIso(), id],
     );
+    if (input.shelfLife !== undefined) {
+      const shelfLife = validShelfLife(input.shelfLife);
+      await db.runAsync('UPDATE stock_product SET shelf_life_amount = ?, shelf_life_unit = ? WHERE id = ?', [
+        shelfLife?.amount ?? null,
+        shelfLife?.unit ?? null,
+        id,
+      ]);
+    }
     await savePacks(db, id, input.packs);
   });
 }

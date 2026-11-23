@@ -1,12 +1,13 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { dateStrToLocalDate, formatDate, formatTime, toDateStr, todayStr } from '../lib/dates';
+import type { ScanTag } from '../lib/labelScan';
 import { colors, font, radius } from '../theme';
-import { Button, Label } from './ui';
+import { Button, Label, RECOGNIZED_INPUT_STYLE } from './ui';
 import { DateWheelSheet, TimeWheelSheet } from './WheelPicker';
 
 type PickerMode = 'date' | 'time';
@@ -70,6 +71,8 @@ export function DateField({
   placeholder = '选择日期',
   minimumDate,
   hint,
+  tag,
+  right,
 }: {
   label?: string;
   value: string | null;
@@ -78,18 +81,26 @@ export function DateField({
   clearable?: boolean;
   placeholder?: string;
   minimumDate?: string | null;
-  hint?: string;
+  hint?: string | null;
+  /** 拍照识别填的：recognized 时浅蓝底，标签后面标「识别」；missing 标「没认出来」 */
+  tag?: ScanTag | null;
+  /** 日期框右边放的东西（比如「拍日期」） */
+  right?: ReactNode;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
 
   return (
     <View style={pickerStyles.field}>
-      {label ? <Label required={required}>{label}</Label> : null}
+      {label ? (
+        <Label required={required} tag={tag}>
+          {label}
+        </Label>
+      ) : null}
       <View style={pickerStyles.row}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={label ? `${label}：${value ? formatDate(value) : '未设置'}` : undefined}
-          style={pickerStyles.box}
+          style={[pickerStyles.box, tag === 'recognized' && RECOGNIZED_INPUT_STYLE]}
           onPress={() => setPickerOpen(true)}
         >
           <Ionicons name="calendar-outline" size={18} color={colors.accent} />
@@ -98,6 +109,7 @@ export function DateField({
           </Text>
         </Pressable>
         {clearable && value ? <Button title="清除" variant="ghost" compact onPress={() => onChange(null)} /> : null}
+        {right}
       </View>
       {hint ? <Text style={pickerStyles.hint}>{hint}</Text> : null}
       {pickerOpen && USE_WHEEL_SHEET ? (

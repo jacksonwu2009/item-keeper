@@ -2,7 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { CONFIG_CATEGORIES, splitLegacyModel } from '../lib/devicePresets';
 
-const DATABASE_VERSION = 11;
+const DATABASE_VERSION = 12;
 
 /**
  * 表结构（家庭、办公两个场景各一个库，表结构和迁移一样；库文件名见 lib/sceneDatabases.ts）
@@ -21,6 +21,8 @@ const DATABASE_VERSION = 11;
  *   领用记录里存的还是名字（device_assignment.person），名单外的人也能直接填
  * - department、person.department_id / email：员工名单的部门（名称不分大小写不重名）和员工邮箱，只在办公场景的界面里用（v11 起）。
  *   删部门时这个部门的人改成没有部门；从旧版本升上来的都没有部门（备注里写的部门不拆出来）
+ * - stock_product.shelf_life_amount / shelf_life_unit：商品的保质期（如 12 个月，unit 是 day / month / year），可不填；
+ *   入库时按生产日期算到期日用，拍包装识别也会填（v12 起）
  * - setting：键值设置（usage.scene 记这个库是哪个场景的）
  */
 export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
@@ -251,6 +253,17 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
       ALTER TABLE person ADD COLUMN email TEXT;
       CREATE INDEX ix_person_department ON person(department_id);
     `);
+  }
+
+  if (currentVersion < 12) {
+    // 先看有没有：同一个库被新版本打开过、又按旧版本号迁移时不会重复加
+    const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(stock_product)');
+    if (!columns.some((column) => column.name === 'shelf_life_amount')) {
+      await db.execAsync(`
+        ALTER TABLE stock_product ADD COLUMN shelf_life_amount INTEGER;
+        ALTER TABLE stock_product ADD COLUMN shelf_life_unit TEXT;
+      `);
+    }
   }
 
   await db.execAsync(`PRAGMA user_version = ${DATABASE_VERSION}`);

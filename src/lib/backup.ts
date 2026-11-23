@@ -10,7 +10,7 @@
 
 import { looksLikeEmail, type PersonEntry } from '../db/people';
 import { DEFAULT_SETTINGS, type AppSettings } from '../db/settings';
-import { isValidDateStr, todayStr } from './dates';
+import { isValidDateStr, todayStr, type ShelfLifeUnit } from './dates';
 import { validatePacks, type PackUnit } from './packs';
 import { roundQty } from './stock';
 import { isScene, type Scene } from './terms';
@@ -76,6 +76,9 @@ export type BackupProduct = {
   location: string | null;
   lowStockThreshold: number | null;
   expiryLeadDays: number | null;
+  /** 保质期（1.9.0 起）：没填的不写；老备份里没有，导入后是没填 */
+  shelfLifeAmount?: number | null;
+  shelfLifeUnit?: ShelfLifeUnit | null;
   note: string | null;
   createdAt: string;
   updatedAt: string;
@@ -247,6 +250,9 @@ export function buildBackup(
       location: product.location,
       lowStockThreshold: product.lowStockThreshold,
       expiryLeadDays: product.expiryLeadDays,
+      ...(product.shelfLifeAmount && product.shelfLifeUnit
+        ? { shelfLifeAmount: product.shelfLifeAmount, shelfLifeUnit: product.shelfLifeUnit }
+        : {}),
       note: product.note,
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,
@@ -525,6 +531,7 @@ function parseProduct(raw: unknown, index: number, exportedAt: string, offices: 
     location: optText(raw.location, where, '存放位置'),
     lowStockThreshold: optNumber(raw.lowStockThreshold, where, '库存下限', 0, 1e9),
     expiryLeadDays: optNumber(raw.expiryLeadDays, where, '到期提前天数', 0, 365, true),
+    ...parseShelfLife(raw, where),
     note: optText(raw.note, where, '备注'),
     createdAt: timestamp(raw.createdAt, exportedAt),
     updatedAt: timestamp(raw.updatedAt, exportedAt),
@@ -532,6 +539,15 @@ function parseProduct(raw: unknown, index: number, exportedAt: string, offices: 
     batches,
     movements,
   };
+}
+
+/** 保质期：数量和单位要么都有要么都没有 */
+function parseShelfLife(raw: Record<string, unknown>, where: string): Pick<BackupProduct, 'shelfLifeAmount' | 'shelfLifeUnit'> {
+  const amount = optNumber(raw.shelfLifeAmount, where, '保质期', 1, 9999, true);
+  const unit = raw.shelfLifeUnit;
+  if (amount === null && (unit === undefined || unit === null)) return {};
+  if (amount === null || (unit !== 'day' && unit !== 'month' && unit !== 'year')) fail(where, '保质期不对');
+  return { shelfLifeAmount: amount, shelfLifeUnit: unit };
 }
 
 function parseDevice(raw: unknown, index: number, exportedAt: string, offices: string[]): BackupDevice {

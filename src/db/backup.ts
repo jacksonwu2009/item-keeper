@@ -11,6 +11,7 @@ import {
   type BackupScope,
   type KeptProduct,
 } from '../lib/backup';
+import type { ShelfLifeUnit } from '../lib/dates';
 import { currentScene, DEFAULT_PLACE_NAMES } from '../lib/terms';
 import { ensureOfficeByName } from './offices';
 import { listDepartments, listPersons, mergeRoster, replaceRoster } from './people';
@@ -45,12 +46,15 @@ export async function collectBackup(
       location: string | null;
       lowStockThreshold: number | null;
       expiryLeadDays: number | null;
+      shelfLifeAmount: number | null;
+      shelfLifeUnit: ShelfLifeUnit | null;
       note: string | null;
       createdAt: string;
       updatedAt: string;
     }>(
       `SELECT id, office_id AS officeId, kind, barcode, name, brand, spec, unit, location,
               low_stock_threshold AS lowStockThreshold, expiry_lead_days AS expiryLeadDays,
+              shelf_life_amount AS shelfLifeAmount, shelf_life_unit AS shelfLifeUnit,
               note, created_at AS createdAt, updated_at AS updatedAt
          FROM stock_product ORDER BY id`,
     ),
@@ -169,8 +173,9 @@ async function keptProducts(db: SQLiteDatabase, officeId: number, replacedKinds:
 async function insertProduct(db: SQLiteDatabase, officeId: number, product: BackupProduct): Promise<void> {
   const result = await db.runAsync(
     `INSERT INTO stock_product
-       (office_id, kind, barcode, name, brand, spec, unit, location, low_stock_threshold, expiry_lead_days, note, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (office_id, kind, barcode, name, brand, spec, unit, location, low_stock_threshold, expiry_lead_days, note, created_at, updated_at,
+        shelf_life_amount, shelf_life_unit)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       officeId,
       product.kind,
@@ -185,6 +190,8 @@ async function insertProduct(db: SQLiteDatabase, officeId: number, product: Back
       product.note,
       product.createdAt,
       product.updatedAt,
+      product.shelfLifeAmount ?? null,
+      product.shelfLifeUnit ?? null,
     ],
   );
   const productId = result.lastInsertRowId;

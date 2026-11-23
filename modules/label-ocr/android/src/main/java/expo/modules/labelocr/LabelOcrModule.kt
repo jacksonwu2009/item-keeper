@@ -14,6 +14,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 import kotlin.math.roundToInt
 
 data class CropOptions(
@@ -116,6 +118,7 @@ class LabelOcrModule : Module() {
       "识别 ${raster.width}×${raster.height}：${output.lines.size} 行，转 ${output.rotation}°，" +
         "加载 $loadMs、读图 $decodeMs、检测 ${output.detMs}、识别 ${output.recMs}、共 $totalMs ms",
     )
+    if (Log.isLoggable(TAG, Log.DEBUG)) dumpForTests(output, loadMs, decodeMs, totalMs)
     return mapOf(
       "lines" to output.lines.map { line ->
         mapOf(
@@ -136,6 +139,31 @@ class LabelOcrModule : Module() {
         "totalMs" to totalMs,
       ),
     )
+  }
+
+  /**
+   * 测试用：把每一行的文字、框、置信度打到 logcat，整理成 tests/fixtures/label-ocr 的对照数据。
+   * 平时不打（认出的文字不进日志）；要看时在电脑上 adb shell setprop log.tag.LabelOcr DEBUG 打开。
+   */
+  private fun dumpForTests(output: OcrEngine.Output, loadMs: Long, decodeMs: Long, totalMs: Long) {
+    val timing = JSONObject()
+      .put("loadMs", loadMs)
+      .put("decodeMs", decodeMs)
+      .put("detMs", output.detMs)
+      .put("recMs", output.recMs)
+      .put("totalMs", totalMs)
+    val head = JSONObject()
+      .put("width", output.width)
+      .put("height", output.height)
+      .put("rotation", output.rotation)
+      .put("model", OcrEngine.MODEL)
+      .put("timing", timing)
+    Log.d(TAG, "result $head")
+    for (line in output.lines) {
+      val box = JSONArray()
+      line.corners.forEach { box.put(JSONArray().put(it.x.roundToInt()).put(it.y.roundToInt())) }
+      Log.d(TAG, "line " + JSONObject().put("text", line.text).put("score", line.score).put("box", box))
+    }
   }
 
   private companion object {

@@ -92,6 +92,16 @@ export function epochDay(value: string): number {
 
 export type ShelfLifeUnit = 'day' | 'month' | 'year';
 
+/** 保质期：数量 + 单位，如 12 个月 */
+export type ShelfLife = { amount: number; unit: ShelfLifeUnit };
+
+const SHELF_LIFE_UNIT_LABEL: Record<ShelfLifeUnit, string> = { day: '天', month: '个月', year: '年' };
+
+/** 「12 个月」「180 天」「3 年」 */
+export function formatShelfLife(shelfLife: ShelfLife): string {
+  return `${shelfLife.amount} ${SHELF_LIFE_UNIT_LABEL[shelfLife.unit]}`;
+}
+
 /**
  * 按包装上的「生产日期 + 保质期」算到期日。
  * 保质期 N 天：生产当天算第 1 天，最后一天是生产日期 + N - 1。

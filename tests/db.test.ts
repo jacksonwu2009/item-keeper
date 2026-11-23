@@ -24,6 +24,9 @@ import {
   createProduct,
   findByBarcode,
   getLastPurchasePrice,
+  getProduct,
+  productShelfLife,
+  updateProduct,
   listBatches,
   listMovements,
   listProducts,
@@ -340,6 +343,31 @@ describe('手机之间按办公点传数据（真实 SQLite）', () => {
       /「北京」：条码 690 在备份的「可乐」和手机上日用品里的「洗衣液」重复/,
     );
     assert.equal((await listProducts(hq, 'food', 1)).length, 0);
+  });
+
+  it('商品的保质期：新建时记下，改资料不给就不动、给 null 清空，随备份往返', async () => {
+    const db = await openDb();
+    const id = await createProduct(db, product({ shelfLife: { amount: 12, unit: 'month' } }), null);
+    assert.deepEqual(productShelfLife((await getProduct(db, id))!), { amount: 12, unit: 'month' });
+
+    await updateProduct(db, id, product({ name: '可乐（大瓶）' }));
+    assert.deepEqual(productShelfLife((await getProduct(db, id))!), { amount: 12, unit: 'month' });
+
+    const file = JSON.parse(JSON.stringify(await collectBackup(db)));
+    assert.equal(file.products[0].shelfLifeAmount, 12);
+    assert.equal(file.products[0].shelfLifeUnit, 'month');
+    const restored = await openDb();
+    await replaceData(restored, file, { scope: ['food'], offices: file.offices });
+    const [copy] = await listProducts(restored, 'food', null);
+    assert.deepEqual(productShelfLife(copy), { amount: 12, unit: 'month' });
+
+    await updateProduct(db, id, product({ shelfLife: null }));
+    const cleared = (await getProduct(db, id))!;
+    assert.equal(productShelfLife(cleared), null);
+    assert.equal(cleared.shelfLifeAmount, null);
+    // 不合理的当没填
+    const odd = await createProduct(db, product({ name: '雪碧', shelfLife: { amount: 0, unit: 'month' } }), null);
+    assert.equal(productShelfLife((await getProduct(db, odd))!), null);
   });
 
   it('设备的发票号随备份导入', async () => {

@@ -20,7 +20,9 @@
  *   「见包装检验合格」这类连写在下一个字段名处截断。
  */
 
-import { addYears, diffDays, expiryFromShelfLife, isValidDateStr, type ShelfLifeUnit } from './dates';
+import { addYears, diffDays, expiryFromShelfLife, isValidDateStr, type ShelfLife, type ShelfLifeUnit } from './dates';
+
+export type { ShelfLife };
 
 // ───────────────────────────── 输入、输出 ─────────────────────────────
 
@@ -30,8 +32,6 @@ export type LabelLine = {
   score?: number | null;
   box?: [number, number][] | null;
 };
-
-export type ShelfLife = { amount: number; unit: ShelfLifeUnit };
 
 export type DateRole = 'production' | 'expiry';
 

@@ -1,10 +1,12 @@
+import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { isLabelOcrAvailable } from '../../modules/label-ocr';
 import type { AppSettings } from '../db/settings';
-import { listLocations, type BatchInput, type StockProductInput } from '../db/stock';
+import { listLocations, validShelfLife, type BatchInput, type StockProductInput } from '../db/stock';
 import {
   EMPTY_LOOKUP_FIELDS,
   lookupBarcode,
@@ -13,6 +15,8 @@ import {
   mergeLookupFields,
   type LookupFields,
 } from '../lib/barcodeLookup';
+import type { ShelfLife, ShelfLifeUnit } from '../lib/dates';
+import { planExpiryFill, type ExpiryFill, type ScanTag } from '../lib/labelScan';
 import { toBaseQty, validatePacks, type PackUnit } from '../lib/packs';
 import { convertPriceUnit, derivePrice, EMPTY_PRICE, type PriceDraft } from '../lib/price';
 import { takeScanResult, takeScanResultWithPrefix } from '../lib/scanHandoff';
@@ -21,6 +25,7 @@ import { colors, CONTENT_MAX_WIDTH, font, radius } from '../theme';
 import { useOffice } from '../hooks/useOffice';
 import { CircleIconButton } from './CircleIconButton';
 import { ExpiryInput, type ExpiryValue } from './ExpiryInput';
+import { LabelCamera, type LabelScanResult } from './LabelCamera';
 import { NumberField } from './NumberField';
 import { OfficeChooser } from './OfficeSwitcher';
 import { PriceFields } from './PriceFields';
@@ -39,6 +44,16 @@ function toPackRow(pack: PackUnit): PackRow {
 }
 
 type LookupState = 'idle' | 'loading' | 'found' | 'notfound';
+
+/** 拍包装识别出来、填进表单的东西（用来标「识别」：值没被改过才标） */
+type LabelScanFill = { count: number; name: string | null; spec: string | null; shelfLife: ShelfLife | null };
+
+/** 拍照识别填的格子：值还是认出来的那个就标「识别」；没认出来、还空着就标「没认出来」 */
+function scanTagFor(scan: LabelScanFill | null, recognized: string | null, current: string): ScanTag | null {
+  if (!scan) return null;
+  if (recognized) return current === recognized ? 'recognized' : null;
+  return current.trim() ? null : 'missing';
+}
 
 export function StockProductForm({
   initial,
@@ -78,8 +93,17 @@ export function StockProductForm({
   const [qtyText, setQtyText] = useState('1');
   const [entryUnit, setEntryUnit] = useState(initial.unit ?? '件');
   const [priceDraft, setPriceDraft] = useState<PriceDraft>(EMPTY_PRICE);
-  const [expiry, setExpiry] = useState<ExpiryValue>({ expiry: null, error: null });
+  const [expiry, setExpiry] = useState<ExpiryValue>({ expiry: null, error: null, shelfLife: null });
   const [locations, setLocations] = useState<string[]>([]);
+  // 保质期：改资料时单独一栏；新建时在「这次入库」的「生产日期+保质期」里填，拍包装认出的也记进去
+  const [shelfText, setShelfText] = useState(initial.shelfLife ? String(initial.shelfLife.amount) : '');
+  const [shelfUnit, setShelfUnit] = useState<ShelfLifeUnit>(initial.shelfLife?.unit ?? 'month');
+  // 拍包装识别（新建、手机上能用时）
+  const canScanLabel = withFirstBatch && isLabelOcrAvailable();
+  const [labelCameraOpen, setLabelCameraOpen] = useState(false);
+  const [labelScan, setLabelScan] = useState<LabelScanFill | null>(null);
+  const [nameCandidates, setNameCandidates] = useState<string[]>([]);
+  const [expiryFill, setExpiryFill] = useState<{ key: number; fill: ExpiryFill } | null>(null);
   // 新建时带着扫到的条码进来，并且还没有名称：自动查一次商品名
   const autoLookupCode =
     withFirstBatch &&
@@ -153,6 +177,27 @@ export function StockProductForm({
     }, [runLookup]),
   );
 
+  /** 拍包装识别回来：认出来的填上（名称、规格直接填，日期、保质期填进「这次入库」），不保存，等人核对 */
+  function applyLabelScan({ label, dates }: LabelScanResult) {
+    setLabelCameraOpen(false);
+    if (label.name) setName(label.name);
+    if (label.spec) setSpec(label.spec);
+    setNameCandidates(label.nameCandidates);
+    const fill = planExpiryFill({
+      dates: dates ?? { production: null, expiry: null, confirmed: false },
+      shelfLife: label.shelfLife,
+      shelfLifeRecognized: !!label.shelfLife,
+      dateElsewhere: label.dateElsewhere,
+    });
+    if (fill) setExpiryFill((current) => ({ key: (current?.key ?? 0) + 1, fill }));
+    setLabelScan({
+      count: (label.name ? 1 : 0) + (label.spec ? 1 : 0) + (label.shelfLife ? 1 : 0) + (dates?.production || dates?.expiry ? 1 : 0),
+      name: label.name,
+      spec: label.spec,
+      shelfLife: label.shelfLife,
+    });
+  }
+
   function updatePackRow(key: number, patch: Partial<PackRow>) {
     setPackRows((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
   }
@@ -183,8 +228,13 @@ export function StockProductForm({
     setEntryUnit(next);
   }
 
+  const editShelfAmount = Number(shelfText);
+  const editShelfLife: ShelfLife | null =
+    shelfText.trim() === '' ? null : validShelfLife({ amount: editShelfAmount, unit: shelfUnit });
+
   const errors = {
     name: name.trim() ? null : '请填写名称',
+    shelfLife: !withFirstBatch && shelfText.trim() !== '' && !editShelfLife ? '请填正整数，留空表示不记' : null,
     lowStock: lowStockText.trim() !== '' && lowStockThreshold === null ? '请填数字，留空表示不提醒' : null,
     lead:
       leadText.trim() !== '' && (!Number.isInteger(leadDays) || (leadDays ?? 0) < 0 || (leadDays ?? 0) > 365)
@@ -216,6 +266,8 @@ export function StockProductForm({
           expiryLeadDays: leadDays,
           note,
           packs,
+          // 新建：「生产日期+保质期」里填的，没用这种填法时用拍包装认出的；改资料：单独那一栏
+          shelfLife: withFirstBatch ? (expiry.shelfLife ?? labelScan?.shelfLife ?? null) : editShelfLife,
         },
         withFirstBatch && qty && qty > 0 && baseQty
           ? {
@@ -241,8 +293,30 @@ export function StockProductForm({
 
   // 照鸿蒙版 ProductFormPage.ets：最宽 720 居中；分类、办公点在卡片外面，基本信息、包装规格、这次入库、提醒、备注各一张卡片，
   // 卡片里各项之间 16；输入框右边的扫码是浅主色底的圆按钮
+  const nameTag = scanTagFor(labelScan, labelScan?.name ?? null, name);
+  const specTag = scanTagFor(labelScan, labelScan?.spec ?? null, spec);
+  const otherNames = nameCandidates.filter((candidate) => candidate !== name);
+  const showScanEntry = canScanLabel && !labelScan && barcode.trim() !== '' && lookup !== 'loading' && lookup !== 'found';
+
   return (
     <Screen contentStyle={formStyles.page}>
+      {labelScan ? (
+        // 拍包装识别填过了：照效果图，浅蓝一条，说明标了「识别」的是认出来的，可以重拍
+        <View style={formStyles.scanBanner}>
+          <Ionicons name="document-text-outline" size={28} color={colors.info} />
+          <View style={formStyles.scanBannerText}>
+            <Text style={formStyles.scanBannerTitle}>
+              {labelScan.count ? `已从照片填入 ${labelScan.count} 项，请核对` : '照片里没认出能填的，请手动填'}
+            </Text>
+            <Text style={formStyles.scanBannerSub}>
+              标了「识别」的格子是照片里认出来的，点开能改 ·{' '}
+              <Text style={formStyles.scanBannerLink} onPress={() => setLabelCameraOpen(true)} accessibilityRole="button">
+                重拍
+              </Text>
+            </Text>
+          </View>
+        </View>
+      ) : null}
       <Segmented
         options={[
           { value: 'food', label: KIND_LABEL.food },
@@ -285,15 +359,72 @@ export function StockProductForm({
                 : '商品库里没有这个条码，请手动填名称；保存后再扫就能直接认出来。如果这是某个已录物品的整箱条码，到那个物品的「编辑 → 包装规格」里扫它。'}
           </Text>
         ) : null}
-        <Field label="名称" required value={name} onChangeText={setName} placeholder="例如 纯牛奶" error={shown(errors.name)} />
+        {showScanEntry ? (
+          // 照效果图一：条码下面浅蓝一块，拍背面标签自动填；不拍就照旧手填
+          <View style={formStyles.scanEntry}>
+            <Text style={formStyles.scanEntryText}>
+              拍一下包装背面的标签，自动填名称、规格、保质期和生产日期，填好后你再核对。照片只在手机上识别，不上传。
+            </Text>
+            <Button title="拍包装识别" icon="camera-outline" onPress={() => setLabelCameraOpen(true)} />
+          </View>
+        ) : null}
+        <Field
+          label="名称"
+          required
+          value={name}
+          onChangeText={setName}
+          placeholder="例如 纯牛奶"
+          error={shown(errors.name)}
+          tag={nameTag}
+        />
+        {otherNames.length ? (
+          <View style={formStyles.candidates}>
+            <Text style={formStyles.candidatesLabel}>也可能是：</Text>
+            {otherNames.map((candidate) => (
+              <Pressable
+                key={candidate}
+                accessibilityRole="button"
+                accessibilityLabel={`名称填成${candidate}`}
+                onPress={() => setName(candidate)}
+                style={({ pressed }) => [formStyles.candidate, pressed && formStyles.pressed]}
+              >
+                <Text style={formStyles.candidateText}>{candidate}</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
         <View style={formStyles.twoCols}>
           <View style={formStyles.col}>
             <Field label="品牌" value={brand} onChangeText={setBrand} placeholder="可不填" />
           </View>
           <View style={formStyles.col}>
-            <Field label="规格" value={spec} onChangeText={setSpec} placeholder="如 250ml×12" />
+            <Field label="规格" value={spec} onChangeText={setSpec} placeholder="如 250ml×12" tag={specTag} />
           </View>
         </View>
+        {!withFirstBatch ? (
+          <View style={formStyles.group}>
+            <NumberField
+              label="保质期"
+              value={shelfText}
+              onChangeText={setShelfText}
+              placeholder="可不填"
+              min={1}
+              max={9999}
+              buttons={false}
+              hint="填了以后，入库时默认按「生产日期+保质期」算到期日，也能拍喷码上的生产日期"
+              error={shown(errors.shelfLife)}
+            />
+            <ChoiceChips
+              options={[
+                { value: 'day', label: '天' },
+                { value: 'month', label: '个月' },
+                { value: 'year', label: '年' },
+              ]}
+              value={shelfUnit}
+              onChange={setShelfUnit}
+            />
+          </View>
+        ) : null}
         <View style={formStyles.group}>
           <Label>最小单位（库存按它算）</Label>
           <ChoiceChips options={unitOptions} value={unit} onChange={setUnit} />
@@ -407,8 +538,9 @@ export function StockProductForm({
             />
             <PriceFields draft={priceDraft} onChange={setPriceDraft} qty={qty} unit={effectiveEntryUnit} />
             <ExpiryInput
-              key={kind}
+              key={`${kind}-${expiryFill?.key ?? 0}`}
               initialMode={kind === 'food' ? 'date' : 'none'}
+              fill={expiryFill?.fill ?? null}
               allowNone
               onChange={setExpiry}
             />
@@ -451,6 +583,9 @@ export function StockProductForm({
 
       {submitError ? <Text style={formStyles.error}>{submitError}</Text> : null}
       <Button title={submitLabel} onPress={submit} loading={submitting} />
+      {labelCameraOpen ? (
+        <LabelCamera mode="label" onDone={applyLabelScan} onClose={() => setLabelCameraOpen(false)} />
+      ) : null}
     </Screen>
   );
 }
@@ -478,4 +613,24 @@ const formStyles = StyleSheet.create({
   packInput: { backgroundColor: colors.surface, borderColor: colors.surface },
   packAdd: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   noteInput: { minHeight: 88, textAlignVertical: 'top' },
+  // 拍包装识别：入口是条码下面浅蓝的一块，识别完页面最上面浅蓝一条（照效果图一）
+  scanEntry: { gap: 10, padding: 12, borderRadius: radius.md, backgroundColor: colors.infoSoft },
+  scanEntryText: { fontSize: font.small, color: colors.ink, lineHeight: 20 },
+  scanBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    borderRadius: radius.lg,
+    backgroundColor: colors.infoSoft,
+  },
+  scanBannerText: { flex: 1, gap: 2 },
+  scanBannerTitle: { fontSize: font.body, fontWeight: '600', color: colors.info },
+  scanBannerSub: { fontSize: font.small, color: colors.muted, lineHeight: 18 },
+  scanBannerLink: { color: colors.info, fontWeight: '600' },
+  candidates: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: -8 },
+  candidatesLabel: { fontSize: font.small, color: colors.muted },
+  candidate: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.pill, backgroundColor: colors.surfaceSunken },
+  candidateText: { fontSize: font.small, color: colors.ink },
+  pressed: { opacity: 0.6 },
 });

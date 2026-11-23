@@ -33,6 +33,7 @@ import {
   listBatches,
   listMovements,
   listPacks,
+  productShelfLife,
   stockIn,
   stockOut,
   updateBatch,
@@ -46,7 +47,7 @@ import { useFocusData } from '../../hooks/useFocusData';
 import { useOffice } from '../../hooks/useOffice';
 import { useTerms } from '../../hooks/useScene';
 import { usePendingDelete } from '../../hooks/usePendingDelete';
-import { formatDate, formatDateTime, formatShortDate, toDateStr, todayStr } from '../../lib/dates';
+import { formatDate, formatDateTime, formatShelfLife, formatShortDate, toDateStr, todayStr, type ShelfLife } from '../../lib/dates';
 import { rescheduleReminders } from '../../lib/notifications';
 import { describePacks, formatBreakdown, toBaseQty, type PackUnit } from '../../lib/packs';
 import {
@@ -139,6 +140,7 @@ export default function StockDetailScreen() {
   const nearest = expiryStatus(batches.find((batch) => batch.expiryDate)?.expiryDate ?? null, today, leadDays);
   const breakdown = formatBreakdown(totalQty, product.unit, packs);
   const scannedPack = scannedUnit ? (packs.find((pack) => pack.unit === scannedUnit) ?? null) : null;
+  const shelfLife = productShelfLife(product);
 
   function confirmDelete() {
     if (!product) return;
@@ -290,6 +292,7 @@ export default function StockDetailScreen() {
             value={lastPrice ? `每${lastPrice.unit} ${formatPrice(lastPrice.unitPrice)}（${purchaseDay(lastPrice.happenedAt)}）` : '没记录'}
           />
           <InfoRow label="存放位置" value={product.location ?? '—'} />
+          {shelfLife ? <InfoRow label="保质期" value={formatShelfLife(shelfLife)} /> : null}
           <InfoRow
             label="库存提醒"
             value={
@@ -326,6 +329,7 @@ export default function StockDetailScreen() {
             packs={packs}
             defaultUnit={scannedPack?.unit ?? product.unit}
             isFood={product.kind === 'food'}
+            shelfLife={shelfLife}
             lastPrice={lastPrice}
             onClose={() => setSheet(null)}
             onSubmit={async (quantity, expiryDate, entry, price) => {
@@ -436,6 +440,7 @@ function StockInSheet({
   packs,
   defaultUnit,
   isFood,
+  shelfLife,
   lastPrice,
   onClose,
   onSubmit,
@@ -444,6 +449,8 @@ function StockInSheet({
   packs: PackUnit[];
   defaultUnit: string;
   isFood: boolean;
+  /** 商品资料里的保质期：有就默认按「生产日期+保质期」填，生产日期空着等人选或拍 */
+  shelfLife: ShelfLife | null;
   lastPrice: LastPurchasePrice | null;
   onClose: () => void;
   onSubmit: (quantity: number, expiryDate: string | null, entry: EntryQty, price: EntryPrice | null) => Promise<void>;
@@ -456,7 +463,7 @@ function StockInSheet({
   const [priceDraft, setPriceDraft] = useState<PriceDraft>(() =>
     defaultPriceDraft(lastPrice?.perBaseUnit ?? null, unitSize(defaultUnit)),
   );
-  const [expiry, setExpiry] = useState<ExpiryValue>({ expiry: null, error: null });
+  const [expiry, setExpiry] = useState<ExpiryValue>({ expiry: null, error: null, shelfLife: null });
   const [showErrors, setShowErrors] = useState(false);
   const [busy, setBusy] = useState(false);
   const qty = parseQty(qtyText);
@@ -493,7 +500,14 @@ function StockInSheet({
             : null
         }
       />
-      <ExpiryInput initialMode={isFood ? 'date' : 'none'} allowNone onChange={setExpiry} />
+      <ExpiryInput
+        initialMode={shelfLife ? 'shelf' : isFood ? 'date' : 'none'}
+        initialShelfLife={shelfLife}
+        initialProductionDate={shelfLife ? null : undefined}
+        shelfLifeHint={shelfLife ? `保质期按商品资料里记的（${formatShelfLife(shelfLife)}）填好了，这一批不一样可以改` : null}
+        allowNone
+        onChange={setExpiry}
+      />
       {showErrors && expiry.error ? <Text style={detailStyles.error}>{expiry.error}</Text> : null}
       <Text style={detailStyles.hintText}>过期日期和已有批次相同时会合并到那一批。</Text>
       <Button

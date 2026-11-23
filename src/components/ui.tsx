@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import type { ScanTag } from '../lib/labelScan';
 import { colors, CONTENT_MAX_WIDTH, font, radius } from '../theme';
 import { SwitchTrack } from './HarmonySwitch';
 
@@ -171,12 +172,27 @@ export function IconButton({
   );
 }
 
-export function Label({ children, required }: { children: ReactNode; required?: boolean }) {
-  return (
+/** 拍照识别填的格子：标签后面的小字「识别」（蓝）或「没认出来」（黄） */
+export function ScanTagChip({ tag }: { tag: ScanTag }) {
+  return tag === 'recognized' ? <Chip text="识别" tone="info" /> : <Chip text="没认出来" tone="warn" />;
+}
+
+/** 照片里认出来的格子：浅蓝底、蓝边（照效果图） */
+export const RECOGNIZED_INPUT_STYLE = { backgroundColor: colors.infoSoft, borderColor: colors.info };
+
+export function Label({ children, required, tag }: { children: ReactNode; required?: boolean; tag?: ScanTag | null }) {
+  const text = (
     <Text style={styles.label}>
       {children}
       {required ? <Text style={{ color: colors.danger }}> *</Text> : null}
     </Text>
+  );
+  if (!tag) return text;
+  return (
+    <View style={styles.labelRow}>
+      {text}
+      <ScanTagChip tag={tag} />
+    </View>
   );
 }
 
@@ -186,16 +202,34 @@ export function Field({
   hint,
   error,
   right,
+  tag,
   ...inputProps
-}: TextInputProps & { label?: string; required?: boolean; hint?: string; error?: string | null; right?: ReactNode }) {
+}: TextInputProps & {
+  label?: string;
+  required?: boolean;
+  hint?: string;
+  error?: string | null;
+  right?: ReactNode;
+  /** 拍照识别填的：recognized 时输入框浅蓝底，标签后面标「识别」；missing 标「没认出来」 */
+  tag?: ScanTag | null;
+}) {
   return (
     <View style={styles.field}>
-      {label ? <Label required={required}>{label}</Label> : null}
+      {label ? (
+        <Label required={required} tag={tag}>
+          {label}
+        </Label>
+      ) : null}
       <View style={styles.inputRow}>
         <TextInput
           placeholderTextColor={colors.faint}
           {...inputProps}
-          style={[styles.input, error ? styles.inputError : null, inputProps.style]}
+          style={[
+            styles.input,
+            tag === 'recognized' ? RECOGNIZED_INPUT_STYLE : null,
+            error ? styles.inputError : null,
+            inputProps.style,
+          ]}
         />
         {right}
       </View>
@@ -499,6 +533,7 @@ export const styles = StyleSheet.create({
   buttonTextCompact: { fontSize: font.small },
   iconButton: { padding: 6 },
   label: { fontSize: font.small, color: colors.muted, fontWeight: '500' },
+  labelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   field: { gap: 6 },
   inputRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   // 输入框：浅灰底、不描边（出错时描红边）；边框留着同色，出错时不跳动

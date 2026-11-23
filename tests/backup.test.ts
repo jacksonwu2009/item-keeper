@@ -242,6 +242,29 @@ describe('备份导入校验', () => {
     if (!rejected.ok) assert.match(rejected.error, /总价/);
   });
 
+  it('保质期随备份往返；没填的不写，老备份没有也能导；只有数量或单位不对的拒绝', () => {
+    const withShelf = buildBackup(
+      { ...source, products: source.products.map((item) => (item.id === 1 ? { ...item, shelfLifeAmount: 12, shelfLifeUnit: 'month' as const } : item)) },
+      new Date('2026-11-18T08:00:00Z'),
+    );
+    assert.equal(withShelf.products[0].shelfLifeAmount, 12);
+    assert.equal('shelfLifeAmount' in withShelf.products[1], false);
+    const result = parseBackup(JSON.stringify(withShelf));
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.deepEqual([result.data.products[0].shelfLifeAmount, result.data.products[0].shelfLifeUnit], [12, 'month']);
+      assert.equal(result.data.products[1].shelfLifeAmount, undefined);
+    }
+    for (const [amount, unit] of [[12, 'week'], [null, 'month'], [1.5, 'year'], [12, null]] as const) {
+      const bad = JSON.parse(JSON.stringify(withShelf));
+      bad.products[0].shelfLifeAmount = amount;
+      bad.products[0].shelfLifeUnit = unit;
+      const rejected = parseBackup(JSON.stringify(bad));
+      assert.equal(rejected.ok, false, `${amount} ${unit}`);
+      if (!rejected.ok) assert.match(rejected.error, /保质期/);
+    }
+  });
+
   it('旧版本的备份直接拒绝', () => {
     for (const format of [1, 2, 3, 4, 5, 6]) {
       const data = exported();
