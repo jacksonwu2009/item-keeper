@@ -324,14 +324,14 @@ export function StockProductForm({
           accessibilityRole="button"
           accessibilityLabel="拍包装识别"
           onPress={() => setLabelCameraOpen(true)}
-          style={({ pressed }) => [formStyles.scanBanner, pressed && formStyles.pressed]}
+          style={({ pressed }) => [formStyles.scanBanner, formStyles.scanEntryBanner, pressed && formStyles.pressed]}
         >
-          <Ionicons name="camera-outline" size={28} color={colors.info} />
+          <Ionicons name="camera-outline" size={28} color={colors.accent} />
           <View style={formStyles.scanBannerText}>
-            <Text style={formStyles.scanBannerTitle}>拍包装识别</Text>
+            <Text style={[formStyles.scanBannerTitle, formStyles.scanEntryTitle]}>拍包装识别</Text>
             <Text style={formStyles.scanBannerSub}>拍包装背面的标签，自动填名称、规格、保质期和生产日期；没有条码也能用</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color={colors.info} />
+          <Ionicons name="chevron-forward" size={20} color={colors.accent} />
         </Pressable>
       ) : null}
       <Segmented
@@ -631,8 +631,11 @@ const formStyles = StyleSheet.create({
   packInput: { backgroundColor: colors.surface, borderColor: colors.surface },
   packAdd: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   noteInput: { minHeight: 88, textAlignVertical: 'top' },
-  // 拍包装识别：入口是条码下面浅蓝的一块，识别完页面最上面浅蓝一条（照效果图一）
-  scanEntry: { gap: 10, padding: 12, borderRadius: radius.md, backgroundColor: colors.infoSoft },
+  // 拍包装识别：入口在页面最上面和条码下面（浅主色），识别完页面最上面换成浅蓝一条
+  // 入口（操作）用 App 主色；识别后的横幅、「识别」标记用蓝色，专门表示「机器认出来的，请核对」
+  scanEntry: { gap: 10, padding: 12, borderRadius: radius.md, backgroundColor: colors.accentSoft },
+  scanEntryBanner: { backgroundColor: colors.accentSoft },
+  scanEntryTitle: { color: colors.accent },
   scanEntryText: { fontSize: font.small, color: colors.ink, lineHeight: 20 },
   scanBanner: {
     flexDirection: 'row',
