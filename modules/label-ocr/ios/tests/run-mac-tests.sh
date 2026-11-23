@@ -99,6 +99,26 @@ if [[ -n "$android" ]]; then
   step "和安卓逐行对照：$android"
   python3 "$TESTS_DIR/compare.py" "$RESULTS/ios.json" "$android" --label-a iOS --label-b 安卓 \
     --json "$RESULTS/compare-android.json" || true
+  if [[ -n "${PADDLE_PYTHON:-}" ]]; then
+    # iOS 用系统的 JPEG 解码（ImageIO），安卓用 libjpeg-turbo，两边解出来的像素有一点差别。
+    # 用 libjpeg-turbo（PIL）解好存成 PNG 再给 iOS 引擎，输入像素和安卓一样，结果应该和安卓逐字、逐像素一样
+    step "和安卓逐行对照（输入像素也一样：用 libjpeg-turbo 解码后给 iOS 引擎）"
+    rm -rf "$RESULTS/libjpeg-png"
+    mkdir -p "$RESULTS/libjpeg-png"
+    "$PADDLE_PYTHON" -I -c "
+import sys
+from pathlib import Path
+from PIL import Image, ImageOps
+out = Path(sys.argv[1])
+for photo in map(Path, sys.argv[2:]):
+    with Image.open(photo) as image:
+        ImageOps.exif_transpose(image).convert('RGB').save(out / (photo.stem + '.png'))
+" "$RESULTS/libjpeg-png" "${photos[@]}"
+    "$BUILD/label-ocr-cli" --models "$MODELS" --out "$RESULTS/ios-libjpeg.json" "$RESULTS/libjpeg-png"/*.png >/dev/null
+    python3 "$TESTS_DIR/compare.py" "$RESULTS/ios-libjpeg.json" "$android" --label-a "iOS（libjpeg 像素）" --label-b 安卓 \
+      --quiet --max-box-px 0 --max-score-diff 0 --json "$RESULTS/compare-android-libjpeg.json" \
+      && echo "同样的像素输入，iOS 和安卓的结果完全一样" || echo "同样的像素输入，iOS 和安卓的结果有差别（见上）"
+  fi
 else
   echo
   echo "没找到安卓的识别结果（ANDROID_RESULTS 或 tests/fixtures/label-ocr/*android*.json），和安卓的对照跳过"

@@ -84,7 +84,7 @@ npx expo start --dev-client
 每一种最好都试：横着拍、竖着拍、包装侧着拍（字是竖的，App 会自己转正）、从相册选 iPhone 拍的 HEIC 照片、反光或很暗的（应该提示重拍）。
 
 识别过程的日志在 Mac 的「控制台」App 里（连上手机，搜 `LabelOcr`）：每次识别一行，带图片大小、认出几行、转了几度、加载 / 读图 / 检测 / 识别各用了多少毫秒。
-第一次识别要加载模型（几百毫秒到一两秒），之后一张一般在一秒以内。
+第一次识别要先加载模型，会慢一些（`prepareAsync` 就是为了在打开相机时提前加载）；之后每张的耗时看这行日志。
 
 ## 代码结构
 
@@ -118,7 +118,8 @@ modules/label-ocr/ios/tests/run-mac-tests.sh <照片目录>
 3. 单测（`tests/unit/`）：几何、DB 后处理、CTC、yml 字典解析（给了 `PADDLE_PYTHON` 时逐字和 PyYAML 读的比）、
    EXIF 八种方向和 crop（和 ImageIO 自己摆正的结果逐像素比）；
 4. 端到端：照片目录里每张图识别 3 次（`tests/cli/`），结果和耗时写到 `tests/.build/results/ios.json`；
-5. 和安卓的结果逐行对照（`tests/compare.py`）；
+5. 和安卓的结果逐行对照（`tests/compare.py`，安卓结果默认取 `tests/fixtures/label-ocr/` 里文件名带 android 的）；
+   给了 `PADDLE_PYTHON` 时再用 libjpeg-turbo 解码（和安卓同一个 JPEG 解码器）后的像素喂给 iOS 引擎，要求和安卓逐字、逐像素一样；
 6. 给了 `PADDLE_PYTHON` 时和电脑上的 PaddleOCR 对照：整段逐行对照，再分阶段对照（`tests/paddle_stages.py`、
    `tests/stages/`、`tests/stage_compare.py`）——同一张检测概率图比后处理、同一批裁好的行比识别、同一个输入张量比模型输出。
 
