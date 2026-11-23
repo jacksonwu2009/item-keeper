@@ -348,7 +348,8 @@ function HolderSheet({
   onSubmit: (person: string | null, addToRoster: boolean) => Promise<void>;
 }) {
   const [name, setName] = useState(current);
-  const [addToRoster, setAddToRoster] = useState(true);
+  // 已经有人在用时先不勾「同时加到家庭成员」，要加自己勾
+  const [addToRoster, setAddToRoster] = useState(!current);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -420,7 +421,8 @@ function AssignmentSheet({
 }) {
   const terms = useTerms();
   const [person, setPerson] = useState(initial?.person ?? '');
-  const [addToRoster, setAddToRoster] = useState(true);
+  // 修改已有记录时先不勾「同时加到员工名单」，要加自己勾
+  const [addToRoster, setAddToRoster] = useState(!initial);
   const [quantity, setQuantity] = useState<number | null>(initial?.quantity ?? 1);
   const [issuedOn, setIssuedOn] = useState<string | null>(initial?.issuedOn ?? todayStr());
   const [returnedOn, setReturnedOn] = useState<string | null>(initial?.returnedOn ?? null);
