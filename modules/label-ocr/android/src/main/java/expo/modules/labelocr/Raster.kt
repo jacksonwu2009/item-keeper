@@ -97,6 +97,28 @@ internal class Raster(val width: Int, val height: Int, val pixels: IntArray) {
     return Raster(dstW, dstH, out)
   }
 
+  /** 整张图顺时针转 degrees 度（0 / 90 / 180 / 270） */
+  fun rotate(degrees: Int): Raster {
+    val out = IntArray(pixels.size)
+    return when (degrees) {
+      90 -> {
+        // 新图宽 = 原图高；新图 (x, y) 取原图 (y, 高 − 1 − x)
+        for (y in 0 until width) for (x in 0 until height) out[y * height + x] = pixels[(height - 1 - x) * width + y]
+        Raster(height, width, out)
+      }
+      180 -> {
+        for (index in pixels.indices) out[index] = pixels[pixels.size - 1 - index]
+        Raster(width, height, out)
+      }
+      270 -> {
+        // 新图 (x, y) 取原图 (宽 − 1 − y, x)
+        for (y in 0 until width) for (x in 0 until height) out[y * height + x] = pixels[x * width + (width - 1 - y)]
+        Raster(height, width, out)
+      }
+      else -> this
+    }
+  }
+
   /**
    * 识别模型的输入：等比缩放到高 height（宽 = ceil(height × 宽高比)，最多 maxWidth），RGB，(x / 255 − 0.5) / 0.5。
    * 照官方 RecPreprocessor（一次一行，不补边）。
