@@ -11,9 +11,9 @@ import {
   type BackupScope,
   type KeptProduct,
 } from '../lib/backup';
-import { DEFAULT_PLACE_NAMES } from '../lib/terms';
+import { currentScene, DEFAULT_PLACE_NAMES } from '../lib/terms';
 import { ensureOfficeByName } from './offices';
-import { DEFAULT_SETTINGS, getScene, getSettings, writeScene } from './settings';
+import { DEFAULT_SETTINGS, getScene, getSettings } from './settings';
 import type { MovementType } from './stock';
 import { dropOpenStocktakesFor } from './stocktake';
 
@@ -114,7 +114,8 @@ export async function collectBackup(
     ),
   ]);
   return buildBackup(
-    { settings, scene, offices, products, packs, batches, movements, devices, accessories, assignments },
+    // 场景：库里记着自己是哪个场景的（打开时记上），没记过按当前场景
+    { settings, scene: scene ?? currentScene(), offices, products, packs, batches, movements, devices, accessories, assignments },
     new Date(),
     scope,
     officeIds,
@@ -341,16 +342,13 @@ export async function replaceData(db: SQLiteDatabase, data: BackupData, choice: 
         }
       }
     }
-    if (selected.includes('settings')) {
-      await writeSettings(db, data.settings);
-      // 文件里带了场景才换（只记场景，不改地点名）
-      if (data.scene) await writeScene(db, data.scene);
-    }
+    // 只导到当前场景：文件里的 scene 只用来在导入前提示，不改场景
+    if (selected.includes('settings')) await writeSettings(db, data.settings);
   });
 }
 
 /**
- * 撤销导入用：把本机全部数据（含办公点）换成留底的那一份。
+ * 撤销导入用：把当前场景的库里全部数据（含办公点）换成留底的那一份；场景不变，另一个场景的库不动。
  * 办公点会重建，id 会变，所以把「当前办公点」重置为全部。
  * 盘点记录不在备份里：进行中的全部删掉（物品 id 都变了），已结束的按办公点名称挂到重建的办公点上，
  * 名称对不上的删掉。
@@ -404,7 +402,5 @@ export async function restoreAll(db: SQLiteDatabase, data: BackupData): Promise<
       }
     }
     await writeSettings(db, data.settings);
-    // 撤销导入：留底里有场景就原样还原
-    if (data.scene) await writeScene(db, data.scene);
   });
 }

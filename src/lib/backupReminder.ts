@@ -2,7 +2,8 @@
  * 备份提醒：超过 N 天没导出备份就提醒。纯函数，有单测。
  * - 「备份过」指用「导出全部」导出：分类、办公点都全选，手机上的东西一样不落。
  * - 从没导出过的，从最早录入东西的那天算起；手机上什么都没有就不提醒。
- * - 到了日子在提醒页显示，并在提醒时间发通知；没导出就每 7 天再提醒一次（最多先排 4 条）。
+ * - 到了日子在提醒页显示，并在提醒时间发通知；没导出就每 7 天再提醒一次（每个场景先排 2 条，每次打开 App 都会重排）。
+ * - 家庭、办公各算各的：上次导出时间、提醒天数都记在各自的库里。
  */
 
 // 只引类型：backup → db/settings → 这里，引值会绕成循环依赖
@@ -12,8 +13,13 @@ import type { PlannedReminder } from './reminderPlan';
 
 export const DEFAULT_BACKUP_REMINDER_DAYS = 60;
 export const BACKUP_REPEAT_DAYS = 7;
-/** iOS 每个 App 最多挂 64 条本地通知：到期提醒用 56 条，备份提醒留 4 条 */
+/** planBackupReminders 默认最多排几条（每 7 天一条）；排通知时按场景用 BACKUP_REMINDER_SLOTS_PER_SCENE */
 export const BACKUP_REMINDER_SLOTS = 4;
+/**
+ * iOS 每个 App 最多挂 64 条本地通知，物品提醒和备份提醒一共用 60 条，两个场景平分：
+ * 每个场景物品提醒 28 条（reminderPlan.ts 的 ITEM_REMINDER_SLOTS_PER_SCENE）、备份提醒 2 条
+ */
+export const BACKUP_REMINDER_SLOTS_PER_SCENE = 2;
 
 /** 全部分类，和 backup.ts 的 ALL_SCOPES 一致（单测里核对） */
 export const FULL_BACKUP_SCOPE: readonly BackupScope[] = ['food', 'daily', 'devices', 'settings'];

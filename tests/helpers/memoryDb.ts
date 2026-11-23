@@ -11,7 +11,8 @@ export function plain<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-export async function openDb(): Promise<SQLiteDatabase> {
+/** 只包一层、不建表的内存库（测场景对应关系那个小库用） */
+export function openRawDb(): SQLiteDatabase {
   const raw = new DatabaseSync(':memory:');
   const params = (values: unknown[] = []) => values as SQLInputValue[];
   const db = {
@@ -40,6 +41,11 @@ export async function openDb(): Promise<SQLiteDatabase> {
       }
     },
   } as unknown as SQLiteDatabase;
+  return db;
+}
+
+export async function openDb(): Promise<SQLiteDatabase> {
+  const db = openRawDb();
   await migrateDbIfNeeded(db);
   return db;
 }

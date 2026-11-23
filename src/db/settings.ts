@@ -87,8 +87,9 @@ export async function getDataSince(db: SQLiteDatabase): Promise<string | null> {
 }
 
 /**
- * 使用场景（家庭 / 办公）：只决定界面上的叫法（lib/terms.ts）。没选过返回 null（新装的手机，打开时让用户选）。
- * 不放进 AppSettings：AppSettings 每项都有默认值，分不出「没选过」；备份时单独写 scene 字段（lib/backup.ts）。
+ * 这个库是哪个场景的（usage.scene）。场景本身和「哪个场景用哪个库」记在库外面（db/sceneStore.ts），
+ * 这里是每个库自己留的记号：以前只有一个库时它就是当前场景，升级时据此决定现有的库归哪个场景（lib/sceneDatabases.ts）；
+ * 之后每次以某个场景打开库时记上（prepareSceneDatabase）。没记过返回 null。
  */
 const SCENE_KEY = 'usage.scene';
 
@@ -103,23 +104,22 @@ export async function getScene(db: SQLiteDatabase): Promise<Scene | null> {
   }
 }
 
-/** 写场景，不开事务（导入备份时在导入的事务里调）。只记场景，不改任何数据。 */
-export async function writeScene(db: SQLiteDatabase, scene: Scene): Promise<void> {
+async function writeScene(db: SQLiteDatabase, scene: Scene): Promise<void> {
   await db.runAsync(
     'INSERT INTO setting (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
     [SCENE_KEY, JSON.stringify(scene)],
   );
 }
 
-export async function saveScene(db: SQLiteDatabase, scene: Scene): Promise<void> {
-  await writeScene(db, scene);
-}
-
 /**
- * 新装第一次打开时选场景。选家庭、而且手机上还什么都没有（只有一个空的「默认办公点」）时，把它改叫「家」。
- * 之后在设置里切场景走 saveScene，不改名：地点按名字和别的手机对，悄悄改名会对不上。
+ * 以某个场景打开库时调（迁移之后）：记上这个库是哪个场景的。
+ * 第一次以家庭打开、库还是空的（只有一个空的「默认办公点」，没有物品和设备）时，把它改叫「家」：
+ * 新装选家庭、第一次切到家庭，第一个地点都叫「家」；办公场景的库还是「默认办公点」。
+ * 只在第一次以家庭打开时改：以后用户自己改回「默认办公点」也不再动它。
  */
-export async function chooseInitialScene(db: SQLiteDatabase, scene: Scene): Promise<void> {
+export async function prepareSceneDatabase(db: SQLiteDatabase, scene: Scene): Promise<void> {
+  const previous = await getScene(db);
+  if (previous === scene) return;
   await db.withTransactionAsync(async () => {
     await writeScene(db, scene);
     if (scene !== 'home') return;

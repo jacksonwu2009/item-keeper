@@ -1,14 +1,26 @@
 import * as Notifications from 'expo-notifications';
 import { AndroidImportance, IosAuthorizationStatus } from 'expo-notifications';
-import type { SQLiteDatabase } from 'expo-sqlite';
+import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite';
 import { Platform } from 'react-native';
 
 import { listOffices } from '../db/offices';
 import { listDevices } from '../db/devices';
-import { getDataSince, getLastExportAt, getScene, getSettings } from '../db/settings';
+import { migrateDbIfNeeded } from '../db/schema';
+import { getDataSince, getLastExportAt, getSettings, type AppSettings } from '../db/settings';
 import { listAllBatches, listProducts } from '../db/stock';
-import { BACKUP_REMINDER_SLOTS, backupStatus, planBackupReminders } from './backupReminder';
-import { planReminders, type PlanProduct, type PlannedReminder, type PlanWarranty } from './reminderPlan';
+import { BACKUP_REMINDER_SLOTS_PER_SCENE, backupStatus, planBackupReminders } from './backupReminder';
+import { withDatabaseLock } from './dbLock';
+import {
+  ITEM_REMINDER_SLOTS_PER_SCENE,
+  mergeScenePlans,
+  planReminders,
+  type PlanProduct,
+  type PlannedReminder,
+  type PlanWarranty,
+  type ScenePlan,
+} from './reminderPlan';
+import { getActiveDatabases, otherScene, sceneOfDatabase } from './sceneDatabases';
+import { currentScene, type Scene } from './terms';
 
 const CHANNEL_ID = 'reminders';
 
@@ -93,10 +105,9 @@ export async function loadPlanProducts(db: SQLiteDatabase, officeId: number | nu
 
 /**
  * 家庭场景要提醒保修的设备（有保修到期日的）。和物品一样，看全部地点时、有不止一个地点就在名字前面加地点。
- * 办公场景返回空：保修提醒只在家庭场景发。
+ * 保修提醒只在家庭场景发：只对家庭场景的库调。
  */
 export async function loadPlanWarranties(db: SQLiteDatabase, officeId: number | null = null): Promise<PlanWarranty[]> {
-  if ((await getScene(db)) !== 'home') return [];
   const [devices, offices] = await Promise.all([listDevices(db, officeId), listOffices(db)]);
   const prefix = officeId === null && offices.length > 1;
   const officeNames = new Map(offices.map((office) => [office.id, office.name]));
@@ -108,24 +119,77 @@ export async function loadPlanWarranties(db: SQLiteDatabase, officeId: number | 
     }));
 }
 
-async function rescheduleNow(db: SQLiteDatabase): Promise<PlannedReminder[]> {
+/** 排一个场景的提醒要用的数据：各场景用自己库里的提醒设置、上次导出时间 */
+type SceneInputs = {
+  settings: AppSettings;
+  products: PlanProduct[];
+  warranties: PlanWarranty[];
+  lastExportAt: string | null;
+  dataSince: string | null;
+};
+
+async function loadSceneInputs(db: SQLiteDatabase, scene: Scene): Promise<SceneInputs> {
   const [settings, products, warranties, lastExportAt, dataSince] = await Promise.all([
     getSettings(db),
     loadPlanProducts(db),
-    loadPlanWarranties(db),
+    scene === 'home' ? loadPlanWarranties(db) : Promise.resolve([]),
     getLastExportAt(db),
     getDataSince(db),
   ]);
+  return { settings, products, warranties, lastExportAt, dataSince };
+}
+
+/**
+ * 另一个场景的库：另开一个连接，先跑迁移（免得版本落后），读完就关。
+ * 只有当前场景的库会被改，另一个库在切回去之前不会变，读过一次就记下来，换了场景再重新读。
+ */
+let otherCache: { databaseName: string; inputs: SceneInputs } | null = null;
+
+async function loadOtherSceneInputs(databaseName: string, scene: Scene): Promise<SceneInputs> {
+  if (otherCache?.databaseName === databaseName) return otherCache.inputs;
+  const inputs = await withDatabaseLock(databaseName, async () => {
+    const db = await openDatabaseAsync(databaseName, { useNewConnection: true });
+    try {
+      await migrateDbIfNeeded(db);
+      return await loadSceneInputs(db, scene);
+    } finally {
+      await db.closeAsync().catch(() => undefined);
+    }
+  });
+  otherCache = { databaseName, inputs };
+  return inputs;
+}
+
+function planScene(scene: Scene, inputs: SceneInputs, now: Date): ScenePlan {
+  const { settings } = inputs;
+  return {
+    scene,
+    items: planReminders(inputs.products, settings, now, 60, ITEM_REMINDER_SLOTS_PER_SCENE, inputs.warranties),
+    backup: planBackupReminders(
+      backupStatus({ lastExportAt: inputs.lastExportAt, dataSince: inputs.dataSince, reminderDays: settings.backupReminderDays, now }),
+      settings,
+      now,
+      BACKUP_REMINDER_SLOTS_PER_SCENE,
+    ),
+  };
+}
+
+/** 两个场景的提醒都排：db 是当前场景的库，另一个场景的库另外打开读 */
+async function rescheduleNow(db: SQLiteDatabase): Promise<PlannedReminder[]> {
+  const databases = getActiveDatabases();
+  const scene = (databases && sceneOfDatabase(databases, db.databasePath ?? '')) ?? currentScene();
+  const other = otherScene(scene);
+  const otherName = databases?.[other];
+  // 换了场景：以前读过的「另一个库」现在是当前库（刚被改过），作废
+  if (otherCache && otherCache.databaseName !== otherName) otherCache = null;
   const now = new Date();
-  // iOS 每个 App 最多挂 64 条本地通知：到期/库存提醒 56 条，备份提醒留 4 条
-  const backup = planBackupReminders(
-    backupStatus({ lastExportAt, dataSince, reminderDays: settings.backupReminderDays, now }),
-    settings,
-    now,
-  );
-  const plan = [...planReminders(products, settings, now, 60, 60 - BACKUP_REMINDER_SLOTS, warranties), ...backup].sort(
-    (left, right) => left.at.getTime() - right.at.getTime(),
-  );
+  const plans: ScenePlan[] = [planScene(scene, await loadSceneInputs(db, scene), now)];
+  if (otherName) {
+    // 另一个库读不出来时只排当前场景的，别让当前场景的提醒也发不出去
+    const inputs = await loadOtherSceneInputs(otherName, other).catch(() => null);
+    if (inputs) plans.push(planScene(other, inputs, now));
+  }
+  const plan = mergeScenePlans(plans);
   if ((await getPermissionState()) !== 'granted') return plan;
 
   await Notifications.cancelAllScheduledNotificationsAsync();
@@ -145,7 +209,7 @@ async function rescheduleNow(db: SQLiteDatabase): Promise<PlannedReminder[]> {
 let queue: Promise<unknown> = Promise.resolve();
 
 /**
- * 重新排未来的提醒。数据一变就调；多次调用会排队依次执行，
+ * 重新排未来的提醒（家庭、办公两个场景都排）。db 是当前场景的库，数据一变就调；多次调用会排队依次执行，
  * 避免「取消全部」和「逐条排程」交错。
  */
 export function rescheduleReminders(db: SQLiteDatabase): Promise<PlannedReminder[]> {

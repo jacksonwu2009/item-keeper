@@ -62,6 +62,7 @@ type ValueSheet = 'expiryLead' | 'repeat' | 'time' | 'backupDays' | 'lowStock' |
  * 改了马上存，和原来一样）；导入导出、办公点各是一行，点进单独的页面。
  * 分组顺序：提醒 → 通知 → 录入 → 数据 → 通用。「通用」放使用场景和办公点（家庭场景叫地点）：都很少改，放最下面；
  * 办公点只有一个时右上角没有切换，这一行是加第二个的入口。
+ * 提醒、备份提醒这些设置是当前场景自己的（两个场景各一个库），换了场景这里显示的是另一套。
  */
 export default function SettingsScreen() {
   const db = useSQLiteContext();
@@ -234,8 +235,8 @@ export default function SettingsScreen() {
       <ListCard>
         <ListRow
           title="使用场景"
-          subtitle="家里用还是公司用，只影响界面怎么显示"
-          value={scene ? SCENE_LABELS[scene] : null}
+          subtitle="家里用还是公司用，两边的数据分开记"
+          value={SCENE_LABELS[scene]}
           chevron
           onPress={() => {
             setSceneError(null);
@@ -313,6 +314,7 @@ export default function SettingsScreen() {
                 if (next === scene) return closeSheet();
                 setSceneBusy(true);
                 setSceneError(null);
+                // 换成功后整个界面按另一个场景的库重新挂上、重新读数据，这个面板也就没了
                 choose(next)
                   .then(closeSheet)
                   .catch(() => setSceneError('没存上，请再点一次。'))
@@ -320,7 +322,7 @@ export default function SettingsScreen() {
               }}
             />
             {sceneError ? <Text style={setStyles.error}>{sceneError}</Text> : null}
-            <Text style={setStyles.hint}>只改界面怎么显示，记的东西（包括地点名字）都不变，可以随时换回来。</Text>
+            <Text style={setStyles.hint}>家庭和办公的数据分开记，切换后看到的是另一套；两边的提醒都照常发。</Text>
           </View>
         </Sheet>
       ) : null}

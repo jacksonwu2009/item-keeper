@@ -2,11 +2,10 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { CONFIG_CATEGORIES, splitLegacyModel } from '../lib/devicePresets';
 
-export const DATABASE_NAME = 'item-keeper.db';
 const DATABASE_VERSION = 9;
 
 /**
- * 表结构
+ * 表结构（家庭、办公两个场景各一个库，表结构和迁移一样；库文件名见 lib/sceneDatabases.ts）
  * - stock_product：食品 / 日用品（kind 区分），一个条码对应一个商品
  * - stock_batch：同一商品不同批次（各自的数量和过期日期）
  * - device / device_assignment：设备及每次领用、退还记录
@@ -18,7 +17,7 @@ const DATABASE_VERSION = 9;
  * - stocktake / stocktake_item：盘点单和每一项的账面数、实盘数（v7 起）。只在本机，不进备份文件；
  *   盘点完成时对库存的调整记成出入库记录（type='adjust'），这部分会随备份走
  * - device.chip / memory / storage：电脑的芯片、内存、硬盘分开记（v8 起；以前写在 model 里的会拆出来）
- * - setting：键值设置
+ * - setting：键值设置（usage.scene 记这个库是哪个场景的）
  */
 export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
   await db.execAsync('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');

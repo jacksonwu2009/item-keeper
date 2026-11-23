@@ -14,7 +14,7 @@ import { notifyDataChanged } from '../lib/dataEvents';
 import { exportBackup, importBackup, pickBackup, readUndoSnapshot, undoLastImport } from '../lib/dataTransfer';
 import { diffDays, formatDateTime, toDateStr, todayStr } from '../lib/dates';
 import { stocktakesClearedByImport, type OpenStocktakeScope } from '../lib/stocktake';
-import { currentTerms, SCENE_LABELS, type Scene } from '../lib/terms';
+import { currentTerms, SCENE_LABELS } from '../lib/terms';
 import { colors, font } from '../theme';
 import { Footnote } from './ListRows';
 import { Button, Card, Label, MultiChips, Sheet } from './ui';
@@ -69,7 +69,7 @@ export function BackupManager() {
     const [products, devices, undo, openStocktakes, lastExportAt] = await Promise.all([
       listProducts(db),
       listDevices(db),
-      readUndoSnapshot().catch(() => null),
+      readUndoSnapshot(db).catch(() => null),
       listOpenStocktakeScopes(db),
       getLastExportAt(db),
     ]);
@@ -165,7 +165,7 @@ export function BackupManager() {
             },
       );
       await Promise.all([reload(), office.reload()]);
-      // 导入可能换了使用场景（设置里带了 scene）；别的页面也跟着重新读
+      // 别的页面也跟着重新读
       notifyDataChanged();
     } catch (error) {
       setPending(null);
@@ -176,6 +176,24 @@ export function BackupManager() {
     } finally {
       setBusy(null);
     }
+  }
+
+  /** 文件是在另一个场景导出的：先问一句再导入（只导到当前场景，不换场景）。旧文件没写场景就不问 */
+  function confirmImport() {
+    if (!pending) return;
+    const fileScene = pending.data.scene;
+    if (!fileScene || fileScene === scene) {
+      runImport();
+      return;
+    }
+    Alert.alert(
+      '导入到当前场景？',
+      `这份备份是在「${SCENE_LABELS[fileScene]}」场景导出的，要导入到现在的「${SCENE_LABELS[scene]}」吗？`,
+      [
+        { text: '取消', style: 'cancel' },
+        { text: '导入', onPress: () => runImport() },
+      ],
+    );
   }
 
   function confirmUndo() {
@@ -216,6 +234,7 @@ export function BackupManager() {
         <Footnote>
           数据只存在这台手机上。导出会生成一个文件（.json），用微信、TypeX、隔空投送等发给别的手机，对方在这里导入；换手机、备份也用它。
           {office.multiple ? `每个${terms.place}由一台手机负责记，定期把自己${terms.place}导出发给汇总的人，对方导入时只替换这个${terms.place}。` : ''}
+          {`导出、导入、撤销都只对现在的「${SCENE_LABELS[scene]}」场景，另一个场景的数据不动。`}
         </Footnote>
         <Footnote>{describeLastExport(data.lastExportAt)}</Footnote>
       </View>
@@ -329,7 +348,6 @@ export function BackupManager() {
               chosenOffices: importOffices,
               countsOf: (name) => countsOf(localOfficeId(name)),
               exists: (name) => localOfficeId(name) !== undefined,
-              sceneChange: pending.data.scene && pending.data.scene !== (scene ?? 'office') ? pending.data.scene : null,
               clearedStocktakes: stocktakesClearedByImport(data.openStocktakes, {
                 offices: pending.data.offices.filter((name) => importOffices.includes(name)),
                 scope: importScope.filter((item) => pending.summary.scope.includes(item)),
@@ -352,7 +370,7 @@ export function BackupManager() {
                 importScope.length === 0 ||
                 (importOffices.length === 0 && importScope.some((item) => item !== 'settings'))
               }
-              onPress={() => runImport()}
+              onPress={confirmImport}
             />
           </View>
         </Sheet>
@@ -368,7 +386,6 @@ function importPlanText({
   chosenOffices,
   countsOf,
   exists,
-  sceneChange,
   clearedStocktakes,
 }: {
   scope: BackupScope[];
@@ -376,8 +393,6 @@ function importPlanText({
   chosenOffices: string[];
   countsOf: (name: string) => Counts;
   exists: (name: string) => boolean;
-  /** 导入设置会把使用场景换成这个；不换为 null */
-  sceneChange: Scene | null;
   /** 这次导入会清掉进行中盘点的办公点 */
   clearedStocktakes: string[];
 }): string {
@@ -391,9 +406,7 @@ function importPlanText({
       parts.push(exists(name) ? `${name}的${describeReplaced(dataScope, countsOf(name))}` : `${name}（本机还没有，会新建）`);
     }
   }
-  if (scope.includes('settings')) {
-    parts.push(sceneChange ? `${SCOPE_LABEL.settings}（使用场景会换成${SCENE_LABELS[sceneChange]}）` : SCOPE_LABEL.settings);
-  }
+  if (scope.includes('settings')) parts.push(SCOPE_LABEL.settings);
   const stocktakeNote = clearedStocktakes.length
     ? `会清掉${clearedStocktakes.map((name) => `「${name}」`).join('、')}进行中的盘点（已录的实盘数不保留）。`
     : '';

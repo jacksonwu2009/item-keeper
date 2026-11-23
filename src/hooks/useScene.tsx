@@ -1,98 +1,132 @@
-import { useSQLiteContext } from 'expo-sqlite';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import * as SplashScreen from 'expo-splash-screen';
+import { openDatabaseAsync, SQLiteProvider, type SQLiteDatabase } from 'expo-sqlite';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { SceneChooser } from '../components/SceneOptions';
-import { chooseInitialScene, getScene, saveScene } from '../db/settings';
-import { subscribeDataChanged } from '../lib/dataEvents';
-import { rescheduleReminders } from '../lib/notifications';
-import { setActiveScene, termsFor, type Scene, type Terms } from '../lib/terms';
-import { useOffice } from './useOffice';
+import { migrateDbIfNeeded } from '../db/schema';
+import { initSceneStore, resolveSceneSetup, SCENE_STORE_NAME, writeSceneSetup } from '../db/sceneStore';
+import { getScene, prepareSceneDatabase } from '../db/settings';
+import { withDatabaseLock } from '../lib/dbLock';
+import {
+  LEGACY_DATABASE_NAME,
+  planSceneDatabases,
+  setActiveSceneSetup,
+  type SceneSetup,
+} from '../lib/sceneDatabases';
+import { termsFor, type Scene, type Terms } from '../lib/terms';
 
 type SceneState = {
-  /** 没选过为 null（新装的手机，正在显示首次选择） */
-  scene: Scene | null;
+  scene: Scene;
   terms: Terms;
-  /** 设置里换场景：只记场景，不改数据 */
+  /** 设置里换场景：记下新场景，换成另一个场景的库，整个界面按新库重新加载 */
   choose: (scene: Scene) => Promise<void>;
 };
 
 const SceneContext = createContext<SceneState | null>(null);
 
+/** 升级时看现有的库（item-keeper.db）记的是哪个场景：先跑迁移（老版本升上来的会记成办公），读完就关 */
+async function readLegacyScene(): Promise<Scene | null> {
+  return withDatabaseLock(LEGACY_DATABASE_NAME, async () => {
+    const db = await openDatabaseAsync(LEGACY_DATABASE_NAME, { useNewConnection: true });
+    try {
+      await migrateDbIfNeeded(db);
+      return await getScene(db);
+    } finally {
+      await db.closeAsync().catch(() => undefined);
+    }
+  });
+}
+
+async function loadSetup(): Promise<{ store: SQLiteDatabase; setup: SceneSetup }> {
+  const store = await openDatabaseAsync(SCENE_STORE_NAME);
+  await initSceneStore(store);
+  return { store, setup: await resolveSceneSetup(store, readLegacyScene) };
+}
+
 /**
- * 读使用场景、提供当前叫法；新装的手机（没选过）在最上面盖一层首次选择。要放在 OfficeProvider 里面。
- * 读出来之前不渲染里面的页面（开屏也就还盖着），免得家庭场景每次启动先闪一下办公的叫法。
+ * 最外层：先读场景和「哪个场景用哪个库」（库外面的小库，db/sceneStore.ts），再用当前场景的库包住整个界面（SQLiteProvider）。
+ * 换场景时换库名，SQLiteProvider 带着库名做 key，下面整棵树（办公点、各页面）按新库重新挂上、重新读数据；
+ * 导航状态由 expo-router 全局保存，还停在原来的页面（设置页）。
+ * 新装还没选过场景时不打开任何场景的库，盖一层首次选择，选了才打开那个场景的库。
+ * 读出来之前什么都不渲染（开屏也就还盖着），免得家庭场景每次启动先闪一下办公的叫法。
  */
 export function SceneProvider({ children }: { children: ReactNode }) {
-  const db = useSQLiteContext();
-  const office = useOffice();
-  const [loaded, setLoaded] = useState(false);
-  const [scene, setScene] = useState<Scene | null>(null);
-  /** 读场景出错时按办公显示、不弹首次选择（老用户读不出来不该被当成新装） */
+  const storeRef = useRef<SQLiteDatabase | null>(null);
+  const [setup, setSetup] = useState<SceneSetup | null>(null);
+  /**
+   * 读场景出错时按办公、用现有的库，不弹首次选择（老用户读不出来不该被当成新装），也不给库记场景：
+   * 现有的库可能其实是家庭的，记成办公下次就认错了。这次不存，下次启动再定。
+   */
   const [readFailed, setReadFailed] = useState(false);
 
   useEffect(() => {
     let active = true;
-    const apply = (saved: Scene | null) => {
-      if (!active) return;
-      setActiveScene(saved ?? 'office');
-      setScene(saved);
-      setLoaded(true);
-    };
-    getScene(db)
-      .then(apply)
+    loadSetup()
+      .then(({ store, setup: loaded }) => {
+        storeRef.current = store;
+        if (!active) return;
+        if (loaded.scene) setActiveSceneSetup(loaded.scene, loaded.databases);
+        setSetup(loaded);
+      })
       .catch(() => {
         if (!active) return;
-        setActiveScene('office');
+        const fallback = planSceneDatabases('office');
+        setActiveSceneSetup('office', fallback.databases);
         setReadFailed(true);
-        setLoaded(true);
+        setSetup(fallback);
       });
-    // 导入备份、撤销导入可能换了场景
-    const unsubscribe = subscribeDataChanged(() => {
-      getScene(db)
-        .then(apply)
-        .catch(() => undefined);
-    });
     return () => {
       active = false;
-      unsubscribe();
     };
-  }, [db]);
+  }, []);
 
-  const apply = useCallback(
-    (next: Scene) => {
-      setActiveScene(next);
-      setScene(next);
-      setReadFailed(false);
-      // 保修提醒只在家庭场景发，换了场景重新排
-      rescheduleReminders(db).catch(() => undefined);
-    },
-    [db],
-  );
+  const scene = setup?.scene ?? null;
+  const databaseName = scene && setup ? setup.databases[scene] : null;
+
+  // 打开库时：迁移到最新，记上是哪个场景的；家庭场景的库第一次打开、还是空的时「默认办公点」改叫「家」
+  const onInit = useMemo(() => {
+    if (!scene || !databaseName) return undefined;
+    return (db: SQLiteDatabase) =>
+      withDatabaseLock(databaseName, async () => {
+        await migrateDbIfNeeded(db);
+        if (!readFailed) await prepareSceneDatabase(db, scene);
+      });
+  }, [scene, databaseName, readFailed]);
+
   const choose = useCallback(
     async (next: Scene) => {
-      await saveScene(db, next);
-      apply(next);
+      if (!setup || next === setup.scene) return;
+      const store = storeRef.current;
+      if (!store) throw new Error('场景没存上');
+      const updated: SceneSetup = { ...setup, scene: next };
+      await writeSceneSetup(store, updated);
+      setActiveSceneSetup(next, updated.databases);
+      setReadFailed(false);
+      setSetup(updated);
     },
-    [db, apply],
-  );
-  const { reload: reloadOffices } = office;
-  // 新装第一次打开选：选家庭时空的「默认办公点」改叫「家」，所以刷新一下地点
-  const chooseInitial = useCallback(
-    async (next: Scene) => {
-      await chooseInitialScene(db, next);
-      apply(next);
-      await reloadOffices();
-    },
-    [db, apply, reloadOffices],
+    [setup],
   );
 
-  const value = useMemo<SceneState>(() => ({ scene, terms: termsFor(scene ?? 'office'), choose }), [scene, choose]);
+  const value = useMemo<SceneState>(
+    () => ({ scene: scene ?? 'office', terms: termsFor(scene ?? 'office'), choose }),
+    [scene, choose],
+  );
+
+  const chooserVisible = setup !== null && scene === null;
+  // 首次选择盖在最上面时没有打开任何库，收起开屏让用户选
+  useEffect(() => {
+    if (chooserVisible) SplashScreen.hideAsync().catch(() => undefined);
+  }, [chooserVisible]);
 
   return (
     <SceneContext.Provider value={value}>
-      {loaded ? children : null}
+      {databaseName && onInit ? (
+        <SQLiteProvider key={databaseName} databaseName={databaseName} onInit={onInit}>
+          {children}
+        </SQLiteProvider>
+      ) : null}
       {/* 一直挂着、用 visible 控制：直接卸掉显示中的 Modal，iOS 上有过卸了还盖着的问题 */}
-      <SceneChooser visible={loaded && scene === null && !readFailed} onChoose={chooseInitial} />
+      <SceneChooser visible={chooserVisible} onChoose={choose} />
     </SceneContext.Provider>
   );
 }

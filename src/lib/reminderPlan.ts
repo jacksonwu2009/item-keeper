@@ -9,10 +9,16 @@
  *   不会因为每天打开 App 重新排程而一直往后推）。
  * - 某天只要有一项「轮到提醒」，那天就发通知，内容列出当天所有需要注意的东西。
  * - 保修提醒（只在家庭场景传进来）：设备保修到期前 30 天那一天提醒一次，写进那天的汇总通知；那天本来没有通知就单发一条。
+ * - 家庭、办公两个场景各排各的（各用自己的提醒设置），再合到一起（mergeScenePlans）：
+ *   同一天同一时刻两边都有提醒就合成一条，分别用「家里：」「公司：」开头；时间不同各发各的；只有一个场景有就不加前缀。
  */
 
 import { addDays, dateStrToLocalDate, describeDaysLeft, diffDays, epochDay, todayStr } from './dates';
+import { SCENE_REMINDER_PREFIX, SCENES, type Scene } from './terms';
 import { WARRANTY_SOON_DAYS } from './warranty';
+
+/** iOS 每个 App 最多挂 64 条本地通知，物品提醒和备份提醒一共用 60 条，两个场景平分：每个场景物品提醒 28 条、备份提醒 2 条 */
+export const ITEM_REMINDER_SLOTS_PER_SCENE = 28;
 
 export type ReminderSettings = {
   expiryEnabled: boolean;
@@ -184,4 +190,53 @@ export function planReminders(
     plan.push({ day, at, title, body });
   }
   return plan;
+}
+
+/** 一个场景排好的提醒：物品（到期、库存、保修）的汇总通知和备份提醒分开放，合并时同类的才合成一条 */
+export type ScenePlan = { scene: Scene; items: PlannedReminder[]; backup: PlannedReminder[] };
+
+type Tagged = { scene: Scene; kind: 'items' | 'backup'; reminder: PlannedReminder };
+
+function prefixed(entries: readonly Tagged[]): PlannedReminder {
+  const [first] = entries;
+  return {
+    day: first.reminder.day,
+    at: first.reminder.at,
+    title: entries.map((entry) => `${SCENE_REMINDER_PREFIX[entry.scene]}${entry.reminder.title}`).join('；'),
+    body: entries.map((entry) => `${SCENE_REMINDER_PREFIX[entry.scene]}${entry.reminder.body}`).join('\n'),
+  };
+}
+
+/**
+ * 把两个场景排好的提醒合成要发的通知，按时间排好。
+ * - 某个时刻只有一个场景有提醒：原样发，不加前缀（和只用一个场景时一样）。
+ * - 同一时刻两个场景都有：物品提醒合成一条、备份提醒合成一条，标题和正文里每个场景那部分分别用「家里：」「公司：」开头
+ *   （标题用「；」隔开，正文分行）；只有一边有的那一类也加上前缀，分得清是哪边的。家里的在前。
+ */
+export function mergeScenePlans(plans: readonly ScenePlan[]): PlannedReminder[] {
+  const byTime = new Map<number, Tagged[]>();
+  for (const plan of plans) {
+    for (const kind of ['items', 'backup'] as const) {
+      for (const reminder of plan[kind]) {
+        const time = reminder.at.getTime();
+        const group = byTime.get(time) ?? [];
+        group.push({ scene: plan.scene, kind, reminder });
+        byTime.set(time, group);
+      }
+    }
+  }
+  const merged: PlannedReminder[] = [];
+  for (const time of [...byTime.keys()].sort((left, right) => left - right)) {
+    const group = byTime.get(time) ?? [];
+    const scenes = new Set(group.map((entry) => entry.scene));
+    for (const kind of ['items', 'backup'] as const) {
+      const entries = group
+        .filter((entry) => entry.kind === kind)
+        .sort((left, right) => SCENES.indexOf(left.scene) - SCENES.indexOf(right.scene));
+      if (!entries.length) continue;
+      if (scenes.size < 2) merged.push(...entries.map((entry) => entry.reminder));
+      else merged.push(prefixed(entries));
+    }
+  }
+  return merged;
 }

@@ -5,6 +5,7 @@
  * - 导出、导入都可以只选部分分类（食品 / 日用品 / 设备 / 提醒设置）。
  * - 导入：用户选一个备份文件，先完整校验；确认后用它替换手机上所选分类的数据，没选的不动。
  *   替换前先把手机上的全部数据存一份在 App 自己的目录里，导错了可以撤销。
+ * - 家庭、办公两个场景各一个库：导出、导入、撤销都只对当前场景的库，留底文件也是每个库一份。
  */
 
 import * as DocumentPicker from 'expo-document-picker';
@@ -26,8 +27,12 @@ import {
 } from './backup';
 import { countsAsBackup } from './backupReminder';
 import { rescheduleReminders } from './notifications';
+import { undoFileName } from './sceneDatabases';
 
-const UNDO_FILE_NAME = 'before-last-import.json';
+/** 这个库的撤销留底文件（每个场景的库一份） */
+function undoFile(db: SQLiteDatabase): File {
+  return new File(Paths.document, undoFileName(db.databasePath ?? ''));
+}
 
 /** officeIds 为 null 时导出所有办公点。 */
 export async function exportBackup(
@@ -84,14 +89,14 @@ export async function importBackup(
   await replaceData(db, data, choice);
   let undoSaved = true;
   try {
-    const undoFile = new File(Paths.document, UNDO_FILE_NAME);
-    undoFile.create({ overwrite: true });
-    await undoFile.write(JSON.stringify(current));
+    const file = undoFile(db);
+    file.create({ overwrite: true });
+    await file.write(JSON.stringify(current));
   } catch {
     undoSaved = false;
     // 旧的留底是更早那次导入前的数据，留着会让「撤销」换回错的东西，删掉
     try {
-      new File(Paths.document, UNDO_FILE_NAME).delete();
+      undoFile(db).delete();
     } catch {
       // 本来就没有
     }
@@ -100,20 +105,20 @@ export async function importBackup(
   return { undoSaved };
 }
 
-/** 上次导入前留下的数据（没有就返回 null）。 */
-export async function readUndoSnapshot(): Promise<{ data: BackupData; summary: BackupSummary } | null> {
-  const undoFile = new File(Paths.document, UNDO_FILE_NAME);
-  if (!undoFile.exists) return null;
-  const result = parseBackup(await undoFile.text());
+/** 这个库上次导入前留下的数据（没有就返回 null）。 */
+export async function readUndoSnapshot(db: SQLiteDatabase): Promise<{ data: BackupData; summary: BackupSummary } | null> {
+  const file = undoFile(db);
+  if (!file.exists) return null;
+  const result = parseBackup(await file.text());
   return result.ok ? { data: result.data, summary: result.summary } : null;
 }
 
 /** 撤销上次导入：换回导入前的数据，然后删掉这份留底。 */
 export async function undoLastImport(db: SQLiteDatabase): Promise<boolean> {
-  const snapshot = await readUndoSnapshot();
+  const snapshot = await readUndoSnapshot(db);
   if (!snapshot) return false;
   await restoreAll(db, snapshot.data);
-  new File(Paths.document, UNDO_FILE_NAME).delete();
+  undoFile(db).delete();
   await rescheduleReminders(db).catch(() => undefined);
   return true;
 }

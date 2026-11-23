@@ -49,7 +49,7 @@ export function SceneOptions({
   );
 }
 
-/** 新装的手机第一次打开：盖在最上面，选了才能用（只是叫法，选错了可以在设置里改） */
+/** 新装的手机第一次打开：盖在最上面，选了才打开那个场景的库（选错了可以在设置里切换，两个场景的数据分开记） */
 export function SceneChooser({ visible, onChoose }: { visible: boolean; onChoose: (scene: Scene) => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +58,7 @@ export function SceneChooser({ visible, onChoose }: { visible: boolean; onChoose
       <SafeAreaView style={chooserStyles.screen}>
         <View style={chooserStyles.body}>
           <Text style={chooserStyles.title}>物品管家用在哪？</Text>
-          <Text style={chooserStyles.subtitle}>只影响界面怎么显示，以后可以在设置里改，记的东西不会变。</Text>
+          <Text style={chooserStyles.subtitle}>家庭和办公分开记，以后可以在设置里切换。</Text>
           <SceneOptions
             value={null}
             disabled={busy}
