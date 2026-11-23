@@ -5,7 +5,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 
 import { SwipeRow, UndoBar } from '../../../components/SwipeRow';
-import { Button, Chip, ChoiceChips, Empty, LARGE_TITLE_SCROLL_INSET, LIST_PRESS_DELAY, SearchField, Segmented } from '../../../components/ui';
+import { Chip, ChoiceChips, Empty, LARGE_TITLE_SCROLL_INSET, LIST_PRESS_DELAY, ListActions, SearchField, Segmented } from '../../../components/ui';
 import {
   deleteDevice,
   listActiveAssignments,
@@ -125,21 +125,11 @@ export default function DevicesScreen() {
 
   const header = (
     <View style={deviceStyles.header}>
-      <View style={deviceStyles.actions}>
-        <Button
-          title="扫码录入"
-          icon="barcode-outline"
-          onPress={() => router.push({ pathname: '/scan', params: { mode: 'device' } })}
-          style={deviceStyles.actionMain}
-        />
-        <Button
-          title="手动添加"
-          icon="add"
-          variant="secondary"
-          onPress={() => router.push('/device/new')}
-          style={deviceStyles.actionSide}
-        />
-      </View>
+      <ListActions
+        scanTitle="扫码录入"
+        onScan={() => router.push({ pathname: '/scan', params: { mode: 'device' } })}
+        onAdd={() => router.push('/device/new')}
+      />
       {devices.length > 0 ? (
         <>
           {/* 照鸿蒙版的顺序：搜索框、按设备 / 按使用人、筛选，统计数字贴着下面的列表 */}
@@ -358,9 +348,6 @@ const deviceStyles = StyleSheet.create({
   list: { flex: 1, backgroundColor: colors.bg },
   content: { padding: 16, paddingBottom: 40 },
   header: { gap: 12, marginBottom: 4 },
-  actions: { flexDirection: 'row', gap: 8 },
-  actionMain: { flex: 2 },
-  actionSide: { flex: 1 },
   summary: { fontSize: font.small, color: colors.muted },
   sectionTitle: { fontSize: font.small, fontWeight: '500', color: colors.muted, paddingHorizontal: 4, paddingTop: 12 },
   sectionGap: { height: 8 },

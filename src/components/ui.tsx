@@ -148,6 +148,19 @@ export function Button({
   );
 }
 
+/**
+ * 列表页最上面的两个按钮：左边扫码（实心主色）、右边手动添加（浅主色），一样宽、一样高。
+ * 食品、日用品、设备三个列表页都用它，文字按各自的意思传（扫码入库 / 扫码录入）。
+ */
+export function ListActions({ scanTitle, onScan, onAdd }: { scanTitle: string; onScan: () => void; onAdd: () => void }) {
+  return (
+    <View style={styles.listActions}>
+      <Button title={scanTitle} icon="barcode-outline" onPress={onScan} style={styles.listAction} />
+      <Button title="手动添加" icon="add" variant="secondary" onPress={onAdd} style={styles.listAction} />
+    </View>
+  );
+}
+
 export function IconButton({
   icon,
   onPress,
@@ -529,6 +542,9 @@ export const styles = StyleSheet.create({
     gap: 6,
   },
   buttonCompact: { minHeight: 36, paddingHorizontal: 16 },
+  // 列表页顶上的两个按钮各占一半；左右留白收窄一点，窄屏上字也排得下
+  listActions: { flexDirection: 'row', gap: 8 },
+  listAction: { flex: 1, minWidth: 0, paddingHorizontal: 12 },
   buttonText: { fontSize: font.body, fontWeight: '600' },
   buttonTextCompact: { fontSize: font.small },
   iconButton: { padding: 6 },

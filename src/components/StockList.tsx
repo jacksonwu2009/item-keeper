@@ -16,7 +16,7 @@ import { expiryStatus, isLowStock } from '../lib/status';
 import { formatQty, KIND_LABEL, type StockKind } from '../lib/stock';
 import { colors, font, radius } from '../theme';
 import { SwipeRow, UndoBar } from './SwipeRow';
-import { Button, Chip, Empty, LARGE_TITLE_SCROLL_INSET, SearchField, Segmented } from './ui';
+import { Chip, Empty, LARGE_TITLE_SCROLL_INSET, ListActions, SearchField, Segmented } from './ui';
 
 type Filter = 'all' | 'attention' | 'low';
 
@@ -91,10 +91,7 @@ export function StockList({ kind }: { kind: StockKind }) {
 
   const header = (
     <View style={listStyles.header}>
-      <View style={listStyles.actions}>
-        <Button title="扫码入库" icon="barcode-outline" onPress={scan} style={listStyles.actionMain} />
-        <Button title="手动添加" icon="add" variant="secondary" onPress={addManually} style={listStyles.actionSide} />
-      </View>
+      <ListActions scanTitle="扫码入库" onScan={scan} onAdd={addManually} />
       {products.length > 0 ? (
         <>
           <SearchField
@@ -201,9 +198,6 @@ const listStyles = StyleSheet.create({
   list: { flex: 1, backgroundColor: colors.bg },
   content: { padding: 16, paddingBottom: 40 },
   header: { gap: 12, marginBottom: 12 },
-  actions: { flexDirection: 'row', gap: 8 },
-  actionMain: { flex: 3 },
-  actionSide: { flex: 2 },
   separator: { height: 8 },
   row: {
     flexDirection: 'row',
