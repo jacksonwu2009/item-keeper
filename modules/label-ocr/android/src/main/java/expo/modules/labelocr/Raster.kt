@@ -49,9 +49,18 @@ internal class Raster(val width: Int, val height: Int, val pixels: IntArray) {
   /**
    * 缩放到 dstW × dstH 并转成模型输入：NCHW 的浮点数组。
    * order 是通道顺序（"BGR" 或 "RGB"）；每个值 = (像素 × scale − mean[c]) / std[c]，c 按 order 里的顺序。
+   * paddedW 比 dstW 大时右边补 0（张量宽 paddedW）。
    */
-  fun toTensor(dstW: Int, dstH: Int, order: String, scale: Float, mean: FloatArray, std: FloatArray): FloatArray {
-    val plane = dstW * dstH
+  fun toTensor(
+    dstW: Int,
+    dstH: Int,
+    order: String,
+    scale: Float,
+    mean: FloatArray,
+    std: FloatArray,
+    paddedW: Int = dstW,
+  ): FloatArray {
+    val plane = paddedW * dstH
     val tensor = FloatArray(3 * plane)
     val scaleX = width.toDouble() / dstW
     val scaleY = height.toDouble() / dstH
@@ -63,7 +72,7 @@ internal class Raster(val width: Int, val height: Int, val pixels: IntArray) {
       for (dx in 0 until dstW) {
         val sx = (dx + 0.5) * scaleX - 0.5
         sample(sx, sy, rgb)
-        val offset = dy * dstW + dx
+        val offset = dy * paddedW + dx
         for (channel in 0..2) {
           tensor[channel * plane + offset] = (rgb[pick[channel]] * scale - mean[channel]) / std[channel]
         }
@@ -120,13 +129,25 @@ internal class Raster(val width: Int, val height: Int, val pixels: IntArray) {
   }
 
   /**
-   * 识别模型的输入：等比缩放到高 height（宽 = ceil(height × 宽高比)，最多 maxWidth），RGB，(x / 255 − 0.5) / 0.5。
-   * 照官方 RecPreprocessor（一次一行，不补边）。
+   * 识别模型的输入，照 PaddleX 的 OCRReisizeNormImg（一次一行）：
+   * - 张量宽 = int(height × max(baseWidth / height, 宽高比))（向下取整），超过 maxWidth 时就是 maxWidth；
+   * - 图等比缩放到高 height，宽 = min(ceil(height × 宽高比), 张量宽)（长行就是向下取整的那个宽）；
+   * - 比张量窄的右边补 0（短行补到 baseWidth = 320）；
+   * - 通道顺序 order（模型配置是 BGR），(x / 255 − 0.5) / 0.5。
+   * 返回张量和它的宽。
    */
-  fun toRecTensor(height: Int, maxWidth: Int): Pair<FloatArray, Int> {
+  fun toRecTensor(height: Int, baseWidth: Int, maxWidth: Int, order: String): Pair<FloatArray, Int> {
     val ratio = width.toDouble() / this.height
-    val dstW = ceil(height * ratio).toInt().coerceIn(1, maxWidth)
+    val maxRatio = max(baseWidth.toDouble() / height, ratio)
+    var tensorW = (height * maxRatio).toInt()
+    val resizedW: Int
+    if (tensorW > maxWidth) {
+      tensorW = maxWidth
+      resizedW = maxWidth
+    } else {
+      resizedW = minOf(ceil(height * ratio).toInt(), tensorW).coerceAtLeast(1)
+    }
     val half = floatArrayOf(0.5f, 0.5f, 0.5f)
-    return toTensor(dstW, height, "RGB", 1f / 255f, half, half) to dstW
+    return toTensor(resizedW, height, order, 1f / 255f, half, half, tensorW) to tensorW
   }
 }

@@ -106,7 +106,7 @@ class LabelOcrModule : Module() {
     val decodeMs = SystemClock.elapsedRealtime() - decodeStart
 
     val output = try {
-      ocr.run(raster)
+      ocr.run(raster, cropped = crop != null)
     } catch (error: CodedException) {
       throw error
     } catch (error: Throwable) {

@@ -122,38 +122,68 @@ internal object DbPostProcess {
     return Geometry.orderCorners(expanded.corners)
   }
 
-  /** 四边形里概率的平均（score_mode=fast）：照官方，角点坐标先取整，再看每个点在不在四边形里（含边） */
+  /**
+   * 四边形里概率的平均（score_mode=fast），照 PaddleX 的 box_score_fast：外接框里铺一张掩码，角点减去外接框左上角后
+   * 取整（截掉小数），用 OpenCV fillPoly 的画法填上——四条边按 8 邻接直线画出来（边线上的像素都算），再把每一行
+   * 左右边之间填满（四边形是凸的，每行一段）——掩码里的点求平均。
+   * 以前只算中心落在四边形里的点，边上斜着压过去的像素没算，得分偏高，该被 box_thresh 0.6 筛掉的框会留下。
+   */
   private fun boxScore(prob: FloatArray, predW: Int, predH: Int, corners: List<PointD>): Double {
     val xMin = floor(corners.minOf { it.x }).toInt().coerceIn(0, predW - 1)
     val xMax = ceil(corners.maxOf { it.x }).toInt().coerceIn(0, predW - 1)
     val yMin = floor(corners.minOf { it.y }).toInt().coerceIn(0, predH - 1)
     val yMax = ceil(corners.maxOf { it.y }).toInt().coerceIn(0, predH - 1)
-    val quad = corners.map { PointD((it.x - xMin).toInt().toDouble() + xMin, (it.y - yMin).toInt().toDouble() + yMin) }
+    val width = xMax - xMin + 1
+    val height = yMax - yMin + 1
+    // 每一行被边线压到的最左、最右的点
+    val rowMin = IntArray(height) { Int.MAX_VALUE }
+    val rowMax = IntArray(height) { Int.MIN_VALUE }
+    fun plot(x: Int, y: Int) {
+      if (x < 0 || x >= width || y < 0 || y >= height) return
+      if (x < rowMin[y]) rowMin[y] = x
+      if (x > rowMax[y]) rowMax[y] = x
+    }
+    val points = corners.map { ((it.x - xMin).toInt()) to ((it.y - yMin).toInt()) }
+    for (index in points.indices) {
+      val (x0, y0) = points[index]
+      val (x1, y1) = points[(index + 1) % points.size]
+      drawLine(x0, y0, x1, y1, ::plot)
+    }
     var sum = 0.0
     var count = 0
-    for (y in yMin..yMax) {
-      for (x in xMin..xMax) {
-        if (insideConvex(quad, x.toDouble(), y.toDouble())) {
-          sum += prob[y * predW + x]
-          count++
-        }
+    for (row in 0 until height) {
+      if (rowMin[row] > rowMax[row]) continue
+      val offset = (row + yMin) * predW + xMin
+      for (x in rowMin[row]..rowMax[row]) {
+        sum += prob[offset + x]
+        count++
       }
     }
     return if (count == 0) 0.0 else sum / count
   }
 
-  private fun insideConvex(quad: List<PointD>, x: Double, y: Double): Boolean {
-    var positive = false
-    var negative = false
-    for (index in quad.indices) {
-      val a = quad[index]
-      val b = quad[(index + 1) % quad.size]
-      val cross = (b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x)
-      if (cross > 1e-9) positive = true
-      if (cross < -1e-9) negative = true
-      if (positive && negative) return false
+  /** 8 邻接的直线（Bresenham，和 OpenCV LINE_8 一样走法），每个点交给 plot */
+  private inline fun drawLine(fromX: Int, fromY: Int, toX: Int, toY: Int, plot: (Int, Int) -> Unit) {
+    var x = fromX
+    var y = fromY
+    val dx = abs(toX - fromX)
+    val dy = -abs(toY - fromY)
+    val stepX = if (fromX < toX) 1 else -1
+    val stepY = if (fromY < toY) 1 else -1
+    var error = dx + dy
+    while (true) {
+      plot(x, y)
+      if (x == toX && y == toY) break
+      val doubled = 2 * error
+      if (doubled >= dy) {
+        error += dy
+        x += stepX
+      }
+      if (doubled <= dx) {
+        error += dx
+        y += stepY
+      }
     }
-    return true
   }
 
   /** 按阅读顺序排（照官方 BoxSorter / PaddleX SortQuadBoxes）：先按左上角 y、x 排，同一排（y 差 < 10）里从左到右 */

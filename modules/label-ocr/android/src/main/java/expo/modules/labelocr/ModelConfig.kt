@@ -5,7 +5,8 @@ package expo.modules.labelocr
  *
  * PaddleX 导出的 yml 结构是固定的，这里只认用得到的几项，不引整个 YAML 库：
  * - 检测 det/inference.yml：PreProcess → DecodeImage.img_mode（BGR）、NormalizeImage 的 mean / std / scale
- * - 识别 rec/inference.yml：PreProcess → RecResizeImg.image_shape（[3, 48, 320]，取高 48）、PostProcess.character_dict（字典）
+ * - 识别 rec/inference.yml：PreProcess → DecodeImage.img_mode（BGR）、RecResizeImg.image_shape（[3, 48, 320]：高 48、补边到宽 320）、
+ *   PostProcess.character_dict（字典）
  *
  * 读字典的写法照 PaddleOCR 官方安卓示例 ppocr-sdk 的 ModelConfig.kt（Apache-2.0）。
  */
@@ -17,7 +18,11 @@ internal data class DetModelConfig(
 )
 
 internal data class RecModelConfig(
+  /** 通道顺序：DecodeImage.img_mode（BGR） */
+  val imgMode: String,
   val imageHeight: Int,
+  /** RecResizeImg.image_shape 的宽（320）：比这窄的行右边补 0 补到这么宽 */
+  val imageWidth: Int,
   /** 字典；下标 0 对应模型输出的第 1 类（第 0 类是 CTC 的空白），末尾补一个空格（官方做法） */
   val characters: List<String>,
 )
@@ -37,6 +42,8 @@ internal object ModelConfig {
 
   fun parseRec(text: String, source: String): RecModelConfig {
     val lines = splitLines(text)
+    val decode = findKey(lines, "DecodeImage", 0) ?: throw IllegalStateException("$source 里没有 DecodeImage")
+    val imgMode = scalarAfter(lines, "img_mode", decode) ?: "BGR"
     val resize = findKey(lines, "RecResizeImg", 0) ?: throw IllegalStateException("$source 里没有 RecResizeImg")
     val shape = listAfter(lines, "image_shape", resize).map { it.toInt() }
     require(shape.size == 3) { "$source 里 image_shape 不是 3 个数" }
@@ -44,7 +51,7 @@ internal object ModelConfig {
     val characters = listAfter(lines, "character_dict", postProcess).toMutableList()
     require(characters.isNotEmpty()) { "$source 里 character_dict 是空的" }
     if (characters.last() != " ") characters.add(" ")
-    return RecModelConfig(imageHeight = shape[1], characters = characters)
+    return RecModelConfig(imgMode = imgMode.uppercase(), imageHeight = shape[1], imageWidth = shape[2], characters = characters)
   }
 
   private fun splitLines(text: String): List<String> = text.replace("\r\n", "\n").replace('\r', '\n').split('\n')
