@@ -302,7 +302,6 @@ export function StockProductForm({
   const nameTag = scanTagFor(labelScan, labelScan?.name ?? null, name);
   const specTag = scanTagFor(labelScan, labelScan?.spec ?? null, spec);
   const otherNames = nameCandidates.filter((candidate) => candidate !== name);
-  const showScanEntry = canScanLabel && !labelScan && barcode.trim() !== '' && lookup !== 'loading' && lookup !== 'found';
 
   return (
     <Screen contentStyle={formStyles.page}>
@@ -374,17 +373,10 @@ export function StockProductForm({
               ? '正在查商品库…'
               : lookup === 'found'
                 ? '已从商品库带出名称，请核对。'
-                : '商品库里没有这个条码，请手动填名称；保存后再扫就能直接认出来。如果这是某个已录物品的整箱条码，到那个物品的「编辑 → 包装规格」里扫它。'}
+                : canScanLabel
+                  ? '商品库里没有这个条码，可以点上面的「拍包装识别」自动填，或者手动填名称；保存后再扫就能直接认出来。如果这是某个已录物品的整箱条码，到那个物品的「编辑 → 包装规格」里扫它。'
+                  : '商品库里没有这个条码，请手动填名称；保存后再扫就能直接认出来。如果这是某个已录物品的整箱条码，到那个物品的「编辑 → 包装规格」里扫它。'}
           </Text>
-        ) : null}
-        {showScanEntry ? (
-          // 照效果图一：条码下面浅蓝一块，拍背面标签自动填；不拍就照旧手填
-          <View style={formStyles.scanEntry}>
-            <Text style={formStyles.scanEntryText}>
-              拍一下包装背面的标签，自动填名称、规格、保质期和生产日期，填好后你再核对。照片只在手机上识别，不上传。
-            </Text>
-            <Button title="拍包装识别" icon="camera-outline" onPress={() => setLabelCameraOpen(true)} />
-          </View>
         ) : null}
         <Field
           label="名称"
@@ -631,12 +623,10 @@ const formStyles = StyleSheet.create({
   packInput: { backgroundColor: colors.surface, borderColor: colors.surface },
   packAdd: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   noteInput: { minHeight: 88, textAlignVertical: 'top' },
-  // 拍包装识别：入口在页面最上面和条码下面（浅主色），识别完页面最上面换成浅蓝一条
+  // 拍包装识别：入口在页面最上面（浅主色），识别完换成浅蓝一条
   // 入口（操作）用 App 主色；识别后的横幅、「识别」标记用蓝色，专门表示「机器认出来的，请核对」
-  scanEntry: { gap: 10, padding: 12, borderRadius: radius.md, backgroundColor: colors.accentSoft },
   scanEntryBanner: { backgroundColor: colors.accentSoft },
   scanEntryTitle: { color: colors.accent },
-  scanEntryText: { fontSize: font.small, color: colors.ink, lineHeight: 20 },
   scanBanner: {
     flexDirection: 'row',
     alignItems: 'center',
