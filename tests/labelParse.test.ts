@@ -95,8 +95,9 @@ describe('拍照识别：第一轮照片的字段数（和方案第九节对照�
     return count;
   }
 
-  it('PP-OCRv6_small 6/9，比 tiny、v5_mobile 好；苹果系统识别只认出一个日期时也填上以后 5/9', () => {
+  it('PP-OCRv6_small 6/9（安卓 App 里的原生模块也是 6/9），比 tiny、v5_mobile 好；苹果系统识别只认出一个日期时也填上以后 5/9', () => {
     assert.equal(score('round1-desktop-PP-OCRv6_small.json'), 6);
+    assert.equal(score('round1-android-PP-OCRv6_small.json'), 6);
     assert.equal(score('round1-desktop-PP-OCRv6_tiny.json'), 5);
     assert.equal(score('round1-desktop-PP-OCRv5_mobile.json'), 3);
     assert.equal(score('round1-desktop-apple-vision.json'), 5);

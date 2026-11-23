@@ -9,6 +9,7 @@
 | --- | --- |
 | `round1-desktop-PP-OCRv6_small.json` 等 | 第一轮准确率试验：4 张照片在电脑上用 PaddleOCR 3.7 三种手机端模型识别的结果 |
 | `round1-desktop-apple-vision.json` | 同一批照片用 macOS Vision（和 iOS 系统识别同一套）识别：没有位置，置信度只有三档 |
+| `round1-android-PP-OCRv6_small.json` | 同一批照片在安卓模拟器上用 App 里的原生模块 modules/label-ocr 识别的结果（iOS 原生模块逐行对照用；timing 是那一次的耗时，测试不看） |
 | `rules.json` | 手写的规则用例，每条只测一两条规则 |
 
 ## 格式（`label-ocr-fixture/1`）
@@ -24,7 +25,8 @@
       "id": "photo1",
       "description": "说明（可选）",
       "width": 720, "height": 1280,  // 坐标系大小（可选）：图片摆正、转正以后的宽高
-      "rotation": 0,                 // 为了让字正过来图顺时针转了几度（可选）
+      "rotation": 0,                 // 为了让字正过来图顺时针转了几度（可选）；lines 的坐标是转正以后的
+      "timing": {"totalMs": 5153},   // 可选，识别耗时，只是记录
       "today": "2026-11-22",         // 可选，覆盖上面的
       "target": "production",        // 可选：点的是哪一格的「拍日期」，production / expiry，默认 production
       "shelfLife": {"amount": 12, "unit": "month"}, // 可选：商品资料里已知的保质期，不给就用标签上认出的
