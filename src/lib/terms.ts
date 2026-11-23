@@ -32,7 +32,7 @@ const OFFICE_TERMS: Terms = {
   roster: '员工名单',
   rosterHint: '领用设备时直接从名单里选；名单外的人也能手填。',
   personNamePlaceholder: '姓名',
-  personNotePlaceholder: '备注（选填），如 部门',
+  personNotePlaceholder: '备注（选填）',
   assignmentRecords: '领用记录',
 };
 

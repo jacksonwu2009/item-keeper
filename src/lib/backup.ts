@@ -1,14 +1,14 @@
 /**
  * 备份文件格式与校验（纯函数，有单测）。
  *
- * 备份是一个 JSON 文件，包含食品 / 日用品（含批次和出入库记录）、设备（含领用记录和人员名单）和提醒设置，
+ * 备份是一个 JSON 文件，包含食品 / 日用品（含批次和出入库记录）、设备（含领用记录、人员名单和部门）和提醒设置，
  * 可以只导出其中几类（scope）、其中几个办公点（offices）；导入时也可以只替换其中几个办公点的几类。
  * 办公点在不同手机上按名称对应。
  * 导入时先完整校验，有任何一处不对就整份拒绝，并告诉用户是哪一条、哪个字段，
  * 不会出现「导入一半」的情况。
  */
 
-import type { PersonEntry } from '../db/people';
+import { looksLikeEmail, type PersonEntry } from '../db/people';
 import { DEFAULT_SETTINGS, type AppSettings } from '../db/settings';
 import { isValidDateStr, todayStr } from './dates';
 import { validatePacks, type PackUnit } from './packs';
@@ -24,9 +24,11 @@ export const BACKUP_APP = 'item-keeper';
  */
 export const BACKUP_FORMAT = 7;
 export const OFFICE_NAME_LIMIT = 20;
-/** 人员名单的姓名、备注最多几个字（和 db/people.ts 一样） */
+/** 人员名单的姓名、备注、邮箱和部门名称最多几个字（和 db/people.ts 一样） */
 export const PERSON_NAME_LIMIT = 20;
 export const PERSON_NOTE_LIMIT = 100;
+export const PERSON_EMAIL_LIMIT = 100;
+export const DEPARTMENT_NAME_LIMIT = 20;
 
 export type BackupScope = 'food' | 'daily' | 'devices' | 'settings';
 export const ALL_SCOPES: BackupScope[] = ['food', 'daily', 'devices', 'settings'];
@@ -133,9 +135,16 @@ export type BackupData = {
   devices: BackupDevice[];
   /**
    * 人员名单（员工名单 / 家庭成员），按名单里的顺序：含设备分类时才有。
-   * 导入勾了设备时按姓名合并进当前场景的名单；旧文件没有就不动名单。鸿蒙版写法一样：[{ name, note }]，note 没有为 null。
+   * 导入勾了设备时按姓名合并进当前场景的名单；旧文件没有就不动名单。鸿蒙版写法一样：
+   * [{ name, email, department, note }]，没有的写 null；department 是部门名。
+   * 读文件时某一项缺了（旧文件没有 email、department）就不带这一项，合并时不动本机的；明确为 null 时清空。
    */
   people?: PersonEntry[];
+  /**
+   * 部门（只有办公场景的界面用）：当前库的全部部门名，按排序，包括还没有人的；含设备分类时才有。
+   * 导入勾了设备时先按名称合并（没有的加上，不删本机多出来的），再合并人员；旧文件没有就不动部门。
+   */
+  departments?: string[];
 };
 
 export type OfficeSummary = {
@@ -157,6 +166,8 @@ export type BackupSummary = {
   assignments: number;
   /** 名单里几个人；文件里没有名单为 0 */
   people: number;
+  /** 几个部门；文件里没有为 0 */
+  departments: number;
 };
 
 // ---------- 导出 ----------
@@ -183,6 +194,8 @@ export type BackupSource = {
   assignments: SourceAssignment[];
   /** 人员名单，按名单里的顺序 */
   people: PersonEntry[];
+  /** 部门名，按排序（含还没有人的） */
+  departments: string[];
 };
 
 function groupBy<T, K>(items: T[], key: (item: T) => K): Map<K, T[]> {
@@ -289,7 +302,15 @@ export function buildBackup(
       })),
     })),
     ...(included.includes('devices')
-      ? { people: (source.people ?? []).map((person) => ({ name: person.name, note: person.note })) }
+      ? {
+          people: (source.people ?? []).map((person) => ({
+            name: person.name,
+            email: person.email ?? null,
+            department: person.department ?? null,
+            note: person.note ?? null,
+          })),
+          departments: [...(source.departments ?? [])],
+        }
       : {}),
   };
 }
@@ -311,6 +332,7 @@ export function summarizeBackup(data: BackupData): BackupSummary {
     movements: data.products.reduce((sum, product) => sum + product.movements.length, 0),
     assignments: data.devices.reduce((sum, device) => sum + device.assignments.length, 0),
     people: data.people?.length ?? 0,
+    departments: data.departments?.length ?? 0,
   };
 }
 
@@ -578,20 +600,53 @@ function parseDevice(raw: unknown, index: number, exportedAt: string, offices: s
   };
 }
 
-/** 人员名单：每人要有姓名（最多 20 个字），备注选填（最多 100 个字）；姓名不分大小写不能重复 */
+/**
+ * 人员名单：每人要有姓名（最多 20 个字）；邮箱、部门、备注选填（邮箱要像邮箱、最多 100 个字，部门名最多 20 个字，
+ * 备注最多 100 个字）；姓名不分大小写不能重复，邮箱不要求唯一。
+ * 缺了的项不带（合并时不动本机的），写了 null 的带 null（合并时清空）。邮箱转成小写。
+ */
 function parsePeople(value: unknown): PersonEntry[] {
   const seen = new Set<string>();
   return list(value, '', '人员名单').map((raw, index) => {
-    const where = `人员名单第 ${index + 1} 个`;
+    let where = `人员名单第 ${index + 1} 个`;
     if (!isObj(raw)) fail(where, '格式不对');
     const name = reqText(raw.name, where, '姓名');
     if (name.length > PERSON_NAME_LIMIT) fail(where, `姓名「${name}」超过 ${PERSON_NAME_LIMIT} 个字`);
-    const note = optText(raw.note, `${where}「${name}」`, '备注');
-    if (note && note.length > PERSON_NOTE_LIMIT) fail(`${where}「${name}」`, `备注超过 ${PERSON_NOTE_LIMIT} 个字`);
+    where = `${where}「${name}」`;
     const key = name.toLowerCase();
     if (seen.has(key)) fail('', `人员名单里「${name}」重复了`);
     seen.add(key);
-    return { name, note };
+    const entry: PersonEntry = { name };
+    if (raw.email !== undefined) {
+      const email = optText(raw.email, where, '邮箱')?.toLowerCase() ?? null;
+      if (email && email.length > PERSON_EMAIL_LIMIT) fail(where, `邮箱超过 ${PERSON_EMAIL_LIMIT} 个字`);
+      if (email && !looksLikeEmail(email)) fail(where, `邮箱「${email}」格式不对`);
+      entry.email = email;
+    }
+    if (raw.department !== undefined) {
+      const department = optText(raw.department, where, '部门');
+      if (department && department.length > DEPARTMENT_NAME_LIMIT) fail(where, `部门「${department}」超过 ${DEPARTMENT_NAME_LIMIT} 个字`);
+      entry.department = department;
+    }
+    if (raw.note !== undefined) {
+      const note = optText(raw.note, where, '备注');
+      if (note && note.length > PERSON_NOTE_LIMIT) fail(where, `备注超过 ${PERSON_NOTE_LIMIT} 个字`);
+      entry.note = note;
+    }
+    return entry;
+  });
+}
+
+/** 部门：名称必填、最多 20 个字，不分大小写不能重复 */
+function parseDepartments(value: unknown): string[] {
+  const seen = new Set<string>();
+  return list(value, '', '部门').map((raw, index) => {
+    const name = reqText(raw, `第 ${index + 1} 个部门`, '名称');
+    if (name.length > DEPARTMENT_NAME_LIMIT) fail('', `部门名称「${name}」超过 ${DEPARTMENT_NAME_LIMIT} 个字`);
+    const key = name.toLowerCase();
+    if (seen.has(key)) fail('', `部门「${name}」重复了`);
+    seen.add(key);
+    return name;
   });
 }
 
@@ -662,9 +717,12 @@ export function parseBackup(text: string): ParseResult {
       offices,
       products,
       devices,
-      // 名单跟着设备走：含设备、文件里也有名单时才读；旧文件没有就不带（导入时不动名单）
+      // 名单、部门跟着设备走：含设备、文件里也有时才读；旧文件没有就不带（导入时不动名单、部门）
       ...(scope.includes('devices') && root.people !== undefined && root.people !== null
         ? { people: parsePeople(root.people) }
+        : {}),
+      ...(scope.includes('devices') && root.departments !== undefined && root.departments !== null
+        ? { departments: parseDepartments(root.departments) }
         : {}),
     };
     return { ok: true, data, summary: summarizeBackup(data) };

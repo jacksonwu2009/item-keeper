@@ -13,7 +13,7 @@ import {
 } from '../lib/backup';
 import { currentScene, DEFAULT_PLACE_NAMES } from '../lib/terms';
 import { ensureOfficeByName } from './offices';
-import { listPersons, mergePersons, replacePersons } from './people';
+import { listDepartments, listPersons, mergeRoster, replaceRoster } from './people';
 import { DEFAULT_SETTINGS, getScene, getSettings } from './settings';
 import type { MovementType } from './stock';
 import { dropOpenStocktakesFor } from './stocktake';
@@ -27,10 +27,11 @@ export async function collectBackup(
   scope: readonly BackupScope[] = ALL_SCOPES,
   officeIds: readonly number[] | null = null,
 ): Promise<BackupData> {
-  const [settings, scene, people, offices, products, packs, batches, movements, devices, accessories, assignments] = await Promise.all([
+  const [settings, scene, people, departments, offices, products, packs, batches, movements, devices, accessories, assignments] = await Promise.all([
     getSettings(db),
     getScene(db),
     listPersons(db),
+    listDepartments(db),
     db.getAllAsync<{ id: number; name: string }>('SELECT id, name FROM office ORDER BY sort, id'),
     db.getAllAsync<{
       id: number;
@@ -128,7 +129,13 @@ export async function collectBackup(
       devices,
       accessories,
       assignments,
-      people: people.map((person) => ({ name: person.name, note: person.note })),
+      people: people.map((person) => ({
+        name: person.name,
+        email: person.email,
+        department: person.departmentName,
+        note: person.note,
+      })),
+      departments: departments.map((department) => department.name),
     },
     new Date(),
     scope,
@@ -316,7 +323,7 @@ export type ImportChoice = {
 
 /**
  * 用备份替换本机「所选办公点 × 所选分类」的数据，其余原样保留；本机没有的办公点按名称新建。
- * 选了设备时，文件里的人员名单按姓名合并进来。
+ * 选了设备时，文件里的部门按名称、人员名单按姓名合并进来。
  * 先查条码冲突，再在一个事务里完成，失败就整体回滚。
  */
 export async function replaceData(db: SQLiteDatabase, data: BackupData, choice: ImportChoice): Promise<void> {
@@ -357,8 +364,9 @@ export async function replaceData(db: SQLiteDatabase, data: BackupData, choice: 
         }
       }
     }
-    // 名单跟着设备：按姓名合并（没有的加上、有的更新备注，不删本机多出来的）；旧文件没有名单就不动
-    if (withDevices && data.people) await mergePersons(db, data.people);
+    // 部门、名单跟着设备：先按名称合并部门，再按姓名合并人员（没有的加上、有的用文件里的覆盖，不删本机多出来的）；
+    // 旧文件没有的就不动
+    if (withDevices) await mergeRoster(db, data.departments, data.people);
     // 只导到当前场景：文件里的 scene 只用来在导入前提示，不改场景
     if (selected.includes('settings')) await writeSettings(db, data.settings);
   });
@@ -418,8 +426,8 @@ export async function restoreAll(db: SQLiteDatabase, data: BackupData): Promise<
         await db.runAsync('UPDATE stocktake SET office_id = ? WHERE id = ?', [newOfficeId, stocktake.id]);
       }
     }
-    // 名单换回留底的那份；留底里没有名单（老版本留的）就不动
-    if (data.people) await replacePersons(db, data.people);
+    // 部门和名单换回留底的那份；留底里没有的（老版本留的）就不动
+    await replaceRoster(db, data.departments, data.people);
     await writeSettings(db, data.settings);
   });
 }

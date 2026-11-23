@@ -17,6 +17,7 @@ const source: BackupSource = {
     { name: '张三', note: '行政' },
     { name: '李四', note: null },
   ],
+  departments: [],
   offices: [
     { id: 1, name: '北京' },
     { id: 2, name: '上海' },

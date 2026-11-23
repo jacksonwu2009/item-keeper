@@ -318,7 +318,8 @@ export function BackupManager() {
             <Text style={backupStyles.hint}>
               含 {pending.summary.batches} 个批次、{pending.summary.movements} 条出入库记录、
               {pending.summary.assignments} 条设备{scene === 'home' ? '「谁在用」' : '领用'}记录
-              {pending.summary.people ? `，${terms.roster} ${pending.summary.people} 人` : ''}。
+              {pending.summary.people ? `，${terms.roster} ${pending.summary.people} 人` : ''}
+              {pending.summary.departments ? `，部门 ${pending.summary.departments} 个` : ''}。
             </Text>
           </Card>
           {pending.data.offices.length > 1 ? (
@@ -350,6 +351,7 @@ export function BackupManager() {
               countsOf: (name) => countsOf(localOfficeId(name)),
               exists: (name) => localOfficeId(name) !== undefined,
               mergesPeople: !!pending.data.people?.length,
+              mergesDepartments: !!pending.data.departments?.length,
               clearedStocktakes: stocktakesClearedByImport(data.openStocktakes, {
                 offices: pending.data.offices.filter((name) => importOffices.includes(name)),
                 scope: importScope.filter((item) => pending.summary.scope.includes(item)),
@@ -389,6 +391,7 @@ function importPlanText({
   countsOf,
   exists,
   mergesPeople,
+  mergesDepartments,
   clearedStocktakes,
 }: {
   scope: BackupScope[];
@@ -398,6 +401,8 @@ function importPlanText({
   exists: (name: string) => boolean;
   /** 文件里带了人员名单：选了设备时按姓名合并进来 */
   mergesPeople: boolean;
+  /** 文件里带了部门：选了设备时按名称合并进来 */
+  mergesDepartments: boolean;
   /** 这次导入会清掉进行中盘点的办公点 */
   clearedStocktakes: string[];
 }): string {
@@ -413,8 +418,13 @@ function importPlanText({
   }
   if (scope.includes('settings')) parts.push(SCOPE_LABEL.settings);
   const terms = currentTerms();
-  const peopleNote =
-    mergesPeople && dataScope.includes('devices') ? `${terms.roster}按姓名合并进来，本机多出来的人不删。` : '';
+  const peopleNote = !dataScope.includes('devices')
+    ? ''
+    : mergesDepartments
+      ? `部门按名称${mergesPeople ? `、${terms.roster}按姓名` : ''}合并进来，本机多出来的${mergesPeople ? '部门和人都' : '部门'}不删。`
+      : mergesPeople
+        ? `${terms.roster}按姓名合并进来，本机多出来的人不删。`
+        : '';
   const stocktakeNote = clearedStocktakes.length
     ? `会清掉${clearedStocktakes.map((name) => `「${name}」`).join('、')}进行中的盘点（已录的实盘数不保留）。`
     : '';

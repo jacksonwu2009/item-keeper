@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { filterPeople, findPersonByName, type Person } from '../db/people';
-import { useTerms } from '../hooks/useScene';
+import { useScene } from '../hooks/useScene';
 import { colors, font } from '../theme';
 import { ChoiceChips } from './ui';
 
@@ -14,11 +14,11 @@ export function needsRosterAdd(roster: readonly Person[], name: string): boolean
 
 /**
  * 「使用人」「谁在用」输入框下面：
- * - 名单里的人一个个列出来点选，输入时按输入的字过滤（姓名或备注包含）；点选了某人、或者框里还是打开时的名字（修改已有记录），
- *   照样全列出来，方便换人。
+ * - 名单里的人一个个列出来点选（只显示姓名），输入时按输入的字过滤：办公场景姓名、部门名、邮箱、备注包含都算，
+ *   家庭场景（不显示部门、邮箱）只看姓名、备注；点选了某人、或者框里还是打开时的名字（修改已有记录），照样全列出来，方便换人。
  * - 「同时加到名单」新记录默认勾上；修改已有记录时默认不勾（只是改改日期、备注，不会顺手把老名字加进名单），要加自己勾。
  * - 名单还是空的：照旧列最近用过的名字，提示去设置里加人。
- * - 输入的名字不在名单里：「同时加到员工名单（家庭成员）」，默认勾上，保存时一起加进名单。
+ * - 输入的名字不在名单里：「同时加到员工名单（家庭成员）」，默认勾上，保存时一起加进名单（没有部门、邮箱，以后在名单里补）。
  */
 export function PersonPicker({
   value,
@@ -36,14 +36,15 @@ export function PersonPicker({
   addToRoster: boolean;
   onAddToRosterChange: (value: boolean) => void;
 }) {
-  const terms = useTerms();
+  const { scene, terms } = useScene();
   /** 打开时框里的名字（修改已有记录时是原来的使用人）：没改过就不按它过滤 */
   const [initialValue] = useState(value.trim());
   const query = value.trim();
   const picked = roster.some((person) => person.name === query);
   const typed = query !== initialValue;
+  const searchable = scene === 'office' ? roster : roster.map((person) => ({ ...person, email: null, departmentName: null }));
   const names = roster.length
-    ? (picked || !typed ? roster : filterPeople(roster, query)).map((person) => person.name)
+    ? (picked || !typed ? roster : filterPeople(searchable, query)).map((person) => person.name)
     : [...recent];
   return (
     <>

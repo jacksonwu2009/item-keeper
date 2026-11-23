@@ -2,7 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { CONFIG_CATEGORIES, splitLegacyModel } from '../lib/devicePresets';
 
-const DATABASE_VERSION = 10;
+const DATABASE_VERSION = 11;
 
 /**
  * 表结构（家庭、办公两个场景各一个库，表结构和迁移一样；库文件名见 lib/sceneDatabases.ts）
@@ -19,6 +19,8 @@ const DATABASE_VERSION = 10;
  * - device.chip / memory / storage：电脑的芯片、内存、硬盘分开记（v8 起；以前写在 model 里的会拆出来）
  * - person：人员名单（办公叫员工名单，家庭叫家庭成员），登记领用、记谁在用时从里面选；姓名不分大小写不重名（v10 起）。
  *   领用记录里存的还是名字（device_assignment.person），名单外的人也能直接填
+ * - department、person.department_id / email：员工名单的部门（名称不分大小写不重名）和员工邮箱，只在办公场景的界面里用（v11 起）。
+ *   删部门时这个部门的人改成没有部门；从旧版本升上来的都没有部门（备注里写的部门不拆出来）
  * - setting：键值设置（usage.scene 记这个库是哪个场景的）
  */
 export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
@@ -231,6 +233,23 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
         updated_at TEXT NOT NULL
       );
       CREATE UNIQUE INDEX ux_person_name ON person(name COLLATE NOCASE);
+    `);
+  }
+
+  if (currentVersion < 11) {
+    // 部门名唯一索引同样按 NOCASE 兜底，应用里先查重。人员只存部门编号：部门改名不用改人员。
+    // 加的外键列默认值是 NULL，开着外键时也能加；删部门时应用先把人员的部门清空，ON DELETE SET NULL 兜底
+    await db.execAsync(`
+      CREATE TABLE department (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        sort INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX ux_department_name ON department(name COLLATE NOCASE);
+      ALTER TABLE person ADD COLUMN department_id INTEGER REFERENCES department(id) ON DELETE SET NULL;
+      ALTER TABLE person ADD COLUMN email TEXT;
+      CREATE INDEX ix_person_department ON person(department_id);
     `);
   }
 
