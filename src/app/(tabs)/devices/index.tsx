@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
@@ -49,6 +49,13 @@ export default function DevicesScreen() {
     active: [] as ActiveAssignment[],
   });
   const [chosenMode, setMode] = useState<ListMode>('device');
+  // 提醒页点「借出设备」过来：切到按使用人看（at 每次不一样，再点一次也会切）
+  const params = useLocalSearchParams<{ view?: string; at?: string }>();
+  const [handledAt, setHandledAt] = useState<string | undefined>(undefined);
+  if (params.view === 'person' && params.at !== handledAt) {
+    setHandledAt(params.at);
+    setMode('person');
+  }
   const [chosenFilter, setFilter] = useState<Filter>('all');
   const mode: ListMode = home ? 'device' : chosenMode;
   // 换了场景，另一个场景的筛选就不算了

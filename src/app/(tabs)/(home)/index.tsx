@@ -1,18 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useCallback, useRef, type ComponentRef } from 'react';
-import { Linking, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useCallback } from 'react';
+import { Linking, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
-import { Button, Card, Chip, LIST_PRESS_DELAY, Screen, SectionTitle, TONES, type IconName, type Tone } from '../../../components/ui';
+import { ReminderCard, ReminderMoreRow, ReminderRow } from '../../../components/ReminderRows';
+import { Button, Card, Screen, SectionTitle, TONES, type IconName, type Tone } from '../../../components/ui';
 import { listActiveAssignments, listDevices, type ActiveAssignment, type DeviceSummary } from '../../../db/devices';
 import { DEFAULT_SETTINGS, getDataSince, getLastExportAt, getSettings } from '../../../db/settings';
 import { useFocusData } from '../../../hooks/useFocusData';
 import { useOffice } from '../../../hooks/useOffice';
 import { useScene } from '../../../hooks/useScene';
 import { backupMessage, backupStatus } from '../../../lib/backupReminder';
-import { describeDaysLeft, diffDays, formatDate, formatShortDate, formatTime, todayStr } from '../../../lib/dates';
+import { formatShortDate, formatTime, todayStr } from '../../../lib/dates';
 import {
   getPermissionState,
   loadPlanProducts,
@@ -21,26 +21,37 @@ import {
   rescheduleReminders,
   type PermissionState,
 } from '../../../lib/notifications';
-import { planReminders, statusForDay, type PlanProduct, type PlanWarranty } from '../../../lib/reminderPlan';
-import { formatQty, KIND_LABEL, isStockKind } from '../../../lib/stock';
-import { warrantyStatus } from '../../../lib/warranty';
+import {
+  expiryRowText,
+  lowStockRowText,
+  previewOf,
+  REMINDER_GROUP_TITLES,
+  shortDateIn,
+  showKindFor,
+  sortLowStock,
+  warrantyChipText,
+  warrantySoonDevices,
+  type ReminderGroup,
+} from '../../../lib/reminderList';
+import { planReminders, statusForDay, type ExpiryEntry, type PlanProduct, type PlanWarranty } from '../../../lib/reminderPlan';
 import { colors, font, radius } from '../../../theme';
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
 /** 窗口至少这么宽（平板、电脑）时四个数字排一行，手机上两行两列 */
 const TILES_ONE_ROW_MIN_WIDTH = 600;
-/** iOS 系统导航栏（大标题收起后）的高度：滚到某一组时让分组标题露在栏下面 */
-const IOS_NAV_BAR_HEIGHT = 44;
-
-/** 提醒页下面的四组，和上面四个数字块一一对应 */
-type SectionKey = 'expired' | 'expiring' | 'lowStock' | 'devices';
 
 function openProduct(product: PlanProduct) {
   if (product.id !== undefined) router.push({ pathname: '/stock/[id]', params: { id: String(product.id) } });
 }
 
-function kindLabel(product: PlanProduct): string {
-  return isStockKind(product.kind) ? KIND_LABEL[product.kind] : '';
+/** 打开某一组的完整列表（提醒页每组只显示前几样） */
+function openGroup(group: ReminderGroup) {
+  router.push({ pathname: '/reminders/[group]', params: { group } });
+}
+
+/** 借出中的设备不在提醒页逐台列：打开设备页，按使用人看（at 让再点一次也会切过去） */
+function openBorrowedDevices() {
+  router.navigate({ pathname: '/devices', params: { view: 'person', at: String(Date.now()) } });
 }
 
 export default function RemindersScreen() {
@@ -51,23 +62,6 @@ export default function RemindersScreen() {
   const home = scene === 'home';
   const windowSize = useWindowDimensions();
   const tilesInOneRow = windowSize.width >= TILES_ONE_ROW_MIN_WIDTH;
-  const safeArea = useSafeAreaInsets();
-  const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
-  /** 每一组的分组标题在页面里的位置（onLayout 记下） */
-  const sectionTops = useRef<Partial<Record<SectionKey, number>>>({});
-
-  /** 点数字块：滚到下面对应的那一组（每组都是完整列表，和数字对得上） */
-  function scrollToSection(key: SectionKey) {
-    const top = sectionTops.current[key];
-    if (top === undefined) return;
-    // iOS 的滚动视图伸到导航栏下面，要让出状态栏和导航栏；安卓、网页的标题栏在滚动视图外面
-    const coveredTop = Platform.OS === 'ios' ? safeArea.top + IOS_NAV_BAR_HEIGHT : 0;
-    scrollRef.current?.scrollTo({ y: Math.max(0, top - coveredTop - 8), animated: true });
-  }
-
-  function rememberSection(key: SectionKey, event: LayoutChangeEvent) {
-    sectionTops.current[key] = event.nativeEvent.layout.y;
-  }
   const officeFilter = office.filterId;
   const showOffice = office.multiple && officeFilter === null;
   const loader = useCallback(async () => {
@@ -106,15 +100,9 @@ export default function RemindersScreen() {
   // 提醒页总是把该注意的都列出来，不受「关闭某类提醒」影响
   const status = statusForDay(products, { ...settings, expiryEnabled: true, lowStockEnabled: true }, today);
   const nextReminder = planReminders(products, settings, now, 60, 1, data.warranties)[0] ?? null;
-  const warrantySoon = home
-    ? data.devices
-        .map((device) => ({ device, warranty: warrantyStatus(device.warrantyUntil, today) }))
-        .filter((entry) => entry.warranty?.level === 'soon')
-        .sort((left, right) => (left.warranty?.daysLeft ?? 0) - (right.warranty?.daysLeft ?? 0))
-    : [];
+  const warrantySoon = home ? warrantySoonDevices(data.devices, today) : [];
+  const lowStock = sortLowStock(status.lowStock);
   const attention = status.expired.length + status.expiring.length + status.lowStock.length + warrantySoon.length;
-  // 办公场景列借出中的设备；家庭场景列保修快到期的
-  const deviceCount = home ? warrantySoon.length : active.length;
 
   async function enableNotifications() {
     const state = await requestPermission();
@@ -126,7 +114,7 @@ export default function RemindersScreen() {
   const repeatText = settings.repeatEveryDays === 1 ? '每天' : `每 ${settings.repeatEveryDays} 天`;
 
   return (
-    <Screen largeTitle scrollRef={scrollRef}>
+    <Screen largeTitle>
       <View>
         <Text style={dash.date}>
           {now.getMonth() + 1}月{now.getDate()}日 星期{WEEKDAYS[now.getDay()]}
@@ -170,15 +158,15 @@ export default function RemindersScreen() {
       ) : null}
 
       <View style={dash.tiles}>
-        <Tile label="已过期" value={status.expired.length} tone="danger" inOneRow={tilesInOneRow} onPress={() => scrollToSection('expired')} />
-        <Tile label="快到期" value={status.expiring.length} tone="warn" inOneRow={tilesInOneRow} onPress={() => scrollToSection('expiring')} />
-        <Tile label="库存不足" value={status.lowStock.length} tone="warn" inOneRow={tilesInOneRow} onPress={() => scrollToSection('lowStock')} />
+        <Tile label="已过期" value={status.expired.length} tone="danger" inOneRow={tilesInOneRow} onPress={() => openGroup('expired')} />
+        <Tile label="快到期" value={status.expiring.length} tone="warn" inOneRow={tilesInOneRow} onPress={() => openGroup('expiring')} />
+        <Tile label="库存不足" value={lowStock.length} tone="warn" inOneRow={tilesInOneRow} onPress={() => openGroup('lowStock')} />
         <Tile
           label={home ? '快过保' : '借出设备'}
           value={home ? warrantySoon.length : active.reduce((sum, item) => sum + item.quantity, 0)}
           tone={home ? 'warn' : 'info'}
           inOneRow={tilesInOneRow}
-          onPress={() => scrollToSection('devices')}
+          onPress={() => (home ? openGroup('warranty') : openBorrowedDevices())}
         />
       </View>
 
@@ -188,121 +176,60 @@ export default function RemindersScreen() {
           : '近 60 天没有要发的提醒。'}
       </Text>
 
-      {status.expired.length > 0 ? (
-        <>
-          <View onLayout={(event) => rememberSection('expired', event)}>
-            <SectionTitle title="已过期" />
-          </View>
-          <Card style={dash.listCard}>
-            {status.expired.map((entry, index) => (
-              <Row
-                key={`${entry.product.id ?? entry.name}-expired`}
-                first={index === 0}
-                title={entry.name}
-                subtitle={`${kindLabel(entry.product)} · ${formatDate(entry.expiryDate)} 到期 · 这批 ${formatQty(entry.quantity)} ${entry.product.unit}`}
-                chip={{ text: describeDaysLeft(entry.daysLeft), tone: 'danger' }}
-                onPress={() => openProduct(entry.product)}
-              />
-            ))}
-          </Card>
-        </>
-      ) : null}
+      {/* 每组只显示前几样，其余点「查看全部」；借出中的设备不是待办，不在这里逐台列（上面的数字块点了去设备页） */}
+      <ExpirySection group="expired" entries={status.expired} today={today} tone="danger" />
+      <ExpirySection group="expiring" entries={status.expiring} today={today} tone="warn" />
 
-      {status.expiring.length > 0 ? (
+      {lowStock.length > 0 ? (
         <>
-          <View onLayout={(event) => rememberSection('expiring', event)}>
-            <SectionTitle title="快到期" />
-          </View>
-          <Card style={dash.listCard}>
-            {status.expiring.map((entry, index) => (
-              <Row
-                key={`${entry.product.id ?? entry.name}-expiring`}
-                first={index === 0}
-                title={entry.name}
-                subtitle={`${kindLabel(entry.product)} · ${formatDate(entry.expiryDate)} 到期 · 这批 ${formatQty(entry.quantity)} ${entry.product.unit}`}
-                chip={{ text: describeDaysLeft(entry.daysLeft), tone: 'warn' }}
-                onPress={() => openProduct(entry.product)}
-              />
-            ))}
-          </Card>
-        </>
-      ) : null}
-
-      {status.lowStock.length > 0 ? (
-        <>
-          <View onLayout={(event) => rememberSection('lowStock', event)}>
-            <SectionTitle title="库存不足" />
-          </View>
-          <Card style={dash.listCard}>
-            {status.lowStock.map((entry, index) => (
-              <Row
-                key={`${entry.product.id ?? entry.name}-low`}
-                first={index === 0}
-                title={entry.name}
-                subtitle={`${kindLabel(entry.product)} · 下限 ${formatQty(entry.product.lowStockThreshold ?? 0)} ${entry.unit}`}
-                chip={{ text: `剩 ${formatQty(entry.qty)} ${entry.unit}`, tone: entry.qty <= 0 ? 'danger' : 'warn' }}
-                onPress={() => openProduct(entry.product)}
-              />
-            ))}
-          </Card>
+          <SectionTitle title={REMINDER_GROUP_TITLES.lowStock} />
+          <ReminderCard>
+            {previewOf(lowStock).shown.map((entry, index) => {
+              const text = lowStockRowText(entry, showKindFor(lowStock));
+              return (
+                <ReminderRow
+                  key={`${entry.product.id ?? entry.name}-low`}
+                  first={index === 0}
+                  title={entry.name}
+                  subtitle={text.subtitle}
+                  chip={{ text: text.chip, tone: entry.qty <= 0 ? 'danger' : 'warn' }}
+                  onPress={() => openProduct(entry.product)}
+                />
+              );
+            })}
+            {previewOf(lowStock).hidden > 0 ? <ReminderMoreRow total={lowStock.length} onPress={() => openGroup('lowStock')} /> : null}
+          </ReminderCard>
         </>
       ) : null}
 
       {home && warrantySoon.length > 0 ? (
         <>
-          <View onLayout={(event) => rememberSection('devices', event)}>
-            <SectionTitle title="保修快到期的设备" />
-          </View>
-          <Card style={dash.listCard}>
-            {warrantySoon.map(({ device, warranty }, index) => (
-              <Row
+          <SectionTitle title={REMINDER_GROUP_TITLES.warranty} />
+          <ReminderCard>
+            {previewOf(warrantySoon).shown.map(({ device, daysLeft }, index) => (
+              <ReminderRow
                 key={device.id}
                 first={index === 0}
                 title={device.name}
                 subtitle={[
                   showOffice && office.officeName(device.officeId),
                   device.category,
-                  device.model,
-                  device.warrantyUntil && `保修到 ${formatDate(device.warrantyUntil)}`,
+                  device.warrantyUntil && `保修到 ${shortDateIn(device.warrantyUntil, today)}`,
                 ]
                   .filter(Boolean)
                   .join(' · ')}
-                chip={{ text: warranty?.daysLeft ? `剩 ${warranty.daysLeft} 天` : '今天到期', tone: 'warn' }}
+                chip={{ text: warrantyChipText(daysLeft), tone: 'warn' }}
                 onPress={() => router.push({ pathname: '/device/[id]', params: { id: String(device.id) } })}
               />
             ))}
-          </Card>
+            {previewOf(warrantySoon).hidden > 0 ? (
+              <ReminderMoreRow total={warrantySoon.length} onPress={() => openGroup('warranty')} />
+            ) : null}
+          </ReminderCard>
         </>
       ) : null}
 
-      {!home && active.length > 0 ? (
-        <>
-          <View onLayout={(event) => rememberSection('devices', event)}>
-            <SectionTitle title="借出中的设备" />
-          </View>
-          <Card style={dash.listCard}>
-            {active.map((item, index) => (
-              <Row
-                key={item.id}
-                first={index === 0}
-                title={`${item.person} · ${item.deviceName}${item.quantity > 1 ? ` ×${item.quantity}` : ''}`}
-                subtitle={[
-                  showOffice && office.officeName(item.officeId),
-                  item.category,
-                  item.deviceModel,
-                  `${formatDate(item.issuedOn)} 领取`,
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
-                chip={{ text: `${Math.max(0, diffDays(today, item.issuedOn))} 天`, tone: 'neutral' }}
-                onPress={() => router.push({ pathname: '/device/[id]', params: { id: String(item.deviceId) } })}
-              />
-            ))}
-          </Card>
-        </>
-      ) : null}
-
-      {loaded && attention === 0 && deviceCount === 0 ? (
+      {loaded && attention === 0 ? (
         <Card style={dash.allGood}>
           <Ionicons name="checkmark-circle-outline" size={28} color={colors.ok} />
           <Text style={dash.allGoodText}>
@@ -369,40 +296,40 @@ function Tile({
   );
 }
 
-function Row({
-  title,
-  subtitle,
-  chip,
-  first,
-  onPress,
+/** 已过期、快到期一组：前几样 + 「查看全部」 */
+function ExpirySection({
+  group,
+  entries,
+  today,
+  tone,
 }: {
-  title: string;
-  subtitle: string;
-  chip: { text: string; tone: Tone };
-  first: boolean;
-  onPress: () => void;
+  group: 'expired' | 'expiring';
+  entries: ExpiryEntry[];
+  today: string;
+  tone: Tone;
 }) {
-  // 卡片本身不留内边距、超出部分裁掉，按下的底色铺满整行（到卡片边缘，圆角也跟着）；分隔线单独画，左边留空、右边到头
+  if (!entries.length) return null;
+  const showKind = showKindFor(entries);
+  const { shown, hidden } = previewOf(entries);
   return (
     <>
-      {first ? null : <View style={dash.rowDivider} />}
-      <Pressable
-        accessibilityRole="button"
-        onPress={onPress}
-        unstable_pressDelay={LIST_PRESS_DELAY}
-        style={({ pressed }) => [dash.row, pressed && { backgroundColor: colors.surfaceSunken }]}
-      >
-        <View style={dash.rowMain}>
-          <Text style={dash.rowTitle} numberOfLines={1}>
-            {title}
-          </Text>
-          <Text style={dash.rowSub} numberOfLines={1}>
-            {subtitle}
-          </Text>
-        </View>
-        <Chip text={chip.text} tone={chip.tone} />
-        <Ionicons name="chevron-forward" size={16} color={colors.faint} />
-      </Pressable>
+      <SectionTitle title={REMINDER_GROUP_TITLES[group]} />
+      <ReminderCard>
+        {shown.map((entry, index) => {
+          const text = expiryRowText(entry, today, showKind);
+          return (
+            <ReminderRow
+              key={`${entry.product.id ?? entry.name}-${entry.expiryDate}-${group}`}
+              first={index === 0}
+              title={entry.name}
+              subtitle={text.subtitle}
+              chip={{ text: text.chip, tone }}
+              onPress={() => openProduct(entry.product)}
+            />
+          );
+        })}
+        {hidden > 0 ? <ReminderMoreRow total={entries.length} onPress={() => openGroup(group)} /> : null}
+      </ReminderCard>
     </>
   );
 }
@@ -441,20 +368,6 @@ const dash = StyleSheet.create({
   tileValue: { fontSize: font.title, fontWeight: '700', fontVariant: ['tabular-nums'] },
   tileLabel: { fontSize: font.small, color: colors.muted },
   next: { fontSize: font.small, color: colors.muted, lineHeight: 19 },
-  listCard: { padding: 0, gap: 0, overflow: 'hidden' },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    minHeight: 56,
-    paddingVertical: 10,
-    paddingLeft: 16,
-    paddingRight: 12,
-  },
-  rowDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.line, marginLeft: 16 },
-  rowMain: { flex: 1, minWidth: 0, gap: 2, marginRight: 4 },
-  rowTitle: { fontSize: font.body, fontWeight: '500', color: colors.ink },
-  rowSub: { fontSize: font.small, color: colors.muted },
   allGood: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   allGoodText: { flex: 1, fontSize: font.small, color: colors.muted, lineHeight: 20 },
 });
