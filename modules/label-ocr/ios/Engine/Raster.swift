@@ -57,8 +57,12 @@ struct Raster {
 
   /// 缩放到 dstW × dstH 并转成模型输入：NCHW 的浮点数组。
   /// order 是通道顺序（"BGR" 或 "RGB"）；每个值 = (像素 × scale − mean[c]) / std[c]，c 按 order 里的顺序。
-  func toTensor(dstW: Int, dstH: Int, order: String, scale: Float, mean: [Float], std: [Float]) -> [Float] {
-    let plane = dstW * dstH
+  /// paddedW 比 dstW 大时右边补 0（张量宽 paddedW）。
+  func toTensor(
+    dstW: Int, dstH: Int, order: String, scale: Float, mean: [Float], std: [Float], paddedW: Int? = nil
+  ) -> [Float] {
+    let rowWidth = paddedW ?? dstW
+    let plane = rowWidth * dstH
     var tensor = [Float](repeating: 0, count: 3 * plane)
     let scaleX = Double(width) / Double(dstW)
     let scaleY = Double(height) / Double(dstH)
@@ -84,7 +88,7 @@ struct Raster {
           for dx in 0..<dstW {
             let sx = (Double(dx) + 0.5) * scaleX - 0.5
             Raster.sample(source, width: width, height: height, x: sx, y: sy, &rgb)
-            let offset = dy * dstW + dx
+            let offset = dy * rowWidth + dx
             output[offset] = (Raster.pick(rgb, pick0) * scale - mean0) / std0
             output[plane + offset] = (Raster.pick(rgb, pick1) * scale - mean1) / std1
             output[2 * plane + offset] = (Raster.pick(rgb, pick2) * scale - mean2) / std2
@@ -132,14 +136,27 @@ struct Raster {
     return Raster(width: dstW, height: dstH, pixels: out)
   }
 
-  /// 识别模型的输入：等比缩放到高 height（宽 = ceil(height × 宽高比)，最多 maxWidth），RGB，(x / 255 − 0.5) / 0.5。
-  /// 照官方 RecPreprocessor（一次一行）。返回张量和宽度。
-  func toRecTensor(height targetHeight: Int, maxWidth: Int) -> (tensor: [Float], width: Int) {
+  /// 识别模型的输入，照 PaddleX 的 OCRReisizeNormImg（一次一行）：
+  /// - 张量宽 = int(height × max(baseWidth / height, 宽高比))（向下取整），超过 maxWidth 时就是 maxWidth；
+  /// - 图等比缩放到高 height，宽 = min(ceil(height × 宽高比), 张量宽)（长行就是向下取整的那个宽）；
+  /// - 比张量窄的右边补 0（短行补到 baseWidth = 320）；
+  /// - 通道顺序 order（模型配置是 BGR），(x / 255 − 0.5) / 0.5。
+  /// 返回张量和它的宽。
+  func toRecTensor(height targetHeight: Int, baseWidth: Int, maxWidth: Int, order: String) -> (tensor: [Float], width: Int) {
     let ratio = Double(width) / Double(height)
-    let dstW = min(max(Int((Double(targetHeight) * ratio).rounded(.up)), 1), maxWidth)
+    let maxRatio = max(Double(baseWidth) / Double(targetHeight), ratio)
+    var tensorW = Int(Double(targetHeight) * maxRatio)
+    let resizedW: Int
+    if tensorW > maxWidth {
+      tensorW = maxWidth
+      resizedW = maxWidth
+    } else {
+      resizedW = max(min(Int((Double(targetHeight) * ratio).rounded(.up)), tensorW), 1)
+    }
     let half: [Float] = [0.5, 0.5, 0.5]
-    let tensor = toTensor(dstW: dstW, dstH: targetHeight, order: "RGB", scale: 1 / 255, mean: half, std: half)
-    return (tensor, dstW)
+    let tensor = toTensor(
+      dstW: resizedW, dstH: targetHeight, order: order, scale: 1 / 255, mean: half, std: half, paddedW: tensorW)
+    return (tensor, tensorW)
   }
 
   /// 整张图顺时针转 degrees 度（0 / 90 / 180 / 270）

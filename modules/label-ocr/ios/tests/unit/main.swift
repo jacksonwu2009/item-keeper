@@ -83,6 +83,26 @@ do {
   }
 }
 
+// MARK: - 识别输入（照 PaddleX OCRReisizeNormImg）
+
+do {
+  // 长行 401×40：张量宽 int(48 × 10.025) = 481，图也缩到 481（ceil 是 482，取较小的）
+  let long = Raster(width: 401, height: 40, pixels: [UInt8](repeating: 200, count: 401 * 40 * 3))
+  check(long.toRecTensor(height: 48, baseWidth: 320, maxWidth: 3200, order: "BGR").width == 481, "长行张量宽")
+  // 短行 100×48：张量补到 320，图宽 100，右边补 0
+  let short = Raster(width: 100, height: 48, pixels: [UInt8](repeating: 255, count: 100 * 48 * 3))
+  let (tensor, width) = short.toRecTensor(height: 48, baseWidth: 320, maxWidth: 3200, order: "BGR")
+  check(width == 320 && tensor.count == 3 * 48 * 320, "短行补到 320：\(width)")
+  check(tensor[99] == 1 && tensor[100] == 0 && tensor[2 * 48 * 320 + 47 * 320 + 319] == 0, "补边是 0、图里是 1")
+  // 特别长的行：张量和图都是 3200
+  let huge = Raster(width: 4000, height: 40, pixels: [UInt8](repeating: 0, count: 4000 * 40 * 3))
+  check(huge.toRecTensor(height: 48, baseWidth: 320, maxWidth: 3200, order: "BGR").width == 3200, "最多 3200")
+  // 通道顺序：R=10、G=20、B=30 的图，BGR 张量第一个平面是 B
+  let colored = Raster(width: 48, height: 48, pixels: (0..<(48 * 48)).flatMap { _ in [UInt8(10), 20, 30] })
+  let bgr = colored.toRecTensor(height: 48, baseWidth: 320, maxWidth: 3200, order: "BGR").tensor
+  check(abs(bgr[0] - (30 / 127.5 - 1)) < 1e-6 && abs(bgr[2 * 48 * 320] - (10 / 127.5 - 1)) < 1e-6, "BGR 顺序")
+}
+
 // MARK: - CTC 解码
 
 do {
@@ -125,6 +145,9 @@ do {
   let rec = try ModelConfigParser.parseRec("""
     PreProcess:
       transform_ops:
+      - DecodeImage:
+          channel_first: false
+          img_mode: BGR
       - RecResizeImg:
           image_shape:
           - 3
@@ -140,7 +163,7 @@ do {
       - 中
       - \u{FF9E}
     """, source: "rec")
-  check(rec.imageHeight == 48, "识别输入高 \(rec.imageHeight)")
+  check(rec.imageHeight == 48 && rec.imageWidth == 320 && rec.imgMode == "BGR", "识别输入 \(rec.imgMode) 高 \(rec.imageHeight) 宽 \(rec.imageWidth)")
   // 全角空格、半角浊音符（附加符号，和前面的空格会粘成一个 Swift 字符）都要原样保留
   check(rec.characters.map { Array($0.unicodeScalars) } == ["!", "'", "\u{3000}", "\t", "中", "\u{FF9E}", " "].map { Array($0.unicodeScalars) }, "字典 \(rec.characters.map { $0.unicodeScalars.map { String($0.value, radix: 16) } })")
 } catch {

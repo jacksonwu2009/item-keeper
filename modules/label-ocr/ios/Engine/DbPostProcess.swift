@@ -14,7 +14,7 @@ struct DbParams {
 /// - 二值化：概率 > thresh 的点；
 /// - 找轮廓：8 邻接连通块（OpenCV 的外轮廓也是 8 邻接）。连通块的最小外接矩形只和它的凸包有关，
 ///   凸包又只取决于每一行最左、最右的点，所以不用真的描边；
-/// - 框的得分：矩形里概率的平均（含边上的点）。
+/// - 框的得分：照 PaddleX box_score_fast，按 OpenCV fillPoly 的画法（边线也算）取矩形里概率的平均。
 enum DbPostProcess {
   private static let minSizeBeforeUnclip = 3.0
   private static let minSizeAfterUnclip = 5.0
@@ -122,7 +122,9 @@ enum DbPostProcess {
     return Geometry.orderCorners(expanded.corners)
   }
 
-  /// 四边形里概率的平均（score_mode=fast）：照官方，角点坐标先取整，再看每个点在不在四边形里（含边）
+  /// 四边形里概率的平均（score_mode=fast），照 PaddleX 的 box_score_fast：外接框里铺一张掩码，角点减去外接框左上角后
+  /// 取整（截掉小数），用 OpenCV fillPoly 的画法填上——四条边按 8 邻接直线画出来（边线上的像素都算），再把每一行
+  /// 左右边之间填满（四边形是凸的，每行一段）——掩码里的点求平均。和安卓 DbPostProcess.kt 一样。
   private static func boxScore(prob: [Float], predW: Int, predH: Int, corners: [PointD]) -> Double {
     let xs = corners.map(\.x)
     let ys = corners.map(\.y)
@@ -130,35 +132,58 @@ enum DbPostProcess {
     let xMax = min(max(Int(xs.max()!.rounded(.up)), 0), predW - 1)
     let yMin = min(max(Int(ys.min()!.rounded(.down)), 0), predH - 1)
     let yMax = min(max(Int(ys.max()!.rounded(.up)), 0), predH - 1)
+    let width = xMax - xMin + 1
+    let height = yMax - yMin + 1
+    guard width > 0, height > 0 else { return 0 }
+    // 每一行被边线压到的最左、最右的点
+    var rowMin = [Int](repeating: Int.max, count: height)
+    var rowMax = [Int](repeating: Int.min, count: height)
+    func plot(_ x: Int, _ y: Int) {
+      if x < 0 || x >= width || y < 0 || y >= height { return }
+      if x < rowMin[y] { rowMin[y] = x }
+      if x > rowMax[y] { rowMax[y] = x }
+    }
     // 和 Kotlin 的 toInt() 一样向 0 截断
-    let quad = corners.map {
-      PointD(x: Double(Int($0.x - Double(xMin))) + Double(xMin), y: Double(Int($0.y - Double(yMin))) + Double(yMin))
+    let points = corners.map { (Int($0.x - Double(xMin)), Int($0.y - Double(yMin))) }
+    for index in points.indices {
+      let (x0, y0) = points[index]
+      let (x1, y1) = points[(index + 1) % points.count]
+      drawLine(x0, y0, x1, y1, plot)
     }
     var sum = 0.0
     var count = 0
-    if yMin <= yMax && xMin <= xMax {
-      for y in yMin...yMax {
-        for x in xMin...xMax where insideConvex(quad, Double(x), Double(y)) {
-          sum += Double(prob[y * predW + x])
-          count += 1
-        }
+    for row in 0..<height where rowMin[row] <= rowMax[row] {
+      let offset = (row + yMin) * predW + xMin
+      for x in rowMin[row]...rowMax[row] {
+        sum += Double(prob[offset + x])
+        count += 1
       }
     }
     return count == 0 ? 0.0 : sum / Double(count)
   }
 
-  private static func insideConvex(_ quad: [PointD], _ x: Double, _ y: Double) -> Bool {
-    var positive = false
-    var negative = false
-    for index in quad.indices {
-      let a = quad[index]
-      let b = quad[(index + 1) % quad.count]
-      let cross = (b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x)
-      if cross > 1e-9 { positive = true }
-      if cross < -1e-9 { negative = true }
-      if positive && negative { return false }
+  /// 8 邻接的直线（Bresenham，和 OpenCV LINE_8 一样走法），每个点交给 plot
+  private static func drawLine(_ fromX: Int, _ fromY: Int, _ toX: Int, _ toY: Int, _ plot: (Int, Int) -> Void) {
+    var x = fromX
+    var y = fromY
+    let dx = abs(toX - fromX)
+    let dy = -abs(toY - fromY)
+    let stepX = fromX < toX ? 1 : -1
+    let stepY = fromY < toY ? 1 : -1
+    var error = dx + dy
+    while true {
+      plot(x, y)
+      if x == toX && y == toY { break }
+      let doubled = 2 * error
+      if doubled >= dy {
+        error += dy
+        x += stepX
+      }
+      if doubled <= dx {
+        error += dx
+        y += stepY
+      }
     }
-    return true
   }
 
   /// 按阅读顺序排（照官方 BoxSorter / PaddleX SortQuadBoxes）：先按左上角 y、x 排，同一排（y 差 < 10）里从左到右。

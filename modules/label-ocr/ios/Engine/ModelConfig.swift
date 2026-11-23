@@ -11,8 +11,12 @@ struct DetModelConfig {
 
 /// 识别模型 rec/inference.yml 里用到的参数
 struct RecModelConfig {
+  /// 通道顺序：DecodeImage.img_mode（BGR）
+  let imgMode: String
   /// 输入高度（RecResizeImg.image_shape 的第二个数，48）
   let imageHeight: Int
+  /// RecResizeImg.image_shape 的宽（320）：比这窄的行右边补 0 补到这么宽
+  let imageWidth: Int
   /// 字典；下标 0 对应模型输出的第 1 类（第 0 类是 CTC 的空白），末尾补一个空格（官方做法）
   let characters: [String]
 }
@@ -22,7 +26,8 @@ struct RecModelConfig {
 /// PaddleX 导出的 yml 结构固定，这里只认用得到的几项，不引整个 YAML 库。写法和安卓的 ModelConfig.kt 一一对应，
 /// 两边读出来的字典、参数必须一样：
 /// - 检测：PreProcess → DecodeImage.img_mode（BGR）、NormalizeImage 的 mean / std / scale
-/// - 识别：PreProcess → RecResizeImg.image_shape（[3, 48, 320]，取高 48）、PostProcess.character_dict（字典）
+/// - 识别：PreProcess → DecodeImage.img_mode（BGR）、RecResizeImg.image_shape（[3, 48, 320]：高 48、补边到宽 320）、
+///   PostProcess.character_dict（字典）
 enum ModelConfigParser {
   static func parseDet(_ text: String, source: String) throws -> DetModelConfig {
     let lines = splitLines(text)
@@ -44,6 +49,10 @@ enum ModelConfigParser {
 
   static func parseRec(_ text: String, source: String) throws -> RecModelConfig {
     let lines = splitLines(text)
+    guard let decode = findKey(lines, "DecodeImage", from: 0) else {
+      throw OcrError.model("\(source) 里没有 DecodeImage")
+    }
+    let imgMode = scalarAfter(lines, "img_mode", from: decode) ?? "BGR"
     guard let resize = findKey(lines, "RecResizeImg", from: 0) else {
       throw OcrError.model("\(source) 里没有 RecResizeImg")
     }
@@ -61,7 +70,8 @@ enum ModelConfigParser {
     if characters.last != " " {
       characters.append(" ")
     }
-    return RecModelConfig(imageHeight: shape[1], characters: characters)
+    return RecModelConfig(
+      imgMode: imgMode.uppercased(), imageHeight: shape[1], imageWidth: shape[2], characters: characters)
   }
 
   private static func splitLines(_ text: String) -> [String] {

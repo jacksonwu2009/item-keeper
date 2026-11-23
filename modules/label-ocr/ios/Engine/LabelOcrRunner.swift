@@ -56,7 +56,7 @@ final class LabelOcrRunner {
 
     let output: OcrEngine.Output
     do {
-      output = try engine.run(raster)
+      output = try engine.run(raster, cropped: crop != nil)
     } catch let error as OcrError {
       throw error
     } catch {

@@ -99,7 +99,8 @@ npx expo start --dev-client
 | `tests/` | macOS 上的测试（不打进 App），见下面 |
 
 算法和安卓（`../android/.../*.kt`）一一对应：同样的缩放、DB 后处理（连通块 + 凸包 + 最小外接矩形 + unclip）、
-裁行、识别输入、CTC 解码和方向判断，参数也一样（检测长边最多 1600、DB 0.3 / 0.6 / 1.5、读图长边最多 2560）。改一边时另一边也要改。
+裁行、识别输入、CTC 解码和方向判断，参数也一样（检测长边最多 1600、拍日期小框裁出来的图最多 960，DB 0.3 / 0.6 / 1.5，读图长边最多 2560）。
+识别输入和框得分照 PaddleX（BGR、补边到 320、fillPoly 画法的框得分）。改一边时另一边也要改。
 
 ONNX Runtime 不用 CocoaPods 上的 `onnxruntime-c`：它的下载地址（download.onnxruntime.ai）现在证书不对、下不下来。
 NuGet 上的官方包里是同一份 iOS 构建，版本和安卓（Maven 上的 1.21.1）同一系列。

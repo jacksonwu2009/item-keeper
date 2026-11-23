@@ -8,7 +8,11 @@ import Foundation
 /// - 检测缩放：PaddleX 通用 OCR 产线（OCR.yaml）是短边不小于 64、长边不超过 4000、宽高取 32 的倍数（四舍六入五成双）；
 ///   手机上长边到 4000 太慢太占内存，这里长边最多 detMaxSide = 1600。识别时从更大的图（ImageInput.sourceMaxSide）里裁行。
 /// - DB 后处理：thresh 0.3、box_thresh 0.6、unclip_ratio 1.5、max_candidates 3000（OCR.yaml 和官方示例的默认值）。
-/// - 识别输入：高 48（rec/inference.yml 的 RecResizeImg.image_shape），宽按比例、最多 3200，一次一行。
+/// - 识别输入：照 PaddleX 的 OCRReisizeNormImg：高、补边宽取自 rec/inference.yml 的 RecResizeImg.image_shape（48、320），
+///   通道顺序取自 DecodeImage.img_mode（BGR）；张量宽 = int(48 × max(320/48, 宽高比))，最多 3200；
+///   图缩到 min(ceil(48 × 宽高比), 张量宽) 宽，右边补 0；(x / 255 − 0.5) / 0.5；一次一行。
+/// - 拍日期的小取景框（裁过的小图）：检测时长边最多 cropDetMaxSide = 960。喷码的字在小图里很大，
+///   放大试验里同一块喷码缩到 384–768 宽能认出日期，192 宽、1536 宽都认不出。
 /// - 字典：rec/inference.yml 的 PostProcess.character_dict，末尾补空格；第 0 类是 CTC 空白。
 /// - 竖着的框（高 / 宽 ≥ 1.5）转 90° 再识别（官方 QuadTextCrop）。
 /// - 方向：不加方向分类模型，拿字最多的三行两个方向各认一次，置信度明显高的方向就是整张图的方向；
@@ -17,6 +21,7 @@ final class OcrEngine {
   static let model = "PP-OCRv6_small"
   static let detMinSide = 64
   static let detMaxSide = 1600
+  static let cropDetMaxSide = 960
   static let recMaxWidth = 3200
   static let verticalRatio = 1.5
   static let dbParams = DbParams(thresh: 0.3, boxThresh: 0.6, unclipRatio: 1.5, maxCandidates: 3000)
@@ -74,9 +79,11 @@ final class OcrEngine {
     return OcrEngine(detModel: det, recModel: rec, detConfig: detConfig, recConfig: recConfig)
   }
 
-  func run(_ image: Raster) throws -> Output {
+  /// cropped：是不是拍日期小取景框裁出来的图（检测时长边限得更小）
+  func run(_ image: Raster, cropped: Bool = false) throws -> Output {
+    let detMaxSide = cropped ? OcrEngine.cropDetMaxSide : OcrEngine.detMaxSide
     let detStart = Clock.nowMs()
-    let boxes = try detect(image)
+    let boxes = try detect(image, maxSide: detMaxSide)
     let firstDetMs = Clock.nowMs() - detStart
     var secondDetMs = 0.0
 
@@ -122,7 +129,7 @@ final class OcrEngine {
       // 相当于电脑上 PaddleOCR 先做整图方向判断再检测
       let secondStart = Clock.nowMs()
       page = image.rotatedClockwise(rotation)
-      let uprightBoxes = try detect(page)
+      let uprightBoxes = try detect(page, maxSide: detMaxSide)
       secondDetMs = Clock.nowMs() - secondStart
       for box in uprightBoxes {
         let corners = rotated(box, isVertical(box) ? 1 : 0)
@@ -182,8 +189,8 @@ final class OcrEngine {
     return otherScore > defaultScore + 0.05 * Double(sample.count) ? otherStart : defaultStart
   }
 
-  private func detect(_ image: Raster) throws -> [[PointD]] {
-    let (prob, predW, predH) = try probabilityMap(image)
+  private func detect(_ image: Raster, maxSide: Int) throws -> [[PointD]] {
+    let (prob, predW, predH) = try probabilityMap(image, maxSide: maxSide)
     let boxes = DbPostProcess.process(
       prob: prob, predW: predW, predH: predH, srcW: image.width, srcH: image.height, params: OcrEngine.dbParams)
     // 和官方一样先按阅读顺序排（方向定了以后在新坐标里再排一次）
@@ -191,7 +198,7 @@ final class OcrEngine {
   }
 
   /// 检测模型的输出：每个点是文字的概率（predH × predW，按行）。测试工具也直接用它对照 PaddleOCR 的概率图
-  func probabilityMap(_ image: Raster) throws -> (prob: [Float], width: Int, height: Int) {
+  func probabilityMap(_ image: Raster, maxSide: Int = OcrEngine.detMaxSide) throws -> (prob: [Float], width: Int, height: Int) {
     var ratio = 1.0
     let shortSide = min(image.width, image.height)
     if shortSide < OcrEngine.detMinSide {
@@ -199,8 +206,8 @@ final class OcrEngine {
     }
     var resizedW = Int(Double(image.width) * ratio)
     var resizedH = Int(Double(image.height) * ratio)
-    if max(resizedW, resizedH) > OcrEngine.detMaxSide {
-      let shrink = Double(OcrEngine.detMaxSide) / Double(max(resizedW, resizedH))
+    if max(resizedW, resizedH) > maxSide {
+      let shrink = Double(maxSide) / Double(max(resizedW, resizedH))
       resizedW = Int(Double(resizedW) * shrink)
       resizedH = Int(Double(resizedH) * shrink)
     }
@@ -218,7 +225,9 @@ final class OcrEngine {
 
   /// 识别一行（已经裁好、转正的小图）。测试工具也直接用它对照 PaddleOCR 的识别
   func recognizeCrop(_ crop: Raster) throws -> (String, Double) {
-    let (tensor, width) = crop.toRecTensor(height: recConfig.imageHeight, maxWidth: OcrEngine.recMaxWidth)
+    let (tensor, width) = crop.toRecTensor(
+      height: recConfig.imageHeight, baseWidth: recConfig.imageWidth, maxWidth: OcrEngine.recMaxWidth,
+      order: recConfig.imgMode)
     let (output, shape) = try recModel.run(input: tensor, shape: [1, 3, recConfig.imageHeight, width])
     guard shape.count == 3 else {
       throw OcrError.failed("识别模型输出形状不对：\(shape)")
