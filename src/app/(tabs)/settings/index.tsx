@@ -11,6 +11,7 @@ import { IntegerField } from '../../../components/NumberField';
 import { SceneOptions } from '../../../components/SceneOptions';
 import { Footnote, ListCard, ListRow, ToggleRow } from '../../../components/ListRows';
 import { Button, Card, Screen, SectionTitle, Segmented, Sheet } from '../../../components/ui';
+import { countPersons } from '../../../db/people';
 import { DEFAULT_SETTINGS, getLastExportAt, getSettings, saveSettings, type AppSettings } from '../../../db/settings';
 import { useFocusData } from '../../../hooks/useFocusData';
 import { useOffice } from '../../../hooks/useOffice';
@@ -60,7 +61,7 @@ type ValueSheet = 'expiryLead' | 'repeat' | 'time' | 'backupDays' | 'lowStock' |
 /**
  * 设置页，结构照鸿蒙版 SettingsTab：一项一行，开关在行内，数值、频率、时间点开底部面板改（面板里还是原来的输入框、分段、时间框，
  * 改了马上存，和原来一样）；导入导出、办公点各是一行，点进单独的页面。
- * 分组顺序：提醒 → 通知 → 录入 → 数据 → 通用。「通用」放使用场景和办公点（家庭场景叫地点）：都很少改，放最下面；
+ * 分组顺序：提醒 → 通知 → 录入 → 数据 → 通用。「通用」放使用场景、办公点（家庭场景叫地点）和人员名单（员工名单 / 家庭成员）：都很少改，放最下面；
  * 办公点只有一个时右上角没有切换，这一行是加第二个的入口。
  * 提醒、备份提醒这些设置是当前场景自己的（两个场景各一个库），换了场景这里显示的是另一套。
  */
@@ -69,17 +70,19 @@ export default function SettingsScreen() {
   const office = useOffice();
   const { scene, terms, choose } = useScene();
   const loader = useCallback(async () => {
-    const [settings, permission, lastExportAt] = await Promise.all([
+    const [settings, permission, lastExportAt, peopleCount] = await Promise.all([
       getSettings(db),
       getPermissionState().catch((): PermissionState => 'undetermined'),
       getLastExportAt(db),
+      countPersons(db),
     ]);
-    return { settings, permission, lastExportAt };
+    return { settings, permission, lastExportAt, peopleCount };
   }, [db]);
   const [data, reload] = useFocusData(loader, {
     settings: DEFAULT_SETTINGS,
     permission: 'granted' as PermissionState,
     lastExportAt: null as string | null,
+    peopleCount: 0,
   });
   const [settings, setSettings] = useState<AppSettings | null>(null);
   // 重新读到设置时（回到这页；导入导出页导入了提醒设置也会换掉库里的值），丢掉本页刚改时记的值，以库里读到的为准。
@@ -249,6 +252,13 @@ export default function SettingsScreen() {
           value={`${office.offices.length} 个`}
           chevron
           onPress={() => router.push('/offices')}
+        />
+        <ListRow
+          title={terms.roster}
+          subtitle={scene === 'home' ? '记谁在用时直接从名单里选' : '登记领用时直接从名单里选'}
+          value={`${data.peopleCount} 人`}
+          chevron
+          onPress={() => router.push('/people')}
         />
       </ListCard>
 

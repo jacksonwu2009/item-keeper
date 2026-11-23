@@ -2,7 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { CONFIG_CATEGORIES, splitLegacyModel } from '../lib/devicePresets';
 
-const DATABASE_VERSION = 9;
+const DATABASE_VERSION = 10;
 
 /**
  * 表结构（家庭、办公两个场景各一个库，表结构和迁移一样；库文件名见 lib/sceneDatabases.ts）
@@ -17,6 +17,8 @@ const DATABASE_VERSION = 9;
  * - stocktake / stocktake_item：盘点单和每一项的账面数、实盘数（v7 起）。只在本机，不进备份文件；
  *   盘点完成时对库存的调整记成出入库记录（type='adjust'），这部分会随备份走
  * - device.chip / memory / storage：电脑的芯片、内存、硬盘分开记（v8 起；以前写在 model 里的会拆出来）
+ * - person：人员名单（办公叫员工名单，家庭叫家庭成员），登记领用、记谁在用时从里面选；姓名不分大小写不重名（v10 起）。
+ *   领用记录里存的还是名字（device_assignment.person），名单外的人也能直接填
  * - setting：键值设置（usage.scene 记这个库是哪个场景的）
  */
 export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
@@ -215,6 +217,21 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
     // 使用场景（家庭 / 办公，lib/terms.ts）：升级上来的老用户记成办公，界面和以前一样，也不弹首次选择。
     // 新装的（currentVersion 为 0）不写，打开时让用户选
     await db.runAsync(`INSERT OR IGNORE INTO setting (key, value) VALUES ('usage.scene', '"office"')`);
+  }
+
+  if (currentVersion < 10) {
+    // 唯一索引按 NOCASE 兜底（只管英文字母大小写）；应用里改名、添加前先按姓名查重
+    await db.execAsync(`
+      CREATE TABLE person (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        note TEXT,
+        sort INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX ux_person_name ON person(name COLLATE NOCASE);
+    `);
   }
 
   await db.execAsync(`PRAGMA user_version = ${DATABASE_VERSION}`);

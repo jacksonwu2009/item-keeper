@@ -6,11 +6,11 @@ import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { DateField } from '../../components/DateField';
 import { ListCard, ListRow } from '../../components/ListRows';
 import { IntegerField } from '../../components/NumberField';
+import { needsRosterAdd, PersonPicker } from '../../components/PersonPicker';
 import {
   Button,
   Card,
   Chip,
-  ChoiceChips,
   Empty,
   Field,
   GroupCard,
@@ -34,9 +34,10 @@ import {
   type Device,
   type DeviceAssignment,
 } from '../../db/devices';
+import { ensurePerson, listPersons, PERSON_NAME_MAX, type Person } from '../../db/people';
 import { useFocusData } from '../../hooks/useFocusData';
 import { useOffice } from '../../hooks/useOffice';
-import { useScene } from '../../hooks/useScene';
+import { useScene, useTerms } from '../../hooks/useScene';
 import { diffDays, formatDate, todayStr } from '../../lib/dates';
 import { hasComputerConfig } from '../../lib/devicePresets';
 import { rescheduleReminders } from '../../lib/notifications';
@@ -62,18 +63,20 @@ export default function DeviceDetailScreen() {
   const [message, setMessage] = useState<string | null>(null);
 
   const loader = useCallback(async () => {
-    const [device, assignments, people, accessories] = await Promise.all([
+    const [device, assignments, recent, roster, accessories] = await Promise.all([
       getDevice(db, deviceId),
       listAssignments(db, deviceId),
       listPeople(db),
+      listPersons(db),
       listAccessories(db, deviceId),
     ]);
-    return { device, assignments, people, accessories };
+    return { device, assignments, recent, roster, accessories };
   }, [db, deviceId]);
-  const [{ device, assignments, people, accessories }, reload, loaded] = useFocusData(loader, {
+  const [{ device, assignments, recent, roster, accessories }, reload, loaded] = useFocusData(loader, {
     device: null as Device | null,
     assignments: [] as DeviceAssignment[],
-    people: [] as string[],
+    recent: [] as string[],
+    roster: [] as Person[],
     accessories: [] as Accessory[],
   });
 
@@ -81,6 +84,11 @@ export default function DeviceDetailScreen() {
     setSheet(null);
     setMessage(note);
     await reload();
+  }
+
+  /** 勾了「同时加到名单」：记录存好后把这个名字加进名单（面板里已经查过长度，这里出错也不影响已存的记录） */
+  async function addToRoster(name: string) {
+    await ensurePerson(db, name).catch(() => undefined);
   }
 
   if (!loaded) return <Stack.Screen options={{ title: '' }} />;
@@ -251,10 +259,12 @@ export default function DeviceDetailScreen() {
         <HolderSheet
           current={active.length === 1 ? active[0].person : ''}
           hasHolder={active.length > 0}
-          people={people}
+          roster={roster}
+          recent={recent}
           onClose={() => setSheet(null)}
-          onSubmit={async (person) => {
+          onSubmit={async (person, addPerson) => {
             await setDeviceHolder(db, device.id, person);
+            if (person && addPerson) await addToRoster(person);
             await afterChange(person ? `已改成：${person.trim()}在用` : '已清空谁在用');
           }}
         />
@@ -262,12 +272,14 @@ export default function DeviceDetailScreen() {
       {sheet?.type === 'issue' ? (
         <AssignmentSheet
           title="登记领用"
-          people={people}
+          roster={roster}
+          recent={recent}
           maxQuantity={available}
           accessoryText={accessoryText}
           onClose={() => setSheet(null)}
-          onSubmit={async (input) => {
+          onSubmit={async (input, addPerson) => {
             await issueDevice(db, device.id, input);
+            if (addPerson) await addToRoster(input.person);
             await afterChange(`已登记：${input.person} 领取 ${input.quantity} 件`);
           }}
         />
@@ -275,12 +287,14 @@ export default function DeviceDetailScreen() {
       {sheet?.type === 'edit' ? (
         <AssignmentSheet
           title="修改领用记录"
-          people={people}
+          roster={roster}
+          recent={recent}
           maxQuantity={sheet.assignment.returnedOn ? device.quantity : available + sheet.assignment.quantity}
           initial={sheet.assignment}
           onClose={() => setSheet(null)}
-          onSubmit={async (input) => {
+          onSubmit={async (input, addPerson) => {
             await updateAssignment(db, sheet.assignment.id, input);
+            if (addPerson) await addToRoster(input.person);
             await afterChange('领用记录已更新');
           }}
           onDelete={async () => {
@@ -313,21 +327,28 @@ function Count({ label, value, tone }: { label: string; value: number; tone?: st
   );
 }
 
-/** 家庭场景的「谁在用」：填个名字（或点以前填过的），不用日期、不用归还；清空就是没人在用 */
+/**
+ * 家庭场景的「谁在用」：填个名字（或从家庭成员里点选），不用日期、不用归还；清空就是没人在用。
+ * 名字不在家庭成员里时可以顺手加进去（默认勾上）。
+ */
 function HolderSheet({
   current,
   hasHolder,
-  people,
+  roster,
+  recent,
   onClose,
   onSubmit,
 }: {
   current: string;
   hasHolder: boolean;
-  people: string[];
+  roster: Person[];
+  recent: string[];
   onClose: () => void;
-  onSubmit: (person: string | null) => Promise<void>;
+  /** addToRoster：保存时把这个名字一起加进家庭成员 */
+  onSubmit: (person: string | null, addToRoster: boolean) => Promise<void>;
 }) {
   const [name, setName] = useState(current);
+  const [addToRoster, setAddToRoster] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -335,7 +356,7 @@ function HolderSheet({
     setBusy(true);
     setError(null);
     try {
-      await onSubmit(person);
+      await onSubmit(person, !!person && addToRoster && needsRosterAdd(roster, person));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '没存上，请重试');
       setBusy(false);
@@ -345,7 +366,14 @@ function HolderSheet({
   return (
     <Sheet visible title="谁在用" onClose={onClose}>
       <Field label="名字" value={name} onChangeText={setName} placeholder="如 爸爸、孩子" maxLength={HOLDER_NAME_MAX} />
-      {people.length ? <ChoiceChips options={people.map((person) => ({ value: person, label: person }))} value={name.trim()} onChange={setName} /> : null}
+      <PersonPicker
+        value={name}
+        onChange={setName}
+        roster={roster}
+        recent={recent}
+        addToRoster={addToRoster}
+        onAddToRosterChange={setAddToRoster}
+      />
       <Text style={deviceDetail.hint}>不用填日期，也不用归还；换人直接改名字，没人用就清空。</Text>
       {error ? <Text style={deviceDetail.error}>{error}</Text> : null}
       <View style={deviceDetail.actions}>
@@ -358,7 +386,8 @@ function HolderSheet({
 
 function AssignmentSheet({
   title,
-  people,
+  roster,
+  recent,
   maxQuantity,
   accessoryText,
   initial,
@@ -367,22 +396,31 @@ function AssignmentSheet({
   onDelete,
 }: {
   title: string;
-  people: string[];
+  /** 员工名单 */
+  roster: Person[];
+  /** 最近用过的名字（名单空时列这些） */
+  recent: string[];
   maxQuantity: number;
   /** 随设备一起领走的配件说明，领用时提示一下 */
   accessoryText?: string | null;
   initial?: DeviceAssignment;
   onClose: () => void;
-  onSubmit: (input: {
-    person: string;
-    quantity: number;
-    issuedOn: string;
-    returnedOn: string | null;
-    note: string | null;
-  }) => Promise<void>;
+  /** addToRoster：保存时把使用人一起加进员工名单 */
+  onSubmit: (
+    input: {
+      person: string;
+      quantity: number;
+      issuedOn: string;
+      returnedOn: string | null;
+      note: string | null;
+    },
+    addToRoster: boolean,
+  ) => Promise<void>;
   onDelete?: () => Promise<void>;
 }) {
+  const terms = useTerms();
   const [person, setPerson] = useState(initial?.person ?? '');
+  const [addToRoster, setAddToRoster] = useState(true);
   const [quantity, setQuantity] = useState<number | null>(initial?.quantity ?? 1);
   const [issuedOn, setIssuedOn] = useState<string | null>(initial?.issuedOn ?? todayStr());
   const [returnedOn, setReturnedOn] = useState<string | null>(initial?.returnedOn ?? null);
@@ -396,9 +434,13 @@ function AssignmentSheet({
     if (quantity === null) return setError(`请填数量（1 到 ${Math.max(1, maxQuantity)}）`);
     if (!issuedOn) return setError('请选择领取日期');
     if (returnedOn && returnedOn < issuedOn) return setError('退还日期不能早于领取日期');
+    const addPerson = addToRoster && needsRosterAdd(roster, person);
+    if (addPerson && person.trim().length > PERSON_NAME_MAX) {
+      return setError(`名字超过 ${PERSON_NAME_MAX} 个字，加不进${terms.roster}；可以去掉「同时加到${terms.roster}」的勾`);
+    }
     setBusy(true);
     try {
-      await onSubmit({ person, quantity, issuedOn, returnedOn, note: note || null });
+      await onSubmit({ person, quantity, issuedOn, returnedOn, note: note || null }, addPerson);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : '保存失败，请重试');
     } finally {
@@ -414,9 +456,14 @@ function AssignmentSheet({
         </View>
       ) : null}
       <Field label="使用人" required value={person} onChangeText={setPerson} placeholder="姓名或工号" />
-      {people.length ? (
-        <ChoiceChips options={people.map((value) => ({ value, label: value }))} value={person} onChange={setPerson} />
-      ) : null}
+      <PersonPicker
+        value={person}
+        onChange={setPerson}
+        roster={roster}
+        recent={recent}
+        addToRoster={addToRoster}
+        onAddToRosterChange={setAddToRoster}
+      />
       {maxQuantity > 1 || (initial?.quantity ?? 1) > 1 ? (
         <IntegerField
           label="数量"

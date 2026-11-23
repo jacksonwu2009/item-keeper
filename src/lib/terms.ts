@@ -14,18 +14,37 @@ export type Terms = {
   newPlacePlaceholder: string;
   /** 这个场景的库里第一个地点的名字（库里建的是「默认办公点」，家庭场景的库第一次打开时改成「家」） */
   defaultPlaceName: string;
+  /** 人员名单：员工名单 / 家庭成员 */
+  roster: string;
+  /** 名单页上面那句说明 */
+  rosterHint: string;
+  /** 名单页加人时姓名、备注框的示例 */
+  personNamePlaceholder: string;
+  personNotePlaceholder: string;
+  /** 设备上记的人：领用记录 / 「谁在用」记录（名单里改名时确认框里的说法） */
+  assignmentRecords: string;
 };
 
 const OFFICE_TERMS: Terms = {
   place: '办公点',
   newPlacePlaceholder: '新办公点名称，如 上海办公室',
   defaultPlaceName: '默认办公点',
+  roster: '员工名单',
+  rosterHint: '领用设备时直接从名单里选；名单外的人也能手填。',
+  personNamePlaceholder: '姓名',
+  personNotePlaceholder: '备注（选填），如 部门',
+  assignmentRecords: '领用记录',
 };
 
 const HOME_TERMS: Terms = {
   place: '地点',
   newPlacePlaceholder: '新地点名称，如 父母家',
   defaultPlaceName: '家',
+  roster: '家庭成员',
+  rosterHint: '记谁在用时直接从名单里选；名单外的人也能手填。',
+  personNamePlaceholder: '名字，如 爸爸',
+  personNotePlaceholder: '备注（选填），如 关系',
+  assignmentRecords: '「谁在用」记录',
 };
 
 export function termsFor(scene: Scene): Terms {

@@ -84,7 +84,7 @@ describe('库里记的场景', () => {
   it('从旧版本升级上来的记成办公', async () => {
     const db = await openDb();
     await db.runAsync("DELETE FROM setting WHERE key = 'usage.scene'");
-    await db.execAsync('PRAGMA user_version = 8');
+    await db.execAsync('DROP TABLE person; PRAGMA user_version = 8');
     await migrateDbIfNeeded(db);
     assert.equal(await getScene(db), 'office');
   });
@@ -207,7 +207,7 @@ describe('记场景的小库', () => {
     const legacy = await openDb();
     await addMilk(legacy);
     await legacy.runAsync("DELETE FROM setting WHERE key = 'usage.scene'");
-    await legacy.execAsync('PRAGMA user_version = 8');
+    await legacy.execAsync('DROP TABLE person; PRAGMA user_version = 8');
     const store = await openStore();
     const setup = await resolveSceneSetup(store, async () => {
       await migrateDbIfNeeded(legacy);

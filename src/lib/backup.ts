@@ -1,13 +1,14 @@
 /**
  * 备份文件格式与校验（纯函数，有单测）。
  *
- * 备份是一个 JSON 文件，包含食品 / 日用品（含批次和出入库记录）、设备（含领用记录）和提醒设置，
+ * 备份是一个 JSON 文件，包含食品 / 日用品（含批次和出入库记录）、设备（含领用记录和人员名单）和提醒设置，
  * 可以只导出其中几类（scope）、其中几个办公点（offices）；导入时也可以只替换其中几个办公点的几类。
  * 办公点在不同手机上按名称对应。
  * 导入时先完整校验，有任何一处不对就整份拒绝，并告诉用户是哪一条、哪个字段，
  * 不会出现「导入一半」的情况。
  */
 
+import type { PersonEntry } from '../db/people';
 import { DEFAULT_SETTINGS, type AppSettings } from '../db/settings';
 import { isValidDateStr, todayStr } from './dates';
 import { validatePacks, type PackUnit } from './packs';
@@ -23,6 +24,9 @@ export const BACKUP_APP = 'item-keeper';
  */
 export const BACKUP_FORMAT = 7;
 export const OFFICE_NAME_LIMIT = 20;
+/** 人员名单的姓名、备注最多几个字（和 db/people.ts 一样） */
+export const PERSON_NAME_LIMIT = 20;
+export const PERSON_NOTE_LIMIT = 100;
 
 export type BackupScope = 'food' | 'daily' | 'devices' | 'settings';
 export const ALL_SCOPES: BackupScope[] = ['food', 'daily', 'devices', 'settings'];
@@ -127,6 +131,11 @@ export type BackupData = {
   offices: string[];
   products: BackupProduct[];
   devices: BackupDevice[];
+  /**
+   * 人员名单（员工名单 / 家庭成员），按名单里的顺序：含设备分类时才有。
+   * 导入勾了设备时按姓名合并进当前场景的名单；旧文件没有就不动名单。鸿蒙版写法一样：[{ name, note }]，note 没有为 null。
+   */
+  people?: PersonEntry[];
 };
 
 export type OfficeSummary = {
@@ -146,6 +155,8 @@ export type BackupSummary = {
   batches: number;
   movements: number;
   assignments: number;
+  /** 名单里几个人；文件里没有名单为 0 */
+  people: number;
 };
 
 // ---------- 导出 ----------
@@ -170,6 +181,8 @@ export type BackupSource = {
   devices: SourceDevice[];
   accessories: SourceAccessory[];
   assignments: SourceAssignment[];
+  /** 人员名单，按名单里的顺序 */
+  people: PersonEntry[];
 };
 
 function groupBy<T, K>(items: T[], key: (item: T) => K): Map<K, T[]> {
@@ -275,6 +288,9 @@ export function buildBackup(
         note: assignment.note,
       })),
     })),
+    ...(included.includes('devices')
+      ? { people: (source.people ?? []).map((person) => ({ name: person.name, note: person.note })) }
+      : {}),
   };
 }
 
@@ -294,6 +310,7 @@ export function summarizeBackup(data: BackupData): BackupSummary {
     batches: data.products.reduce((sum, product) => sum + product.batches.length, 0),
     movements: data.products.reduce((sum, product) => sum + product.movements.length, 0),
     assignments: data.devices.reduce((sum, device) => sum + device.assignments.length, 0),
+    people: data.people?.length ?? 0,
   };
 }
 
@@ -561,6 +578,23 @@ function parseDevice(raw: unknown, index: number, exportedAt: string, offices: s
   };
 }
 
+/** 人员名单：每人要有姓名（最多 20 个字），备注选填（最多 100 个字）；姓名不分大小写不能重复 */
+function parsePeople(value: unknown): PersonEntry[] {
+  const seen = new Set<string>();
+  return list(value, '', '人员名单').map((raw, index) => {
+    const where = `人员名单第 ${index + 1} 个`;
+    if (!isObj(raw)) fail(where, '格式不对');
+    const name = reqText(raw.name, where, '姓名');
+    if (name.length > PERSON_NAME_LIMIT) fail(where, `姓名「${name}」超过 ${PERSON_NAME_LIMIT} 个字`);
+    const note = optText(raw.note, `${where}「${name}」`, '备注');
+    if (note && note.length > PERSON_NOTE_LIMIT) fail(`${where}「${name}」`, `备注超过 ${PERSON_NOTE_LIMIT} 个字`);
+    const key = name.toLowerCase();
+    if (seen.has(key)) fail('', `人员名单里「${name}」重复了`);
+    seen.add(key);
+    return { name, note };
+  });
+}
+
 export type ParseResult = { ok: true; data: BackupData; summary: BackupSummary } | { ok: false; error: string };
 
 export function parseBackup(text: string): ParseResult {
@@ -628,6 +662,10 @@ export function parseBackup(text: string): ParseResult {
       offices,
       products,
       devices,
+      // 名单跟着设备走：含设备、文件里也有名单时才读；旧文件没有就不带（导入时不动名单）
+      ...(scope.includes('devices') && root.people !== undefined && root.people !== null
+        ? { people: parsePeople(root.people) }
+        : {}),
     };
     return { ok: true, data, summary: summarizeBackup(data) };
   } catch (error) {

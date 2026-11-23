@@ -317,7 +317,8 @@ export function BackupManager() {
             ))}
             <Text style={backupStyles.hint}>
               含 {pending.summary.batches} 个批次、{pending.summary.movements} 条出入库记录、
-              {pending.summary.assignments} 条设备{scene === 'home' ? '「谁在用」' : '领用'}记录。
+              {pending.summary.assignments} 条设备{scene === 'home' ? '「谁在用」' : '领用'}记录
+              {pending.summary.people ? `，${terms.roster} ${pending.summary.people} 人` : ''}。
             </Text>
           </Card>
           {pending.data.offices.length > 1 ? (
@@ -348,6 +349,7 @@ export function BackupManager() {
               chosenOffices: importOffices,
               countsOf: (name) => countsOf(localOfficeId(name)),
               exists: (name) => localOfficeId(name) !== undefined,
+              mergesPeople: !!pending.data.people?.length,
               clearedStocktakes: stocktakesClearedByImport(data.openStocktakes, {
                 offices: pending.data.offices.filter((name) => importOffices.includes(name)),
                 scope: importScope.filter((item) => pending.summary.scope.includes(item)),
@@ -386,6 +388,7 @@ function importPlanText({
   chosenOffices,
   countsOf,
   exists,
+  mergesPeople,
   clearedStocktakes,
 }: {
   scope: BackupScope[];
@@ -393,6 +396,8 @@ function importPlanText({
   chosenOffices: string[];
   countsOf: (name: string) => Counts;
   exists: (name: string) => boolean;
+  /** 文件里带了人员名单：选了设备时按姓名合并进来 */
+  mergesPeople: boolean;
   /** 这次导入会清掉进行中盘点的办公点 */
   clearedStocktakes: string[];
 }): string {
@@ -407,10 +412,13 @@ function importPlanText({
     }
   }
   if (scope.includes('settings')) parts.push(SCOPE_LABEL.settings);
+  const terms = currentTerms();
+  const peopleNote =
+    mergesPeople && dataScope.includes('devices') ? `${terms.roster}按姓名合并进来，本机多出来的人不删。` : '';
   const stocktakeNote = clearedStocktakes.length
     ? `会清掉${clearedStocktakes.map((name) => `「${name}」`).join('、')}进行中的盘点（已录的实盘数不保留）。`
     : '';
-  return `会替换本机的：${parts.join('；')}。没选的${currentTerms().place}和分类不动。${stocktakeNote}替换前会自动留一份，导错了可以撤销。`;
+  return `会替换本机的：${parts.join('；')}。没选的${terms.place}和分类不动。${peopleNote}${stocktakeNote}替换前会自动留一份，导错了可以撤销。`;
 }
 
 const backupStyles = StyleSheet.create({
