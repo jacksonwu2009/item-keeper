@@ -2,7 +2,7 @@
   "expo": {
     "name": "物品管家",
     "slug": "item-keeper",
-    "version": "1.9.3",
+    "version": "1.9.4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -23,7 +23,7 @@
         "android.permission.CAMERA"
       ],
       "package": "com.itemkeeper.app",
-      "versionCode": 25
+      "versionCode": 26
     },
     "web": {
       "favicon": "./assets/favicon.png"
