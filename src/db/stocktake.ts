@@ -162,23 +162,44 @@ export async function listStocktakes(db: SQLiteDatabase, officeId: number | null
       ORDER BY s.status = 'open' DESC, s.started_at DESC, s.id DESC`,
     [officeId, officeId],
   );
-  const counts = await db.getAllAsync<{ stocktakeId: number; expectedQty: number | null; countedQty: number | null }>(
-    `SELECT i.stocktake_id AS stocktakeId, i.expected_qty AS expectedQty, i.counted_qty AS countedQty
+  const counts = await db.getAllAsync<CountRow>(
+    `SELECT i.stocktake_id AS stocktakeId, ${COUNT_COLUMNS}
        FROM stocktake_item i JOIN stocktake s ON s.id = i.stocktake_id
-      WHERE (? IS NULL OR s.office_id = ?)`,
+      WHERE (? IS NULL OR s.office_id = ?)
+      GROUP BY i.stocktake_id`,
     [officeId, officeId],
   );
-  const byStocktake = new Map<number, { expectedQty: number | null; countedQty: number | null }[]>();
-  for (const count of counts) {
-    const list = byStocktake.get(count.stocktakeId) ?? [];
-    list.push(count);
-    byStocktake.set(count.stocktakeId, list);
-  }
+  const byStocktake = new Map(counts.map((count) => [count.stocktakeId, toCountSummary(count)]));
   return rows.map(({ officeName, ...row }) => ({
     ...toStocktake(row),
     officeName,
-    summary: summarizeCounts(byStocktake.get(row.id) ?? []),
+    summary: byStocktake.get(row.id) ?? summarizeCounts([]),
   }));
+}
+
+/**
+ * 盘点列表上每张单的计数在数据库里按单汇总（不把所有盘点项都读出来）。规则和 lib/stocktake 的 countState 一样：
+ * 差异 = 实盘 − 清点时账面（没有按 0），四舍五入到两位小数后大于 0 是盘盈、小于 0 是盘亏、等于 0 是相符；
+ * Math.round(差异 × 100) ≥ 1 等价于 差异 × 100 ≥ 0.5，≤ −1 等价于 差异 × 100 < −0.5（.5 往大的方向入）。
+ */
+const COUNT_COLUMNS = `
+  COUNT(*) AS total,
+  SUM(i.counted_qty IS NULL) AS uncounted,
+  SUM(i.counted_qty IS NOT NULL AND (i.counted_qty - COALESCE(i.expected_qty, 0)) * 100 >= 0.5) AS surplus,
+  SUM(i.counted_qty IS NOT NULL AND (i.counted_qty - COALESCE(i.expected_qty, 0)) * 100 < -0.5) AS deficit`;
+
+type CountRow = { stocktakeId: number; total: number; uncounted: number; surplus: number; deficit: number };
+
+function toCountSummary(row: CountRow): CountSummary {
+  const counted = row.total - row.uncounted;
+  return {
+    total: row.total,
+    counted,
+    uncounted: row.uncounted,
+    match: counted - row.surplus - row.deficit,
+    surplus: row.surplus,
+    deficit: row.deficit,
+  };
 }
 
 export async function listStocktakeItems(db: SQLiteDatabase, stocktakeId: number): Promise<StocktakeItem[]> {
