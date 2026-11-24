@@ -22,7 +22,7 @@ export type ReportSource = {
   batches: ReportBatch[];
   /** 时间段内的出入库流水，按时间先后 */
   movements: ReportMovement[];
-  /** 时间段结束前所有填了价格的入库（估算损失时找出库前最近一次的进价） */
+  /** 填了价格的入库（估算损失时找出库前最近一次的进价）：时间段里的全部，加上每样东西时间段开始前最近的一条 */
   priceHistory: PricedStockIn[];
   devices: ReportDevice[];
   accessoriesByDevice: Map<number, Accessory[]>;
@@ -72,14 +72,26 @@ export async function loadReportSource(
           ORDER BY m.happened_at, m.id`,
         [officeId, officeId, period.startIso, period.endIso],
       ),
+      // 估算损失只看出库前最近一次的进价：时间段里的进价全要，时间段开始前的每样东西只要最近的一条
+      // （时间相同的取 id 大的，和全部读出来时 priceBefore 取的是同一条）。不然记录越攒越多，每次打开报表都要多读。
+      // 开始前最近的一条按 (product_id, happened_at) 索引倒着找，每样东西找到一条就停
       db.getAllAsync<PricedStockIn>(
-        `SELECT m.product_id AS productId, m.delta, m.input_qty AS inputQty, m.unit_price AS unitPrice,
-                m.total_price AS totalPrice, m.happened_at AS happenedAt
-           FROM stock_movement m JOIN stock_product p ON p.id = m.product_id
-          WHERE m.type = 'in' AND m.delta > 0 AND (m.unit_price IS NOT NULL OR m.total_price IS NOT NULL)
-            AND (? IS NULL OR p.office_id = ?) AND m.happened_at < ?
-          ORDER BY m.happened_at, m.id`,
-        [officeId, officeId, period.endIso],
+        `SELECT productId, delta, inputQty, unitPrice, totalPrice, happenedAt FROM (
+           SELECT m.id, m.product_id AS productId, m.delta, m.input_qty AS inputQty, m.unit_price AS unitPrice,
+                  m.total_price AS totalPrice, m.happened_at AS happenedAt
+             FROM stock_movement m JOIN stock_product p ON p.id = m.product_id
+            WHERE m.type = 'in' AND m.delta > 0 AND (m.unit_price IS NOT NULL OR m.total_price IS NOT NULL)
+              AND (? IS NULL OR p.office_id = ?) AND m.happened_at >= ? AND m.happened_at < ?
+           UNION ALL
+           SELECT m.id, m.product_id, m.delta, m.input_qty, m.unit_price, m.total_price, m.happened_at
+             FROM stock_product p JOIN stock_movement m ON m.id = (
+                    SELECT b.id FROM stock_movement b
+                     WHERE b.product_id = p.id AND b.type = 'in' AND b.delta > 0
+                       AND (b.unit_price IS NOT NULL OR b.total_price IS NOT NULL) AND b.happened_at < ?
+                     ORDER BY b.happened_at DESC, b.id DESC LIMIT 1)
+            WHERE (? IS NULL OR p.office_id = ?))
+          ORDER BY happenedAt, id`,
+        [officeId, officeId, period.startIso, period.endIso, period.startIso, officeId, officeId],
       ),
       listDevices(db, officeId),
       listAllAccessories(db),
