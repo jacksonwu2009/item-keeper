@@ -30,6 +30,17 @@ export function openRawDb(): SQLiteDatabase {
       const row = raw.prepare(sql).get(...params(values));
       return row ? plain(row) : null;
     },
+    /** 只包了插入用到的 executeAsync（返回新行 id、改了几行）和 finalizeAsync */
+    async prepareAsync(sql: string) {
+      const statement = raw.prepare(sql);
+      return {
+        async executeAsync(values?: unknown[]) {
+          const result = statement.run(...params(values));
+          return { lastInsertRowId: Number(result.lastInsertRowid), changes: Number(result.changes) };
+        },
+        async finalizeAsync() {},
+      };
+    },
     async withTransactionAsync(task: () => Promise<void>) {
       raw.exec('BEGIN');
       try {
