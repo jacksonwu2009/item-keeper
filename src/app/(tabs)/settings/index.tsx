@@ -55,7 +55,7 @@ function backupReminderSummary(days: number): string {
 const EXPIRY_LEAD_HINT = '单个物品可以在编辑页里另设天数。';
 const REPEAT_HINT = '问题没处理之前按这个间隔重复提醒；到期当天一定会提醒。';
 function backupReminderHint(place: string): string {
-  return `填 0 不提醒。在「导入导出」里分类、${place}都全选，点「导出全部」导出才算备份过。`;
+  return `超过这么多天没导出备份就提醒，填 0 不提醒。在「导入导出」里分类、${place}都全选，点「导出全部」导出才算备份过。`;
 }
 
 /** 点一行打开的改值面板：到期前几天、多久提醒一次、提醒时间、备份提醒天数、新物品默认库存下限 */
@@ -235,7 +235,7 @@ export default function SettingsScreen() {
           onPress={() => router.push('/backup')}
         />
         <ListRow
-          title="超过几天没导出备份就提醒"
+          title="备份提醒"
           value={backupReminderSummary(current.backupReminderDays)}
           chevron
           onPress={() => setValueSheet('backupDays')}
@@ -318,7 +318,7 @@ export default function SettingsScreen() {
         />
       ) : null}
       {valueSheet === 'backupDays' ? (
-        <Sheet visible title="超过几天没导出备份就提醒" onClose={closeSheet}>
+        <Sheet visible title="备份提醒" onClose={closeSheet}>
           <IntegerField
             accessibilityLabel="超过几天没导出备份就提醒"
             value={current.backupReminderDays}
