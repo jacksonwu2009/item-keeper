@@ -55,7 +55,7 @@ import { usePendingDelete } from '../../hooks/usePendingDelete';
 import { formatDate, formatDateTime, formatShelfLife, formatShortDate, toDateStr, todayStr, type ShelfLife } from '../../lib/dates';
 import { stockInExpiryDefaults } from '../../lib/stockInDefaults';
 import { rescheduleReminders } from '../../lib/notifications';
-import { describePacks, formatBreakdown, packExample, toBaseQty, type PackUnit } from '../../lib/packs';
+import { describePacks, formatBreakdown, toBaseQty, type PackUnit } from '../../lib/packs';
 import {
   convertPriceUnit,
   defaultPriceDraft,
@@ -308,16 +308,7 @@ export default function StockDetailScreen() {
           {office.multiple ? <InfoRow label={terms.place} value={office.officeName(product.officeId)} /> : null}
           <InfoRow label="条码" value={product.barcode ?? '—'} />
           {product.spec ? <InfoRow label="规格" value={product.spec} /> : null}
-          <InfoRow
-            label="包装规格"
-            value={
-              packs.length ? (
-                describePacks(product.unit, packs)
-              ) : (
-                <Text style={detailStyles.infoHint}>没设，在「编辑」里加，如 {packExample(product.unit)}</Text>
-              )
-            }
-          />
+          <InfoRow label="包装规格" value={packs.length ? describePacks(product.unit, packs) : '—'} />
           {packs
             .filter((pack) => pack.barcode)
             .map((pack) => (
@@ -832,7 +823,6 @@ const detailStyles = StyleSheet.create({
   },
   error: { fontSize: font.small, color: colors.danger },
   hintText: { fontSize: font.small, color: colors.faint },
-  infoHint: { fontSize: font.body, color: colors.faint, flexShrink: 1, textAlign: 'right' },
   group: { gap: 8 },
   breakdown: { fontSize: font.small, color: colors.accent, fontWeight: '600', marginTop: 2 },
 });
