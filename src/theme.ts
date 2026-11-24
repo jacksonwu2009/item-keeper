@@ -30,8 +30,11 @@ export const lightColors = {
   infoSoft: '#E2EBF7',
   /** 底部面板、弹窗后面的半透明遮罩 */
   scrim: 'rgba(16, 24, 20, 0.35)',
-  /** 阴影 */
+  /** 阴影：纯黑的（开关圆钮、撤销条）和偏绿的（分段选中的那一段、网页日历浮层；深色下也是黑） */
   shadow: '#000000',
+  shadowSoft: '#18211C',
+  /** 分段筛选里选中的那一段（浅色是白胶囊；深色下比槽亮一档） */
+  segmentSelected: '#FFFFFF',
   /** 开关关着时的底、圆钮 */
   switchOff: 'rgba(24, 33, 28, 0.16)',
   switchKnob: '#FFFFFF',
@@ -72,6 +75,8 @@ export const darkColors: Colors = {
   infoSoft: '#1A2A40',
   scrim: 'rgba(0, 0, 0, 0.55)',
   shadow: '#000000',
+  shadowSoft: '#000000',
+  segmentSelected: '#3A443F',
   switchOff: 'rgba(230, 236, 232, 0.2)',
   switchKnob: '#FFFFFF',
   iosSwitchOff: '#39393D',

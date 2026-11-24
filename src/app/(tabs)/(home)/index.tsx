@@ -57,7 +57,7 @@ function openBorrowedDevices() {
 
 export default function RemindersScreen() {
   const colors = useColors();
-  const dash = useDash();
+  const dash = useDashStyles();
   const db = useSQLiteContext();
   const office = useOffice();
   const { scene } = useScene();
@@ -251,7 +251,7 @@ export default function RemindersScreen() {
 /** 常用入口（盘点、报表）：白底圆角小块，上面图标、下面文字 */
 function Shortcut({ title, icon, onPress }: { title: string; icon: IconName; onPress: () => void }) {
   const colors = useColors();
-  const dash = useDash();
+  const dash = useDashStyles();
   return (
     <Pressable
       accessibilityRole="button"
@@ -280,7 +280,7 @@ function Tile({
   onPress: () => void;
 }) {
   const colors = useColors();
-  const dash = useDash();
+  const dash = useDashStyles();
   const palette = toneColors(colors, tone);
   const active = value > 0;
   const boxStyle = [dash.tile, inOneRow ? dash.tileOneRow : dash.tileTwoColumns, active && { backgroundColor: palette.bg }];
@@ -341,7 +341,7 @@ function ExpirySection({
   );
 }
 
-const useDash = makeStyles((colors) => ({
+const useDashStyles = makeStyles((colors) => ({
   date: { fontSize: font.small, color: colors.muted, fontWeight: '500' },
   headline: { fontSize: 26, fontWeight: '800', color: colors.ink, marginTop: 2 },
   permission: { backgroundColor: colors.warnSoft },

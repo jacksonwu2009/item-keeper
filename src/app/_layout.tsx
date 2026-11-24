@@ -72,13 +72,13 @@ export default function RootLayout() {
   }, []);
   return (
     <GestureHandlerRootView style={[StyleSheet.absoluteFill, { backgroundColor: colors.bg }]}>
+      {/* 状态栏的字和图标：深色模式用浅色的，浅色模式用深色的。放最外层：还没打开库（首次选择、登录页）时也要对 */}
+      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
       {/* SceneProvider 先定场景，再用那个场景的库包住下面（换场景时下面整棵树按新库重新挂上） */}
       <SceneProvider>
         <OfficeProvider>
           <HideSplashWhenReady />
           <ReminderKeeper />
-          {/* 状态栏的字和图标：深色模式用浅色的，浅色模式用深色的 */}
-          <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
           <ThemeProvider value={navigationTheme}>
             <Stack
               screenOptions={({ navigation }) => ({

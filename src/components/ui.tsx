@@ -661,7 +661,7 @@ export const useStyles = makeStyles((colors) => ({
   choiceDisabled: { opacity: 0.4 },
   choiceText: { fontSize: font.small, color: colors.ink },
   choiceTextSelected: { color: colors.accentInk, fontWeight: '600' },
-  // 分段筛选：浅灰的胶囊槽，选中的一段是白色胶囊
+  // 分段筛选：浅灰的胶囊槽，选中的一段是白色胶囊（深色模式：深灰的槽，选中的一段亮一档）
   segmented: {
     flexDirection: 'row',
     backgroundColor: colors.surfaceSunken,
@@ -682,8 +682,8 @@ export const useStyles = makeStyles((colors) => ({
   // 网页不支持缩字：按字的长短分宽度（最长的一段多分一点），每段至少留出自己的字宽
   segmentWeb: { flexBasis: 'auto' },
   segmentSelected: {
-    backgroundColor: colors.surface,
-    shadowColor: colors.ink,
+    backgroundColor: colors.segmentSelected,
+    shadowColor: colors.shadowSoft,
     shadowOpacity: 0.08,
     shadowRadius: 3,
     shadowOffset: { width: 0, height: 1 },

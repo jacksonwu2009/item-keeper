@@ -166,6 +166,8 @@ describe('两套颜色', () => {
       ['正常标签', c.ok, c.okSoft],
       ['识别格子、按上次标记', c.info, c.infoSoft],
       ['左滑删除', c.dangerFillInk, c.dangerFill],
+      ['分段选中的字', c.ink, c.segmentSelected],
+      ['分段没选中的字', c.muted, c.surfaceSunken],
       ['撤销条文字', c.toastInk, c.toast],
       ['撤销条按钮', c.toastAction, c.toast],
     ];

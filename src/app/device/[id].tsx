@@ -54,7 +54,7 @@ type SheetState =
 
 export default function DeviceDetailScreen() {
   const colors = useColors();
-  const deviceDetail = useDeviceDetail();
+  const deviceDetail = useDeviceDetailStyles();
   const db = useSQLiteContext();
   const office = useOffice();
   const { scene, terms } = useScene();
@@ -322,7 +322,7 @@ export default function DeviceDetailScreen() {
 }
 
 function Count({ label, value, tone }: { label: string; value: number; tone?: string }) {
-  const deviceDetail = useDeviceDetail();
+  const deviceDetail = useDeviceDetailStyles();
   return (
     <View style={deviceDetail.count}>
       <Text style={[deviceDetail.countValue, tone ? { color: tone } : null]}>{value}</Text>
@@ -351,7 +351,7 @@ function HolderSheet({
   /** addToRoster：保存时把这个名字一起加进家庭成员 */
   onSubmit: (person: string | null, addToRoster: boolean) => Promise<void>;
 }) {
-  const deviceDetail = useDeviceDetail();
+  const deviceDetail = useDeviceDetailStyles();
   const [name, setName] = useState(current);
   // 已经有人在用时先不勾「同时加到家庭成员」，要加自己勾
   const [addToRoster, setAddToRoster] = useState(!current);
@@ -424,7 +424,7 @@ function AssignmentSheet({
   ) => Promise<void>;
   onDelete?: () => Promise<void>;
 }) {
-  const deviceDetail = useDeviceDetail();
+  const deviceDetail = useDeviceDetailStyles();
   const terms = useTerms();
   const [person, setPerson] = useState(initial?.person ?? '');
   // 修改已有记录时先不勾「同时加到员工名单」，要加自己勾
@@ -528,7 +528,7 @@ function ReturnSheet({
   onClose: () => void;
   onSubmit: (returnedOn: string, quantity: number) => Promise<void>;
 }) {
-  const deviceDetail = useDeviceDetail();
+  const deviceDetail = useDeviceDetailStyles();
   const [returnedOn, setReturnedOn] = useState<string | null>(todayStr());
   const [quantity, setQuantity] = useState<number | null>(assignment.quantity);
   const [error, setError] = useState<string | null>(null);
@@ -587,7 +587,7 @@ function ReturnSheet({
 // 照鸿蒙版 DeviceDetailPage.ets：顶上一张大卡片（类别、名称、型号、保修、三个大数字、登记领用）；
 // 正在使用、领用记录是不留内边距的白卡片，行自己留边距，行间分隔线从左边 16 开始、右边到头；
 // 信息是分组卡片。领用、退还面板照 AssignmentSheets.ets：配件提示是浅蓝底的一段话
-const useDeviceDetail = makeStyles((colors) => ({
+const useDeviceDetailStyles = makeStyles((colors) => ({
   flex: { flex: 1, minWidth: 0 },
   summary: { gap: 8 },
   category: { fontSize: font.small, color: colors.accent, fontWeight: '700' },
