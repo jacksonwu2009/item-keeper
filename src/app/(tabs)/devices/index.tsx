@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useCallback, useMemo, useState } from 'react';
-import { Pressable, SectionList, View } from 'react-native';
+import { memo, useCallback, useMemo, useState } from 'react';
+import { Pressable, SectionList, View, type SectionListRenderItem } from 'react-native';
 import { Text } from '../../../components/Text';
 
 import { SwipeRow, UndoBar } from '../../../components/SwipeRow';
@@ -31,8 +31,10 @@ type Filter = 'all' | 'out' | 'in' | 'warrantySoon' | 'warrantyExpired';
 const HOME_FILTERS: Filter[] = ['all', 'warrantySoon', 'warrantyExpired'];
 const OFFICE_FILTERS: Filter[] = ['all', 'out', 'in'];
 
+type DeviceSection = { title: string; data: DeviceSummary[] };
+type PersonSection = { title: string; data: ActiveAssignment[] };
+
 export default function DevicesScreen() {
-  const colors = useColors();
   const deviceStyles = useDeviceStyles();
   const db = useSQLiteContext();
   const office = useOffice();
@@ -122,6 +124,25 @@ export default function DevicesScreen() {
     }
     return Array.from(groups, ([title, data]) => ({ title, data }));
   }, [active, keyword]);
+
+  const removeDevice = deletion.remove;
+  const officeName = office.officeName;
+  const renderDevice = useCallback<SectionListRenderItem<DeviceSummary, DeviceSection>>(
+    ({ item }) => (
+      <DeviceRow
+        item={item}
+        home={home}
+        today={today}
+        officeName={showOffice ? officeName(item.officeId) : null}
+        onDelete={removeDevice}
+      />
+    ),
+    [home, today, showOffice, officeName, removeDevice],
+  );
+  const renderPerson = useCallback<SectionListRenderItem<ActiveAssignment, PersonSection>>(
+    ({ item }) => <PersonRow item={item} today={today} officeName={showOffice ? officeName(item.officeId) : null} />,
+    [today, showOffice, officeName],
+  );
 
   const totalOut = active.reduce((sum, assignment) => sum + assignment.quantity, 0);
   const totalQty = devices.reduce((sum, device) => sum + device.quantity, 0);
@@ -216,42 +237,17 @@ export default function DevicesScreen() {
           style={deviceStyles.list}
           contentContainerStyle={deviceStyles.content}
           sections={personSections}
-          keyExtractor={(item) => String(item.id)}
+          keyExtractor={itemKey}
           ListHeaderComponent={header}
           ListEmptyComponent={empty}
           keyboardShouldPersistTaps="handled"
           contentInsetAdjustmentBehavior={LARGE_TITLE_SCROLL_INSET}
           stickySectionHeadersEnabled={false}
-          renderSectionHeader={({ section }) => (
-            <Text style={deviceStyles.sectionTitle}>
-              {section.title} · {section.data.reduce((sum, item) => sum + item.quantity, 0)} 件
-            </Text>
-          )}
-          renderItem={({ item }) => (
-            <Pressable
-              onPress={() => router.push({ pathname: '/device/[id]', params: { id: String(item.deviceId) } })}
-              unstable_pressDelay={LIST_PRESS_DELAY}
-              style={({ pressed }) => [deviceStyles.row, deviceStyles.personRow, pressed && deviceStyles.rowPressed]}
-            >
-              <View style={deviceStyles.rowMain}>
-                <Text style={deviceStyles.name} numberOfLines={1}>
-                  {item.deviceName}
-                  {item.quantity > 1 ? ` ×${item.quantity}` : ''}
-                </Text>
-                <Text style={deviceStyles.meta} numberOfLines={1}>
-                  {[showOffice && office.officeName(item.officeId), item.category, item.deviceModel]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </Text>
-              </View>
-              <View style={deviceStyles.dateBox}>
-                <Text style={deviceStyles.dateText}>{formatDate(item.issuedOn)} 领取</Text>
-                <Text style={deviceStyles.meta}>已用 {Math.max(0, diffDays(today, item.issuedOn))} 天</Text>
-              </View>
-            </Pressable>
-          )}
-          SectionSeparatorComponent={() => <View style={deviceStyles.sectionGap} />}
-          ItemSeparatorComponent={() => <View style={deviceStyles.separator} />}
+          renderSectionHeader={renderPersonHeader}
+          renderItem={renderPerson}
+          SectionSeparatorComponent={SectionGap}
+          ItemSeparatorComponent={RowGap}
+          windowSize={11}
         />
         {undoBar}
       </View>
@@ -264,85 +260,164 @@ export default function DevicesScreen() {
         style={deviceStyles.list}
         contentContainerStyle={deviceStyles.content}
         sections={deviceSections}
-        keyExtractor={(item) => String(item.id)}
+        keyExtractor={itemKey}
         ListHeaderComponent={header}
         ListEmptyComponent={empty}
         keyboardShouldPersistTaps="handled"
         contentInsetAdjustmentBehavior={LARGE_TITLE_SCROLL_INSET}
         stickySectionHeadersEnabled={false}
-        renderSectionHeader={({ section }) => <Text style={deviceStyles.sectionTitle}>{section.title}</Text>}
-        renderItem={({ item }) => {
-          const available = item.quantity - item.outQty;
-          const warranty = warrantyStatus(item.warrantyUntil, today);
-          return (
-            <SwipeRow
-              accessibilityLabel={home ? `${item.name}，共 ${item.quantity} 件` : `${item.name}，在库 ${available} 件，共 ${item.quantity} 件`}
-              onPress={() => router.push({ pathname: '/device/[id]', params: { id: String(item.id) } })}
-              onLongPress={() => router.push({ pathname: '/device/edit/[id]', params: { id: String(item.id) } })}
-              onDelete={() => deletion.remove(item.id, item.name)}
-              style={deviceStyles.row}
-              pressedStyle={deviceStyles.rowPressed}
-              cornerRadius={radius.lg}
-            >
-              <View style={deviceStyles.rowMain}>
-                <Text style={deviceStyles.name} numberOfLines={1}>
-                  {item.name}
-                </Text>
-                {showOffice || item.model || item.serialNo || describeConfig(item) ? (
-                  <Text style={deviceStyles.meta} numberOfLines={1}>
-                    {[
-                      showOffice && office.officeName(item.officeId),
-                      describeConfig(item),
-                      item.model,
-                      item.serialNo && `SN ${item.serialNo}`,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </Text>
-                ) : null}
-                {item.holders ? (
-                  <Text style={deviceStyles.holders} numberOfLines={1}>
-                    {home ? '谁在用' : '使用人'}：{item.holders}
-                  </Text>
-                ) : null}
-                {home && item.purchaseDate ? (
-                  <Text style={deviceStyles.meta} numberOfLines={1}>
-                    {formatDate(item.purchaseDate)} 买的
-                  </Text>
-                ) : null}
-                {/* 家庭场景保修是重点：没过保的也写保修到哪天 */}
-                {warranty && (home || warranty.level !== 'ok') ? (
-                  <View style={deviceStyles.warranty}>
-                    <Chip
-                      text={warranty.text}
-                      tone={warranty.level === 'expired' ? 'neutral' : warranty.level === 'soon' ? 'warn' : 'ok'}
-                    />
-                  </View>
-                ) : null}
-              </View>
-              {home ? (
-                item.quantity > 1 ? (
-                  <View style={deviceStyles.countBox}>
-                    <Text style={deviceStyles.meta}>共 {item.quantity}</Text>
-                  </View>
-                ) : null
-              ) : (
-                <View style={deviceStyles.countBox}>
-                  <Chip text={`在库 ${available}`} tone={available > 0 ? 'ok' : 'neutral'} />
-                  <Text style={deviceStyles.meta}>共 {item.quantity}</Text>
-                </View>
-              )}
-              <Ionicons name="chevron-forward" size={18} color={colors.faint} />
-            </SwipeRow>
-          );
-        }}
-        SectionSeparatorComponent={() => <View style={deviceStyles.sectionGap} />}
-        ItemSeparatorComponent={() => <View style={deviceStyles.separator} />}
+        renderSectionHeader={renderDeviceHeader}
+        renderItem={renderDevice}
+        SectionSeparatorComponent={SectionGap}
+        ItemSeparatorComponent={RowGap}
+        windowSize={11}
       />
       {undoBar}
     </View>
   );
 }
+
+function itemKey(item: { id: number }): string {
+  return String(item.id);
+}
+
+// 分组标题、组间距、行间距放在模块里：不是每次渲染都新建组件（那样每次所有分隔都要重建）
+function renderDeviceHeader({ section }: { section: DeviceSection }) {
+  return <SectionHeader title={section.title} />;
+}
+
+function renderPersonHeader({ section }: { section: PersonSection }) {
+  return <SectionHeader title={`${section.title} · ${section.data.reduce((sum, item) => sum + item.quantity, 0)} 件`} />;
+}
+
+function SectionHeader({ title }: { title: string }) {
+  const deviceStyles = useDeviceStyles();
+  return <Text style={deviceStyles.sectionTitle}>{title}</Text>;
+}
+
+function SectionGap() {
+  const deviceStyles = useDeviceStyles();
+  return <View style={deviceStyles.sectionGap} />;
+}
+
+function RowGap() {
+  const deviceStyles = useDeviceStyles();
+  return <View style={deviceStyles.separator} />;
+}
+
+function openDevice(id: number) {
+  router.push({ pathname: '/device/[id]', params: { id: String(id) } });
+}
+
+/** 按设备看的一行。memo：参数没变的行不重画；删除是列表里不变的函数，带着这台设备的 id 调 */
+const DeviceRow = memo(function DeviceRow({
+  item,
+  home,
+  today,
+  officeName,
+  onDelete,
+}: {
+  item: DeviceSummary;
+  home: boolean;
+  today: string;
+  /** 看全部办公点、又有不止一个办公点时写上是哪个办公点的；否则 null */
+  officeName: string | null;
+  onDelete: (id: number, name: string) => void;
+}) {
+  const colors = useColors();
+  const deviceStyles = useDeviceStyles();
+  const available = item.quantity - item.outQty;
+  const warranty = warrantyStatus(item.warrantyUntil, today);
+  const config = describeConfig(item);
+  return (
+    <SwipeRow
+      accessibilityLabel={home ? `${item.name}，共 ${item.quantity} 件` : `${item.name}，在库 ${available} 件，共 ${item.quantity} 件`}
+      onPress={() => openDevice(item.id)}
+      onLongPress={() => router.push({ pathname: '/device/edit/[id]', params: { id: String(item.id) } })}
+      onDelete={() => onDelete(item.id, item.name)}
+      style={deviceStyles.row}
+      pressedStyle={deviceStyles.rowPressed}
+      cornerRadius={radius.lg}
+    >
+      <View style={deviceStyles.rowMain}>
+        <Text style={deviceStyles.name} numberOfLines={1}>
+          {item.name}
+        </Text>
+        {officeName !== null || item.model || item.serialNo || config ? (
+          <Text style={deviceStyles.meta} numberOfLines={1}>
+            {[officeName, config, item.model, item.serialNo && `SN ${item.serialNo}`].filter(Boolean).join(' · ')}
+          </Text>
+        ) : null}
+        {item.holders ? (
+          <Text style={deviceStyles.holders} numberOfLines={1}>
+            {home ? '谁在用' : '使用人'}：{item.holders}
+          </Text>
+        ) : null}
+        {home && item.purchaseDate ? (
+          <Text style={deviceStyles.meta} numberOfLines={1}>
+            {formatDate(item.purchaseDate)} 买的
+          </Text>
+        ) : null}
+        {/* 家庭场景保修是重点：没过保的也写保修到哪天 */}
+        {warranty && (home || warranty.level !== 'ok') ? (
+          <View style={deviceStyles.warranty}>
+            <Chip
+              text={warranty.text}
+              tone={warranty.level === 'expired' ? 'neutral' : warranty.level === 'soon' ? 'warn' : 'ok'}
+            />
+          </View>
+        ) : null}
+      </View>
+      {home ? (
+        item.quantity > 1 ? (
+          <View style={deviceStyles.countBox}>
+            <Text style={deviceStyles.meta}>共 {item.quantity}</Text>
+          </View>
+        ) : null
+      ) : (
+        <View style={deviceStyles.countBox}>
+          <Chip text={`在库 ${available}`} tone={available > 0 ? 'ok' : 'neutral'} />
+          <Text style={deviceStyles.meta}>共 {item.quantity}</Text>
+        </View>
+      )}
+      <Ionicons name="chevron-forward" size={18} color={colors.faint} />
+    </SwipeRow>
+  );
+});
+
+/** 按使用人看的一行（memo：参数没变的行不重画） */
+const PersonRow = memo(function PersonRow({
+  item,
+  today,
+  officeName,
+}: {
+  item: ActiveAssignment;
+  today: string;
+  officeName: string | null;
+}) {
+  const deviceStyles = useDeviceStyles();
+  return (
+    <Pressable
+      onPress={() => openDevice(item.deviceId)}
+      unstable_pressDelay={LIST_PRESS_DELAY}
+      style={({ pressed }) => [deviceStyles.row, deviceStyles.personRow, pressed && deviceStyles.rowPressed]}
+    >
+      <View style={deviceStyles.rowMain}>
+        <Text style={deviceStyles.name} numberOfLines={1}>
+          {item.deviceName}
+          {item.quantity > 1 ? ` ×${item.quantity}` : ''}
+        </Text>
+        <Text style={deviceStyles.meta} numberOfLines={1}>
+          {[officeName, item.category, item.deviceModel].filter(Boolean).join(' · ')}
+        </Text>
+      </View>
+      <View style={deviceStyles.dateBox}>
+        <Text style={deviceStyles.dateText}>{formatDate(item.issuedOn)} 领取</Text>
+        <Text style={deviceStyles.meta}>已用 {Math.max(0, diffDays(today, item.issuedOn))} 天</Text>
+      </View>
+    </Pressable>
+  );
+});
 
 // 照鸿蒙版 DevicesTab.ets：每台设备一张白底大圆角卡片，左边名称、配置、使用人，右边「在库」标签和总数；
 // 分组标题是卡片外面的灰色小字，离上一组远一点、贴着下面的卡片

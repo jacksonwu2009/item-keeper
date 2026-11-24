@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useCallback, useMemo, useState } from 'react';
-import { FlatList, ScrollView, View } from 'react-native';
+import { memo, useCallback, useMemo, useState } from 'react';
+import { FlatList, ScrollView, View, type ListRenderItem } from 'react-native';
 import { Text } from './Text';
 
 import { DEFAULT_SETTINGS, getSettings } from '../db/settings';
@@ -11,10 +11,11 @@ import { useFocusData } from '../hooks/useFocusData';
 import { usePendingDelete } from '../hooks/usePendingDelete';
 import { useOffice } from '../hooks/useOffice';
 import { usedCategories } from '../lib/categories';
+import { compareZh } from '../lib/collate';
 import { todayStr } from '../lib/dates';
 import { formatBreakdown, type PackUnit } from '../lib/packs';
 import { rescheduleReminders } from '../lib/notifications';
-import { expiryStatus, isLowStock } from '../lib/status';
+import { expiryStatus, isLowStock, type ExpiryStatus } from '../lib/status';
 import { formatQty, KIND_LABEL, type StockKind } from '../lib/stock';
 import { makeStyles, useColors } from '../hooks/useTheme';
 import { font, radius } from '../theme';
@@ -23,8 +24,10 @@ import { Chip, ChoiceChips, Empty, LARGE_TITLE_SCROLL_INSET, ListActions, Search
 
 type Filter = 'all' | 'attention' | 'low';
 
+/** 列表的一行要显示的：物品、到期状态、是否库存不足、包装折算（「2 箱 3 瓶」） */
+type StockRowData = { product: StockProductSummary; expiry: ExpiryStatus | null; low: boolean; breakdown: string | null };
+
 export function StockList({ kind }: { kind: StockKind }) {
-  const colors = useColors();
   const listStyles = useListStyles();
   const db = useSQLiteContext();
   const office = useOffice();
@@ -67,15 +70,21 @@ export function StockList({ kind }: { kind: StockKind }) {
   const showCategories = categories.length >= 2;
   const activeCategory = showCategories && categories.includes(categoryFilter) ? categoryFilter : '';
 
-  const rows = useMemo(() => {
-    const keyword = query.trim().toLowerCase();
-    return products
-      .map((product) => ({
+  // 每样东西的状态只在数据变了时算；搜索、筛选只是从这些里面挑，挑出来的还是同一批对象，没变的行不用重画
+  const decorated = useMemo<StockRowData[]>(
+    () =>
+      products.map((product) => ({
         product,
         expiry: expiryStatus(product.nearestExpiry, today, product.expiryLeadDays ?? settings.expiryLeadDays),
         low: isLowStock(product.totalQty, product.lowStockThreshold),
         breakdown: formatBreakdown(product.totalQty, product.unit, packsByProduct.get(product.id) ?? []),
-      }))
+      })),
+    [products, today, settings.expiryLeadDays, packsByProduct],
+  );
+
+  const rows = useMemo(() => {
+    const keyword = query.trim().toLowerCase();
+    return decorated
       .filter(({ product, expiry, low }) => {
         if (product.id === deletion.pending?.key) return false;
         if (keyword) {
@@ -94,9 +103,18 @@ export function StockList({ kind }: { kind: StockKind }) {
         // 需要注意的排前面：过期 > 快到期 > 库存不足 > 其他
         const rank = (row: typeof a) =>
           row.expiry?.level === 'expired' ? 0 : row.expiry?.level === 'soon' ? 1 : row.low ? 2 : 3;
-        return rank(a) - rank(b) || a.product.name.localeCompare(b.product.name, 'zh');
+        return rank(a) - rank(b) || compareZh(a.product.name, b.product.name);
       });
-  }, [products, query, filter, activeCategory, today, settings.expiryLeadDays, packsByProduct, deletion.pending]);
+  }, [decorated, query, filter, activeCategory, deletion.pending]);
+
+  const removeRow = deletion.remove;
+  const officeName = office.officeName;
+  const renderItem = useCallback<ListRenderItem<StockRowData>>(
+    ({ item }) => (
+      <StockRow row={item} officeName={showOffice ? officeName(item.product.officeId) : null} onDelete={removeRow} />
+    ),
+    [showOffice, officeName, removeRow],
+  );
 
   const scan = () => router.push({ pathname: '/scan', params: { kind } });
   const addManually = () => router.push({ pathname: '/stock/new', params: { kind } });
@@ -144,11 +162,12 @@ export function StockList({ kind }: { kind: StockKind }) {
         style={listStyles.list}
         contentContainerStyle={listStyles.content}
         data={rows}
-        keyExtractor={(row) => String(row.product.id)}
+        keyExtractor={rowKey}
         ListHeaderComponent={header}
         keyboardShouldPersistTaps="handled"
         contentInsetAdjustmentBehavior={LARGE_TITLE_SCROLL_INSET}
-        ItemSeparatorComponent={() => <View style={listStyles.separator} />}
+        ItemSeparatorComponent={RowSeparator}
+        windowSize={11}
         ListEmptyComponent={
           !loaded ? undefined : products.length === 0 ? (
             <Empty
@@ -164,54 +183,84 @@ export function StockList({ kind }: { kind: StockKind }) {
             <Empty icon="search-outline" title="没有符合条件的" text="换个关键词或筛选条件试试。" />
           )
         }
-        renderItem={({ item: { product, expiry, low, breakdown } }) => (
-          <SwipeRow
-            accessibilityLabel={`${product.name}，${formatQty(product.totalQty)} ${product.unit}`}
-            onPress={() => router.push({ pathname: '/stock/[id]', params: { id: String(product.id) } })}
-            onLongPress={() => router.push({ pathname: '/stock/edit/[id]', params: { id: String(product.id) } })}
-            onDelete={() => deletion.remove(product.id, product.name)}
-            style={listStyles.row}
-            pressedStyle={listStyles.rowPressed}
-          >
-            <View style={listStyles.rowMain}>
-              <Text style={listStyles.name} numberOfLines={1}>
-                {product.name}
-              </Text>
-              {showOffice || product.category || product.spec || product.location ? (
-                <Text style={listStyles.meta} numberOfLines={1}>
-                  {[
-                    showOffice && office.officeName(product.officeId),
-                    product.category,
-                    product.spec,
-                    product.location && `放在 ${product.location}`,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </Text>
-              ) : null}
-              {expiry || low ? (
-                <View style={listStyles.chips}>
-                  {expiry && expiry.level !== 'fine' ? <Chip text={expiry.text} tone={expiry.tone} /> : null}
-                  {expiry && expiry.level === 'fine' ? <Chip text={expiry.text} tone="neutral" /> : null}
-                  {low ? <Chip text="库存不足" tone="warn" /> : null}
-                </View>
-              ) : null}
-            </View>
-            <View style={listStyles.qtyBox}>
-              <Text style={[listStyles.qty, product.totalQty <= 0 && { color: colors.danger }]}>
-                {formatQty(product.totalQty)}
-              </Text>
-              <Text style={listStyles.unit}>{product.unit}</Text>
-              {breakdown ? <Text style={listStyles.breakdown}>{breakdown}</Text> : null}
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.faint} />
-          </SwipeRow>
-        )}
+        renderItem={renderItem}
       />
       {deletion.pending ? <UndoBar text={`已删除「${deletion.pending.label}」`} onUndo={deletion.undo} /> : null}
     </View>
   );
 }
+
+function rowKey(row: StockRowData): string {
+  return String(row.product.id);
+}
+
+/** 行与行之间隔 8：放在模块里，不是每次渲染都新建一个组件（那样每次所有分隔线都要重建） */
+function RowSeparator() {
+  const listStyles = useListStyles();
+  return <View style={listStyles.separator} />;
+}
+
+function openProduct(id: number) {
+  router.push({ pathname: '/stock/[id]', params: { id: String(id) } });
+}
+
+function editProduct(id: number) {
+  router.push({ pathname: '/stock/edit/[id]', params: { id: String(id) } });
+}
+
+/**
+ * 列表的一行。memo：数据没变的行（参数还是同一个对象、同样的文字）不重画；
+ * 点开、长按编辑是模块里的函数，删除是列表里不变的函数，都带着这一行的 id 调。
+ */
+const StockRow = memo(function StockRow({
+  row: { product, expiry, low, breakdown },
+  officeName,
+  onDelete,
+}: {
+  row: StockRowData;
+  /** 看全部办公点、又有不止一个办公点时写上是哪个办公点的；否则 null */
+  officeName: string | null;
+  onDelete: (id: number, name: string) => void;
+}) {
+  const colors = useColors();
+  const listStyles = useListStyles();
+  return (
+    <SwipeRow
+      accessibilityLabel={`${product.name}，${formatQty(product.totalQty)} ${product.unit}`}
+      onPress={() => openProduct(product.id)}
+      onLongPress={() => editProduct(product.id)}
+      onDelete={() => onDelete(product.id, product.name)}
+      style={listStyles.row}
+      pressedStyle={listStyles.rowPressed}
+    >
+      <View style={listStyles.rowMain}>
+        <Text style={listStyles.name} numberOfLines={1}>
+          {product.name}
+        </Text>
+        {officeName !== null || product.category || product.spec || product.location ? (
+          <Text style={listStyles.meta} numberOfLines={1}>
+            {[officeName, product.category, product.spec, product.location && `放在 ${product.location}`]
+              .filter(Boolean)
+              .join(' · ')}
+          </Text>
+        ) : null}
+        {expiry || low ? (
+          <View style={listStyles.chips}>
+            {expiry && expiry.level !== 'fine' ? <Chip text={expiry.text} tone={expiry.tone} /> : null}
+            {expiry && expiry.level === 'fine' ? <Chip text={expiry.text} tone="neutral" /> : null}
+            {low ? <Chip text="库存不足" tone="warn" /> : null}
+          </View>
+        ) : null}
+      </View>
+      <View style={listStyles.qtyBox}>
+        <Text style={[listStyles.qty, product.totalQty <= 0 && { color: colors.danger }]}>{formatQty(product.totalQty)}</Text>
+        <Text style={listStyles.unit}>{product.unit}</Text>
+        {breakdown ? <Text style={listStyles.breakdown}>{breakdown}</Text> : null}
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={colors.faint} />
+    </SwipeRow>
+  );
+});
 
 // 照鸿蒙版 StockTab.ets：每一行是一张白底圆角卡片，左边名称、说明和状态标签，右边大数字和单位
 const useListStyles = makeStyles((colors) => ({
