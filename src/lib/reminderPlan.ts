@@ -13,7 +13,7 @@
  *   同一天同一时刻两边都有提醒就合成一条，分别用「家里：」「公司：」开头；时间不同各发各的；只有一个场景有就不加前缀。
  */
 
-import { addDays, dateStrToLocalDate, describeDaysLeft, diffDays, epochDay, todayStr } from './dates';
+import { addDays, dateStrToLocalDate, describeDaysLeft, epochDay, todayStr } from './dates';
 import { SCENE_REMINDER_PREFIX, SCENES, type Scene } from './terms';
 import { WARRANTY_SOON_DAYS } from './warranty';
 
@@ -50,7 +50,27 @@ export type PlanWarranty = { name: string; warrantyUntil: string };
 
 /** 这一天该提醒保修的设备名：保修到期日正好是 30 天后的 */
 export function warrantyDueOn(warranties: readonly PlanWarranty[], day: string): string[] {
-  return warranties.filter((item) => diffDays(item.warrantyUntil, day) === WARRANTY_SOON_DAYS).map((item) => item.name);
+  return createWarrantyCheck(warranties)(lazyDayNumber(day));
+}
+
+/**
+ * 保修提醒按天查：保修到期日折成天数只算一次（第一次用到时算，日期写错时和逐天解析时在同一处报错），
+ * 之后每天只比整数。
+ */
+function createWarrantyCheck(warranties: readonly PlanWarranty[]): (dayNumber: () => number) => string[] {
+  const untilDays: (number | undefined)[] = warranties.map(() => undefined);
+  return (dayNumber) => {
+    const names: string[] = [];
+    warranties.forEach((item, index) => {
+      let until = untilDays[index];
+      if (until === undefined) {
+        until = epochDay(item.warrantyUntil);
+        untilDays[index] = until;
+      }
+      if (until - dayNumber() === WARRANTY_SOON_DAYS) names.push(item.name);
+    });
+    return names;
+  };
 }
 
 export type PlannedReminder = {
@@ -80,62 +100,135 @@ function positiveInt(value: number, fallback: number): number {
 
 /** 某一天的提醒状态：有哪些快到期 / 已过期 / 库存不足，以及这天是否该发通知。 */
 export function statusForDay(products: PlanProduct[], settings: ReminderSettings, day: string): DayStatus {
-  const repeat = positiveInt(settings.repeatEveryDays, 1);
-  const expiring: ExpiryEntry[] = [];
-  const expired: ExpiryEntry[] = [];
-  const lowStock: LowStockEntry[] = [];
+  return createDayPlanner(products, settings).status(day, lazyDayNumber(day));
+}
 
-  if (settings.expiryEnabled) {
-    for (const product of products) {
-      const lead = Math.max(0, Math.floor(product.expiryLeadDays ?? settings.expiryLeadDays));
-      // 同一商品多个批次时，只保留最紧急的一条，但只要有一批轮到提醒就算轮到。
-      let mostUrgent: ExpiryEntry | null = null;
-      let anyDue = false;
-      for (const batch of product.batches) {
-        if (!batch.expiryDate || !(batch.quantity > 0)) continue;
-        const daysLeft = diffDays(batch.expiryDate, day);
-        if (daysLeft > lead) continue;
-        const alertStart = addDays(batch.expiryDate, -lead);
-        const sinceStart = diffDays(day, alertStart);
-        const due = daysLeft === 0 || sinceStart % repeat === 0;
-        anyDue = anyDue || due;
-        if (!mostUrgent || daysLeft < mostUrgent.daysLeft) {
-          mostUrgent = {
-            product,
-            name: product.name,
-            daysLeft,
-            expiryDate: batch.expiryDate,
-            quantity: batch.quantity,
-            due,
-          };
+/** 某天是自 1970-01-01 起第几天，第一次用到时才算（和原来逐次解析时一样，用不到就不解析） */
+function lazyDayNumber(day: string): () => number {
+  let value: number | null = null;
+  return () => {
+    if (value === null) value = epochDay(day);
+    return value;
+  };
+}
+
+/**
+ * 一批东西算提醒要用的天数：过期那天、开始提醒那天折成「自 1970-01-01 起第几天」。
+ * 第一次用到时才算，之后每天只做整数加减（不再每天每批解析日期字符串）；日期写错时和原来逐天解析时在同一处报同样的错。
+ */
+type BatchDays = { batch: PlanBatch; expiry: number | null; alertStart: number | null };
+type ProductDays = { product: PlanProduct; lead: number; batches: BatchDays[] };
+
+/** 这一批过期那天离 day 还有几天（a - b 的天数差，和 diffDays 一样） */
+function daysLeftOf(entry: BatchDays, dayNumber: () => number): number {
+  if (entry.expiry === null) entry.expiry = epochDay(entry.batch.expiryDate as string);
+  return entry.expiry - dayNumber();
+}
+
+/** 开始提醒那天到 day 过了几天：开始提醒那天 = 过期日期往前 lead 天（照原来先算出日期字符串再折成天数，日期出界时同样报错） */
+function sinceAlertStart(entry: BatchDays, lead: number, dayNumber: () => number): number {
+  if (entry.alertStart === null) entry.alertStart = epochDay(addDays(entry.batch.expiryDate as string, -lead));
+  return dayNumber() - entry.alertStart;
+}
+
+/**
+ * 按天算提醒状态的准备工作：每样东西的提醒提前天数、要看的批次（有过期日期、有数量的）、库存不足的名单只算一次，
+ * 之后每一天只做整数运算。结果和逐天调 diffDays / addDays 完全一样（单测里随机造数据比对）。
+ */
+function createDayPlanner(products: PlanProduct[], settings: ReminderSettings) {
+  const repeat = positiveInt(settings.repeatEveryDays, 1);
+  let prepared: ProductDays[] | null = null;
+  let lowStock: LowStockEntry[] | null = null;
+
+  function productDays(): ProductDays[] {
+    if (prepared === null) {
+      prepared = products.map((product) => ({
+        product,
+        lead: Math.max(0, Math.floor(product.expiryLeadDays ?? settings.expiryLeadDays)),
+        batches: product.batches
+          .filter((batch) => batch.expiryDate && batch.quantity > 0)
+          .map((batch) => ({ batch, expiry: null, alertStart: null })),
+      }));
+    }
+    return prepared;
+  }
+
+  function lowStockEntries(): LowStockEntry[] {
+    if (lowStock === null) {
+      lowStock = [];
+      for (const product of products) {
+        if (product.lowStockThreshold === null || product.lowStockThreshold === undefined) continue;
+        if (product.totalQty <= product.lowStockThreshold) {
+          lowStock.push({ product, name: product.name, qty: product.totalQty, unit: product.unit });
         }
       }
-      if (mostUrgent) {
-        const entry = { ...mostUrgent, due: anyDue };
-        (entry.daysLeft < 0 ? expired : expiring).push(entry);
-      }
     }
+    return lowStock;
   }
 
-  const lowStockDue = settings.lowStockEnabled && epochDay(day) % repeat === 0;
-  if (settings.lowStockEnabled) {
-    for (const product of products) {
-      if (product.lowStockThreshold === null || product.lowStockThreshold === undefined) continue;
-      if (product.totalQty <= product.lowStockThreshold) {
-        lowStock.push({ product, name: product.name, qty: product.totalQty, unit: product.unit });
+  /** 这天是否该发通知：只看有没有一项轮到提醒，找到一项就停（不拼名单） */
+  function isDue(dayNumber: () => number): boolean {
+    if (settings.expiryEnabled) {
+      for (const { lead, batches } of productDays()) {
+        for (const entry of batches) {
+          const daysLeft = daysLeftOf(entry, dayNumber);
+          if (daysLeft > lead) continue;
+          const sinceStart = sinceAlertStart(entry, lead, dayNumber);
+          if (daysLeft === 0 || sinceStart % repeat === 0) return true;
+        }
       }
     }
+    const lowStockDue = settings.lowStockEnabled && dayNumber() % repeat === 0;
+    return lowStockDue && lowStockEntries().length > 0;
   }
 
-  expiring.sort((a, b) => a.daysLeft - b.daysLeft);
-  expired.sort((a, b) => a.daysLeft - b.daysLeft);
+  function status(day: string, dayNumber: () => number): DayStatus {
+    const expiring: ExpiryEntry[] = [];
+    const expired: ExpiryEntry[] = [];
 
-  const due =
-    expiring.some((entry) => entry.due) ||
-    expired.some((entry) => entry.due) ||
-    (lowStockDue && lowStock.length > 0);
+    if (settings.expiryEnabled) {
+      for (const { product, lead, batches } of productDays()) {
+        // 同一商品多个批次时，只保留最紧急的一条，但只要有一批轮到提醒就算轮到。
+        let urgent: { batch: PlanBatch; daysLeft: number } | null = null;
+        let anyDue = false;
+        for (const entry of batches) {
+          const daysLeft = daysLeftOf(entry, dayNumber);
+          if (daysLeft > lead) continue;
+          const sinceStart = sinceAlertStart(entry, lead, dayNumber);
+          const due = daysLeft === 0 || sinceStart % repeat === 0;
+          anyDue = anyDue || due;
+          if (!urgent || daysLeft < urgent.daysLeft) urgent = { batch: entry.batch, daysLeft };
+        }
+        if (urgent) {
+          const entry: ExpiryEntry = {
+            product,
+            name: product.name,
+            daysLeft: urgent.daysLeft,
+            expiryDate: urgent.batch.expiryDate as string,
+            quantity: urgent.batch.quantity,
+            due: anyDue,
+          };
+          (entry.daysLeft < 0 ? expired : expiring).push(entry);
+        }
+      }
+    }
 
-  return { expiring, expired, lowStock, due };
+    const lowStockDue = settings.lowStockEnabled && dayNumber() % repeat === 0;
+    // 每次给一份新的名单（调用方可能会排序），名单里的条目是同一批
+    const lowStockList = settings.lowStockEnabled ? [...lowStockEntries()] : [];
+
+    expiring.sort((a, b) => a.daysLeft - b.daysLeft);
+    expired.sort((a, b) => a.daysLeft - b.daysLeft);
+
+    const due =
+      expiring.some((entry) => entry.due) ||
+      expired.some((entry) => entry.due) ||
+      (lowStockDue && lowStockList.length > 0);
+
+    return { expiring, expired, lowStock: lowStockList, due };
+  }
+
+  return { isDue, status };
 }
 
 function formatQty(qty: number): string {
@@ -178,18 +271,36 @@ export function planReminders(
 ): PlannedReminder[] {
   const today = todayStr(now);
   const plan: PlannedReminder[] = [];
+  const planner = createDayPlanner(products, settings);
+  const warrantyCheck = createWarrantyCheck(warranties);
   for (let offset = 0; offset <= horizonDays && plan.length < maxCount; offset++) {
     const day = addDays(today, offset);
     const at = dateStrToLocalDate(day, settings.reminderHour, settings.reminderMinute);
     if (at.getTime() <= now.getTime()) continue;
-    const status = statusForDay(products, settings, day);
+    const dayNumber = lazyDayNumber(day);
+    // 先只判断这天要不要发（找到一项就停），要发才拼名单（先拼名单再看保修，和原来逐项算的先后一样）
+    const status = planner.isDue(dayNumber) ? planner.status(day, dayNumber) : null;
     // 保修提醒跟着「到期提醒」开关走
-    const warrantyNames = settings.expiryEnabled ? warrantyDueOn(warranties, day) : [];
-    if (!status.due && !warrantyNames.length) continue;
-    const { title, body } = buildMessage(status, warrantyNames);
+    const warrantyNames = settings.expiryEnabled ? warrantyCheck(dayNumber) : [];
+    if (!status && !warrantyNames.length) continue;
+    const { title, body } = buildMessage(status ?? planner.status(day, dayNumber), warrantyNames);
     plan.push({ day, at, title, body });
   }
   return plan;
+}
+
+/**
+ * 用 now 排出来的提醒（planReminders、backupReminder.ts 的 planBackupReminders），到哪个时刻之前都不会变（毫秒时间戳）：
+ * 这两个计划只跟「今天是哪天」和「各天的提醒时刻过了没有」有关。提醒时刻是正常的时、分时，今天的提醒时刻还没到就是那个时刻，
+ * 过了就是明天零点（明天以后的提醒时刻都在明天零点之后）。时、分不正常（导入了坏设置）返回 null，表示别缓存。
+ */
+export function planUnchangedUntil(now: Date, time: { reminderHour: number; reminderMinute: number }): number | null {
+  const { reminderHour: hour, reminderMinute: minute } = time;
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23 || !Number.isInteger(minute) || minute < 0 || minute > 59) return null;
+  const today = todayStr(now);
+  const todayAt = dateStrToLocalDate(today, hour, minute).getTime();
+  if (todayAt > now.getTime()) return todayAt;
+  return dateStrToLocalDate(addDays(today, 1)).getTime();
 }
 
 /** 一个场景排好的提醒：物品（到期、库存、保修）的汇总通知和备份提醒分开放，合并时同类的才合成一条 */

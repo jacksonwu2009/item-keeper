@@ -14,6 +14,7 @@ import {
   ITEM_REMINDER_SLOTS_PER_SCENE,
   mergeScenePlans,
   planReminders,
+  planUnchangedUntil,
   type PlanProduct,
   type PlannedReminder,
   type PlanWarranty,
@@ -161,6 +162,22 @@ async function loadOtherSceneInputs(databaseName: string, scene: Scene): Promise
   return inputs;
 }
 
+/**
+ * 另一个场景排好的提醒：输入还是同一份（otherCache 没换）、还没到计划会变的时刻（planUnchangedUntil），直接用上次排的。
+ * 每次重排都只有当前场景要重新算。
+ */
+let otherPlanCache: { inputs: SceneInputs; from: number; until: number; plan: ScenePlan } | null = null;
+
+function planOtherScene(scene: Scene, inputs: SceneInputs, now: Date): ScenePlan {
+  const time = now.getTime();
+  const cached = otherPlanCache;
+  if (cached && cached.inputs === inputs && time >= cached.from && time < cached.until) return cached.plan;
+  const plan = planScene(scene, inputs, now);
+  const until = planUnchangedUntil(now, inputs.settings);
+  otherPlanCache = until === null ? null : { inputs, from: time, until, plan };
+  return plan;
+}
+
 function planScene(scene: Scene, inputs: SceneInputs, now: Date): ScenePlan {
   const { settings } = inputs;
   return {
@@ -191,7 +208,7 @@ async function rescheduleNow(db: SQLiteDatabase): Promise<PlannedReminder[]> {
   if (otherName) {
     // 另一个库读不出来时只排当前场景的，别让当前场景的提醒也发不出去
     const inputs = await loadOtherSceneInputs(otherName, other).catch(() => null);
-    if (inputs) plans.push(planScene(other, inputs, now));
+    if (inputs) plans.push(planOtherScene(other, inputs, now));
   }
   const plan = mergeScenePlans(plans);
   const permission = await getPermissionState();

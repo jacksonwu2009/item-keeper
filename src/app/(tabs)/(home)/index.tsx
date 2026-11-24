@@ -34,7 +34,16 @@ import {
   warrantySoonDevices,
   type ReminderGroup,
 } from '../../../lib/reminderList';
-import { planReminders, statusForDay, type ExpiryEntry, type PlanProduct, type PlanWarranty } from '../../../lib/reminderPlan';
+import {
+  planReminders,
+  statusForDay,
+  type DayStatus,
+  type ExpiryEntry,
+  type LowStockEntry,
+  type PlannedReminder,
+  type PlanProduct,
+  type PlanWarranty,
+} from '../../../lib/reminderPlan';
 import { makeStyles, useColors } from '../../../hooks/useTheme';
 import { font, radius } from '../../../theme';
 
@@ -55,6 +64,21 @@ function openGroup(group: ReminderGroup) {
 function openBorrowedDevices() {
   router.navigate({ pathname: '/devices', params: { view: 'person', at: String(Date.now()) } });
 }
+
+/** 还没读到数据时：没有要提醒的 */
+const EMPTY_PLAN: {
+  today: string;
+  status: DayStatus;
+  lowStock: LowStockEntry[];
+  nextReminder: PlannedReminder | null;
+  warrantySoon: { device: DeviceSummary; daysLeft: number }[];
+} = {
+  today: todayStr(),
+  status: { expiring: [], expired: [], lowStock: [], due: false },
+  lowStock: [],
+  nextReminder: null,
+  warrantySoon: [],
+};
 
 export default function RemindersScreen() {
   const colors = useColors();
@@ -79,7 +103,19 @@ export default function RemindersScreen() {
       getLastExportAt(db),
       getDataSince(db),
     ]);
-    return { settings, products, active, devices, warranties, permission, lastExportAt, dataSince };
+    // 提醒状态、下次提醒在读完数据时算好（不是每次渲染都排一遍 60 天的计划）；回到前台、数据变了都会重读重算
+    const now = new Date();
+    const today = todayStr(now);
+    // 提醒页总是把该注意的都列出来，不受「关闭某类提醒」影响
+    const status = statusForDay(products, { ...settings, expiryEnabled: true, lowStockEnabled: true }, today);
+    const plan = {
+      today,
+      status,
+      lowStock: sortLowStock(status.lowStock),
+      nextReminder: planReminders(products, settings, now, 60, 1, warranties)[0] ?? null,
+      warrantySoon: home ? warrantySoonDevices(devices, today) : [],
+    };
+    return { settings, products, active, devices, warranties, permission, lastExportAt, dataSince, plan };
   }, [db, officeFilter, home]);
   const [data, reload, loaded] = useFocusData(loader, {
     settings: DEFAULT_SETTINGS,
@@ -90,8 +126,10 @@ export default function RemindersScreen() {
     permission: 'granted' as PermissionState,
     lastExportAt: null as string | null,
     dataSince: null as string | null,
+    plan: EMPTY_PLAN,
   });
   const { settings, products, active, permission } = data;
+  const { today, status, lowStock, nextReminder, warrantySoon } = data.plan;
 
   const now = new Date();
   const backup = backupStatus({
@@ -100,12 +138,6 @@ export default function RemindersScreen() {
     reminderDays: settings.backupReminderDays,
     now,
   });
-  const today = todayStr(now);
-  // 提醒页总是把该注意的都列出来，不受「关闭某类提醒」影响
-  const status = statusForDay(products, { ...settings, expiryEnabled: true, lowStockEnabled: true }, today);
-  const nextReminder = planReminders(products, settings, now, 60, 1, data.warranties)[0] ?? null;
-  const warrantySoon = home ? warrantySoonDevices(data.devices, today) : [];
-  const lowStock = sortLowStock(status.lowStock);
   const attention = status.expired.length + status.expiring.length + status.lowStock.length + warrantySoon.length;
 
   async function enableNotifications() {
