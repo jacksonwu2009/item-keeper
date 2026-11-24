@@ -192,6 +192,11 @@ export async function listStocktakeItems(db: SQLiteDatabase, stocktakeId: number
   return rows.map(toItem);
 }
 
+/** 读盘点单里的一项（和 listStocktakeItems 里的同一个样子）：记完一项只重读这一项 */
+export async function getStocktakeItem(db: SQLiteDatabase, itemId: number): Promise<StocktakeItem | null> {
+  return getItem(db, itemId);
+}
+
 async function getItem(db: SQLiteDatabase, itemId: number): Promise<StocktakeItem | null> {
   const row = await db.getFirstAsync<ItemRow>(
     `SELECT ${itemColumns()} FROM stocktake_item i WHERE i.id = ?`,

@@ -9,9 +9,14 @@ import { subscribeDataChanged } from '../lib/dataEvents';
  * 预先建好、还没显示过的页面（手机上五个标签页启动时一起建好）挂上时先读一次，切过去时数据已经在；显示出来时照常再读一次。
  * 收到「数据变了」时只有在前台的页面马上重读；不在前台的（别的标签页、被上面一页盖住的）先不读，
  * 回到前台时本来就会重读一次（等于回到前台才读），不用每个已挂上的页面都跟着全量读一遍。
- * 返回 [数据, 手动刷新]。loader 需要用 useCallback 包好。
+ * 返回 [数据, 手动刷新, 读到过没有, 局部更新]。loader 需要用 useCallback 包好。
+ * 局部更新：页面自己改了一小块（比如盘点页记了一项，只重读那一项）时用，按上一份数据算出新的一份；
+ * 这时还在读的整页数据（读的可能是改之前的）作废，不会盖掉刚改的。
  */
-export function useFocusData<T>(loader: () => Promise<T>, initial: T): [T, () => Promise<void>, boolean] {
+export function useFocusData<T>(
+  loader: () => Promise<T>,
+  initial: T,
+): [T, () => Promise<void>, boolean, (update: (previous: T) => T) => void] {
   const [data, setData] = useState<T>(initial);
   const [loaded, setLoaded] = useState(false);
   const generation = useRef(0);
@@ -27,6 +32,11 @@ export function useFocusData<T>(loader: () => Promise<T>, initial: T): [T, () =>
       setLoaded(true);
     });
   }, [loader]);
+
+  const update = useCallback((change: (previous: T) => T) => {
+    generation.current += 1;
+    setData(change);
+  }, []);
 
   // 挂上时不在前台（预先建好的标签页）：先读一次。在前台的交给下面的 useFocusEffect，不重复读
   useEffect(() => {
@@ -51,5 +61,5 @@ export function useFocusData<T>(loader: () => Promise<T>, initial: T): [T, () =>
     [navigation, reload],
   );
 
-  return [data, reload, loaded];
+  return [data, reload, loaded, update];
 }

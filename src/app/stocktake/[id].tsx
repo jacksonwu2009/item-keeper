@@ -1,7 +1,7 @@
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useCallback, useRef, useState } from 'react';
-import { Alert, View } from 'react-native';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { Alert, SectionList, View, type SectionListRenderItem } from 'react-native';
 import { Text } from '../../components/Text';
 
 import { CardList, CardListRow, RowChip, useCardListStyles } from '../../components/CardList';
@@ -28,6 +28,7 @@ import {
   findStocktakeItemByCode,
   finishStocktake,
   getStocktake,
+  getStocktakeItem,
   listStocktakeItems,
   recordCount,
   type Stocktake,
@@ -59,9 +60,10 @@ import {
   summarizeCounts,
   type CountState,
   type ItemFilter,
+  type StocktakeKind,
 } from '../../lib/stocktake';
 import { makeStyles, useColors } from '../../hooks/useTheme';
-import { font } from '../../theme';
+import { font, radius } from '../../theme';
 
 const STATE_TONE: Record<CountState, Tone> = {
   uncounted: 'neutral',
@@ -77,6 +79,9 @@ const FILTERS: { value: ItemFilter; label: string }[] = [
 ];
 
 type CountTarget = { itemId: number; unit: string | null };
+
+/** 列表里的一组（按分类）：SectionList 只画屏幕上看得见的几行，几千项也不卡 */
+type ItemSection = { kind: StocktakeKind; title: string; data: StocktakeItem[] };
 
 export default function StocktakeScreen() {
   const pageStyles = usePageStyles();
@@ -106,12 +111,52 @@ export default function StocktakeScreen() {
     }
     return { stocktake, items, packsByProduct };
   }, [db, stocktakeId]);
-  const [data, reload, loaded] = useFocusData(loader, {
+  const [data, reload, loaded, updateData] = useFocusData(loader, {
     stocktake: null as Stocktake | null,
     items: [] as StocktakeItem[],
     packsByProduct: new Map<number, PackUnit[]>(),
   });
   const { stocktake, items, packsByProduct } = data;
+
+  /** 记数、改回未盘以后只重读这一项，换掉列表里的那一项（别的项还是原来的对象，那些行不用重画） */
+  const refreshItem = useCallback(
+    async (itemId: number) => {
+      const fresh = await getStocktakeItem(db, itemId);
+      updateData((previous) => ({
+        ...previous,
+        items: fresh
+          ? previous.items.map((item) => (item.id === itemId ? fresh : item))
+          : previous.items.filter((item) => item.id !== itemId),
+      }));
+    },
+    [db, updateData],
+  );
+
+  const summary = useMemo(() => summarizeCounts(items), [items]);
+  // 搜索、筛选都在内存里做，不重读
+  const sections = useMemo<ItemSection[]>(() => {
+    const visible = items.filter((item) => matchesFilter(item, filter) && matchesKeyword(item, keyword));
+    return STOCKTAKE_KINDS.map((kind) => {
+      const group = visible.filter((item) => item.kind === kind);
+      return { kind, title: `${STOCKTAKE_KIND_LABEL[kind]}（${group.length}）`, data: group };
+    }).filter((section) => section.data.length > 0);
+  }, [items, filter, keyword]);
+
+  const openItem = useCallback((item: StocktakeItem) => {
+    setMessage(null);
+    if (item.absence) {
+      Alert.alert(item.name, `${absenceLabel(item.absence)}，不用盘。`);
+      return;
+    }
+    setCountTarget({ itemId: item.id, unit: null });
+  }, []);
+
+  const renderItem = useCallback<SectionListRenderItem<StocktakeItem, ItemSection>>(
+    ({ item, index, section }) => (
+      <ItemRow item={item} first={index === 0} last={index === section.data.length - 1} onOpen={openItem} />
+    ),
+    [openItem],
+  );
 
   // 从扫码页回来：找到这一项就打开清点面板
   useFocusEffect(
@@ -137,7 +182,6 @@ export default function StocktakeScreen() {
     );
   }
 
-  const summary = summarizeCounts(items);
   const officeLabel = office.multiple ? office.officeName(stocktake.officeId) : null;
   const scopeText = [officeLabel, describeKinds(stocktake.kinds)].filter(Boolean).join(' · ');
 
@@ -145,13 +189,12 @@ export default function StocktakeScreen() {
     return <ResultView stocktake={stocktake} items={items} scopeText={scopeText} officeLabel={officeLabel} />;
   }
 
-  const visible = items.filter((item) => matchesFilter(item, filter) && matchesKeyword(item, keyword));
   const counting = countTarget ? (items.find((item) => item.id === countTarget.itemId) ?? null) : null;
 
   async function saveCount(itemId: number, countedQty: number) {
     await recordCount(db, itemId, countedQty);
     setCountTarget(null);
-    await reload();
+    await refreshItem(itemId);
   }
 
   /** 完成、放弃都走这里：同一时间只跑一个，跑的时候两个按钮都不能点 */
@@ -215,92 +258,86 @@ export default function StocktakeScreen() {
     ]);
   }
 
+  const header = (
+    <View style={pageStyles.header}>
+      <Card style={pageStyles.summary}>
+        <Text style={pageStyles.meta}>
+          {scopeText} · {formatDateTime(stocktake.startedAt)} 开始
+        </Text>
+        <Text style={pageStyles.progress}>
+          已盘 {summary.counted} / 共 {summary.total}
+        </Text>
+        <View style={pageStyles.bar} accessibilityLabel={`已盘 ${summary.counted} 项，共 ${summary.total} 项`}>
+          <View
+            style={[
+              pageStyles.barFill,
+              { width: `${summary.total ? Math.round((summary.counted / summary.total) * 100) : 0}%` },
+            ]}
+          />
+        </View>
+        <View style={pageStyles.chips}>
+          {summary.surplus > 0 ? <Chip text={`盘盈 ${summary.surplus}`} tone="info" /> : null}
+          {summary.deficit > 0 ? <Chip text={`盘亏 ${summary.deficit}`} tone="danger" /> : null}
+          {summary.match > 0 ? <Chip text={`相符 ${summary.match}`} tone="ok" /> : null}
+        </View>
+        {message ? <Text style={pageStyles.message}>{message}</Text> : null}
+      </Card>
+
+      <ChoiceChips options={FILTERS} value={filter} onChange={setFilter} />
+      {/* 照鸿蒙版：扫码是搜索框右边的条码图标 */}
+      <ScanSearchField
+        value={keyword}
+        onChangeText={setKeyword}
+        placeholder="搜名称、条码、序列号"
+        returnKeyType="search"
+        scanLabel="扫码找物品"
+        onScan={() => {
+          setMessage(null);
+          router.push({ pathname: '/scan', params: { target: scanTarget } });
+        }}
+      />
+
+      {sections.length === 0 ? (
+        <Card>
+          <Text style={pageStyles.sub}>
+            {filter === 'uncounted' && !keyword ? '都盘完了，可以点下面的「完成盘点」。' : '没有符合条件的。'}
+          </Text>
+        </Card>
+      ) : null}
+    </View>
+  );
+
+  const footer = (
+    <View style={pageStyles.actions}>
+      <Button
+        title="完成盘点"
+        icon="checkmark-done-outline"
+        loading={busy}
+        disabled={busy}
+        onPress={confirmFinish}
+      />
+      <Button title="放弃这次盘点" variant="ghost" disabled={busy} onPress={confirmCancel} />
+    </View>
+  );
+
   return (
     <View style={pageStyles.screen}>
       <Stack.Screen options={{ title: '盘点' }} />
-      <Screen>
-        <Card style={pageStyles.summary}>
-          <Text style={pageStyles.meta}>
-            {scopeText} · {formatDateTime(stocktake.startedAt)} 开始
-          </Text>
-          <Text style={pageStyles.progress}>
-            已盘 {summary.counted} / 共 {summary.total}
-          </Text>
-          <View style={pageStyles.bar} accessibilityLabel={`已盘 ${summary.counted} 项，共 ${summary.total} 项`}>
-            <View
-              style={[
-                pageStyles.barFill,
-                { width: `${summary.total ? Math.round((summary.counted / summary.total) * 100) : 0}%` },
-              ]}
-            />
-          </View>
-          <View style={pageStyles.chips}>
-            {summary.surplus > 0 ? <Chip text={`盘盈 ${summary.surplus}`} tone="info" /> : null}
-            {summary.deficit > 0 ? <Chip text={`盘亏 ${summary.deficit}`} tone="danger" /> : null}
-            {summary.match > 0 ? <Chip text={`相符 ${summary.match}`} tone="ok" /> : null}
-          </View>
-          {message ? <Text style={pageStyles.message}>{message}</Text> : null}
-        </Card>
-
-        <ChoiceChips options={FILTERS} value={filter} onChange={setFilter} />
-        {/* 照鸿蒙版：扫码是搜索框右边的条码图标 */}
-        <ScanSearchField
-          value={keyword}
-          onChangeText={setKeyword}
-          placeholder="搜名称、条码、序列号"
-          returnKeyType="search"
-          scanLabel="扫码找物品"
-          onScan={() => {
-            setMessage(null);
-            router.push({ pathname: '/scan', params: { target: scanTarget } });
-          }}
-        />
-
-        {visible.length === 0 ? (
-          <Card>
-            <Text style={pageStyles.sub}>
-              {filter === 'uncounted' && !keyword ? '都盘完了，可以点下面的「完成盘点」。' : '没有符合条件的。'}
-            </Text>
-          </Card>
-        ) : (
-          STOCKTAKE_KINDS.filter((kind) => visible.some((item) => item.kind === kind)).map((kind) => {
-            const group = visible.filter((item) => item.kind === kind);
-            return (
-              <View key={kind} style={pageStyles.group}>
-                <SectionTitle title={`${STOCKTAKE_KIND_LABEL[kind]}（${group.length}）`} />
-                <CardList>
-                  {group.map((item, index) => (
-                    <ItemRow
-                      key={item.id}
-                      item={item}
-                      first={index === 0}
-                      onPress={() => {
-                        setMessage(null);
-                        if (item.absence) {
-                          Alert.alert(item.name, `${absenceLabel(item.absence)}，不用盘。`);
-                          return;
-                        }
-                        setCountTarget({ itemId: item.id, unit: null });
-                      }}
-                    />
-                  ))}
-                </CardList>
-              </View>
-            );
-          })
-        )}
-
-        <View style={pageStyles.actions}>
-          <Button
-            title="完成盘点"
-            icon="checkmark-done-outline"
-            loading={busy}
-            disabled={busy}
-            onPress={confirmFinish}
-          />
-          <Button title="放弃这次盘点" variant="ghost" disabled={busy} onPress={confirmCancel} />
-        </View>
-      </Screen>
+      {/* 几千项时只画看得见的几行：按分类分组的 SectionList，每行是 memo 的 ItemRow */}
+      <SectionList
+        style={pageStyles.screen}
+        contentContainerStyle={pageStyles.listContent}
+        sections={sections}
+        keyExtractor={itemKey}
+        renderItem={renderItem}
+        renderSectionHeader={renderSectionHeader}
+        ListHeaderComponent={header}
+        ListFooterComponent={footer}
+        stickySectionHeadersEnabled={false}
+        keyboardShouldPersistTaps="handled"
+        initialNumToRender={20}
+        windowSize={11}
+      />
 
       {counting ? (
         <CountSheet
@@ -316,7 +353,7 @@ export default function StocktakeScreen() {
           onClear={async () => {
             await clearCount(db, counting.id);
             setCountTarget(null);
-            await reload();
+            await refreshItem(counting.id);
           }}
         />
       ) : null}
@@ -324,7 +361,39 @@ export default function StocktakeScreen() {
   );
 }
 
-function ItemRow({ item, first, onPress }: { item: StocktakeItem; first: boolean; onPress: () => void }) {
+function itemKey(item: StocktakeItem): string {
+  return String(item.id);
+}
+
+function renderSectionHeader({ section }: { section: ItemSection }) {
+  return <SectionHeader title={section.title} />;
+}
+
+/** 分组小标题：和原来一样离上面 16、离下面的卡片 8（SectionTitle 自己带上 8、下 -8 的外边距） */
+function SectionHeader({ title }: { title: string }) {
+  const pageStyles = usePageStyles();
+  return (
+    <View style={pageStyles.sectionHeader}>
+      <SectionTitle title={title} />
+    </View>
+  );
+}
+
+/**
+ * 一行：一组里的第一行、最后一行分别带上、下圆角，一组连起来就是原来那张列表卡片（CardList）。
+ * memo：记一项只换掉那一项的对象，别的行参数没变不重画；onOpen 是页面里不变的函数，点的时候把这一项传回去。
+ */
+const ItemRow = memo(function ItemRow({
+  item,
+  first,
+  last,
+  onOpen,
+}: {
+  item: StocktakeItem;
+  first: boolean;
+  last: boolean;
+  onOpen: (item: StocktakeItem) => void;
+}) {
   const pageStyles = usePageStyles();
   const cardListStyles = useCardListStyles();
   const state = countState(item);
@@ -333,23 +402,25 @@ function ItemRow({ item, first, onPress }: { item: StocktakeItem; first: boolean
       ? `账面 ${formatQty(item.bookQty)} ${item.unit}`
       : `清点时账面 ${formatQty(item.expectedQty ?? 0)}，实盘 ${formatQty(item.countedQty)} ${item.unit}`;
   return (
-    <CardListRow
-      first={first}
-      onPress={onPress}
-      accessibilityLabel={`${item.name}，${detail}，${describeDifference(item, item.unit)}`}
-    >
-      <View style={cardListStyles.main}>
-        <Text style={pageStyles.rowTitle} numberOfLines={2}>
-          {item.name}
-        </Text>
-        <Text style={item.absence ? pageStyles.note : pageStyles.sub}>
-          {item.absence ? absenceLabel(item.absence) : detail}
-        </Text>
-      </View>
-      <RowChip text={describeDifference(item, item.unit)} tone={STATE_TONE[state]} />
-    </CardListRow>
+    <View style={[pageStyles.rowCard, first && pageStyles.rowCardFirst, last && pageStyles.rowCardLast]}>
+      <CardListRow
+        first={first}
+        onPress={() => onOpen(item)}
+        accessibilityLabel={`${item.name}，${detail}，${describeDifference(item, item.unit)}`}
+      >
+        <View style={cardListStyles.main}>
+          <Text style={pageStyles.rowTitle} numberOfLines={2}>
+            {item.name}
+          </Text>
+          <Text style={item.absence ? pageStyles.note : pageStyles.sub}>
+            {item.absence ? absenceLabel(item.absence) : detail}
+          </Text>
+        </View>
+        <RowChip text={describeDifference(item, item.unit)} tone={STATE_TONE[state]} />
+      </CardListRow>
+    </View>
   );
-}
+});
 
 function CountSheet({
   item,
@@ -596,15 +667,22 @@ const usePageStyles = makeStyles((colors) => ({
   barFill: { height: 6, borderRadius: 3, backgroundColor: colors.accent },
   chips: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   message: { fontSize: font.small, color: colors.ok, fontWeight: '500' },
-  // 分组小标题自己带「上 8、下 -8」的外边距（贴近下面的卡片），组里按 16 排，标题和卡片之间就是 8
-  group: { gap: 16 },
+  // 列表：和原来的 Screen 一样四周留 16、底下留 40；页头里的卡片、筛选、搜索框之间隔 16
+  listContent: { padding: 16, paddingBottom: 40 },
+  header: { gap: 16 },
+  // 分组小标题自己带「上 8、下 -8」的外边距（贴近下面的卡片），上下各留 16：离上面 24、离卡片 8，和原来一样
+  sectionHeader: { paddingTop: 16, paddingBottom: 16 },
+  // 一组的各行连成一张列表卡片（CardList 的样子）：第一行上圆角、最后一行下圆角
+  rowCard: { backgroundColor: colors.surface, overflow: 'hidden' },
+  rowCardFirst: { borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg },
+  rowCardLast: { borderBottomLeftRadius: radius.lg, borderBottomRightRadius: radius.lg },
   rowTitle: { fontSize: font.body, fontWeight: '500', color: colors.ink },
   // 差异行可能多一行说明：顶上对齐，上下多留一点
   differenceRow: { alignItems: 'flex-start', paddingVertical: 12 },
   sub: { fontSize: font.small, color: colors.muted, lineHeight: 19 },
   note: { fontSize: font.small, color: colors.warn },
   warn: { fontSize: font.small, color: colors.warn, lineHeight: 19 },
-  actions: { gap: 8 },
+  actions: { gap: 8, paddingTop: 16 },
   tiles: { flexDirection: 'row' },
   tile: { flex: 1, minWidth: 0, alignItems: 'center', gap: 2, paddingVertical: 8 },
   tileValue: { fontSize: font.title, fontWeight: '700', fontVariant: ['tabular-nums'] },
