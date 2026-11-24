@@ -578,8 +578,10 @@ const useReportStyles = makeStyles((colors) => ({
     borderTopLeftRadius: radius.lg,
     borderTopRightRadius: radius.lg,
   },
-  detailRow: { backgroundColor: colors.surface, paddingHorizontal: 16 },
+  // 列表里每行各自排版，高度不是整像素时两行之间会漏出一条 1 像素的底色：每行（和卡片下沿）往上叠一像素盖住
+  detailRow: { backgroundColor: colors.surface, paddingHorizontal: 16, marginTop: -StyleSheet.hairlineWidth },
   detailCardBottom: {
+    marginTop: -StyleSheet.hairlineWidth,
     backgroundColor: colors.surface,
     borderBottomLeftRadius: radius.lg,
     borderBottomRightRadius: radius.lg,

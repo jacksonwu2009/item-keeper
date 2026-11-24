@@ -1,7 +1,7 @@
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { memo, useCallback, useMemo, useRef, useState } from 'react';
-import { Alert, SectionList, View, type SectionListRenderItem } from 'react-native';
+import { Alert, SectionList, StyleSheet, View, type SectionListRenderItem } from 'react-native';
 import { Text } from '../../components/Text';
 
 import { CardList, CardListRow, RowChip, useCardListStyles } from '../../components/CardList';
@@ -402,7 +402,7 @@ const ItemRow = memo(function ItemRow({
       ? `账面 ${formatQty(item.bookQty)} ${item.unit}`
       : `清点时账面 ${formatQty(item.expectedQty ?? 0)}，实盘 ${formatQty(item.countedQty)} ${item.unit}`;
   return (
-    <View style={[pageStyles.rowCard, first && pageStyles.rowCardFirst, last && pageStyles.rowCardLast]}>
+    <View style={[pageStyles.rowCard, first ? pageStyles.rowCardFirst : pageStyles.rowCardJoined, last && pageStyles.rowCardLast]}>
       <CardListRow
         first={first}
         onPress={() => onOpen(item)}
@@ -675,6 +675,8 @@ const usePageStyles = makeStyles((colors) => ({
   // 一组的各行连成一张列表卡片（CardList 的样子）：第一行上圆角、最后一行下圆角
   rowCard: { backgroundColor: colors.surface, overflow: 'hidden' },
   rowCardFirst: { borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg },
+  // 列表里每行各自排版，高度不是整像素时两行之间会漏出一条 1 像素的底色：后一行往上叠一像素盖住
+  rowCardJoined: { marginTop: -StyleSheet.hairlineWidth },
   rowCardLast: { borderBottomLeftRadius: radius.lg, borderBottomRightRadius: radius.lg },
   rowTitle: { fontSize: font.body, fontWeight: '500', color: colors.ink },
   // 差异行可能多一行说明：顶上对齐，上下多留一点
