@@ -1,7 +1,8 @@
 import { router, Stack } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
+import { Text } from '../../components/Text';
 
 import { CardList, CardListRow, RowChip, useCardListStyles } from '../../components/CardList';
 import { Button, Card, ChoiceChips, Empty, Label, MultiChips, Screen, SectionTitle, Sheet } from '../../components/ui';

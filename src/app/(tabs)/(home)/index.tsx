@@ -2,7 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback } from 'react';
-import { Linking, Pressable, Text, useWindowDimensions, View } from 'react-native';
+import { Linking, Pressable, useWindowDimensions, View } from 'react-native';
+import { Text } from '../../../components/Text';
 
 import { ReminderCard, ReminderMoreRow, ReminderRow } from '../../../components/ReminderRows';
 import { Button, Card, Screen, SectionTitle, toneColors, type IconName, type Tone } from '../../../components/ui';

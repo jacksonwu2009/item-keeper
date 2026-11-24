@@ -3,7 +3,8 @@ import Constants from 'expo-constants';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
 import { router } from 'expo-router';
-import { Linking, Text, View } from 'react-native';
+import { Linking, View } from 'react-native';
+import { Text } from '../../../components/Text';
 
 import { describeLastExport } from '../../../components/BackupManager';
 import { ColorModeOptions } from '../../../components/ColorModeOptions';

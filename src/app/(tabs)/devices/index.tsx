@@ -2,7 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, SectionList, Text, View } from 'react-native';
+import { Pressable, SectionList, View } from 'react-native';
+import { Text } from '../../../components/Text';
 
 import { SwipeRow, UndoBar } from '../../../components/SwipeRow';
 import { Chip, ChoiceChips, Empty, LARGE_TITLE_SCROLL_INSET, LIST_PRESS_DELAY, ListActions, SearchField, Segmented } from '../../../components/ui';

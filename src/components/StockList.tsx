@@ -2,7 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useMemo, useState } from 'react';
-import { FlatList, ScrollView, Text, View } from 'react-native';
+import { FlatList, ScrollView, View } from 'react-native';
+import { Text } from './Text';
 
 import { DEFAULT_SETTINGS, getSettings } from '../db/settings';
 import { deleteProduct, listAllPacks, listProducts, type StockProductSummary } from '../db/stock';

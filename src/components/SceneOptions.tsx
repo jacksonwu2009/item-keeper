@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Modal, Text, View } from 'react-native';
+import { Modal, View } from 'react-native';
+import { Text } from './Text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { SCENE_DESCRIPTIONS, type Scene } from '../lib/terms';

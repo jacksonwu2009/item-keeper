@@ -1,7 +1,8 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { useState, type ReactNode } from 'react';
-import { Modal, Platform, Pressable, Text, View } from 'react-native';
+import { Modal, Platform, Pressable, View } from 'react-native';
+import { Text } from './Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { dateStrToLocalDate, formatDate, formatTime, toDateStr, todayStr } from '../lib/dates';

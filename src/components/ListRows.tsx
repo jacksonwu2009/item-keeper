@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Children, isValidElement, type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Text } from './Text';
 
 import { makeStyles, useColors } from '../hooks/useTheme';
 import { font, radius } from '../theme';

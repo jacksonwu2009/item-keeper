@@ -3,7 +3,8 @@ import { CameraView, useCameraPermissions, type CameraCapturedPicture } from 'ex
 import { File, Paths } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Image, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Linking, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Text } from './Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { prepareLabelOcrAsync, recognizeLabelAsync, type OcrLine } from '../../modules/label-ocr';

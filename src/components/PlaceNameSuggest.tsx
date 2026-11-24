@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
+import { Text } from './Text';
 
 import { locatePlace, LocateError } from '../lib/locate';
 import { suggestOfficeNames } from '../lib/placeName';

@@ -2,7 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, Stack } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState, type ReactNode } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Text } from '../components/Text';
 
 import { Button, Card, Chip, ChoiceChips, Label, LIST_PRESS_DELAY, Screen, SectionTitle, type Tone } from '../components/ui';
 import { ALL_OFFICES } from '../db/offices';

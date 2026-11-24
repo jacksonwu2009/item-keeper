@@ -1,4 +1,5 @@
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
+import { Text } from './Text';
 
 import { toBaseQty, unitOptions, type PackUnit } from '../lib/packs';
 import { formatQty, parseQty } from '../lib/stock';

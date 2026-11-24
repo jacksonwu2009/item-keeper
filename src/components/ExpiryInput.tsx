@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
+import { Text } from './Text';
 
 import { isLabelOcrAvailable } from '../../modules/label-ocr';
 import { expiryFromShelfLife, formatDate, todayStr, type ShelfLife, type ShelfLifeUnit } from '../lib/dates';

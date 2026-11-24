@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { Text } from './Text';
 
 import { formatDate, formatShortDate } from '../lib/dates';
 import { sanitizeNumberText } from '../lib/number';

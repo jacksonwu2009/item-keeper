@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Pressable, Text, TextInput, View, type StyleProp, type TextStyle } from 'react-native';
+import { Pressable, TextInput, View, type StyleProp, type TextStyle } from 'react-native';
+import { Text } from './Text';
 
 import type { ScanTag } from '../lib/labelScan';
 import { parseNumberText, sanitizeNumberText, stepNumberText } from '../lib/number';

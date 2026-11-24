@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
+import { Text } from './Text';
 
 import { derivePrice, storedPriceDraft, type EntryPrice, type PriceDraft } from '../lib/price';
 import { describeStockIn, enteredQtyOf, type StockInRecord } from '../lib/stockInDefaults';

@@ -1,6 +1,7 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
+import { Text } from './Text';
 
 import { DEVICE_CATEGORIES, type DeviceInput } from '../db/devices';
 import { useOffice } from '../hooks/useOffice';

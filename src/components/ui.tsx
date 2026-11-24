@@ -9,13 +9,13 @@ import {
   ScrollView,
   StyleSheet,
   Switch,
-  Text,
   TextInput,
   View,
   type StyleProp,
   type TextInputProps,
   type ViewStyle,
 } from 'react-native';
+import { Text } from './Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { ScanTag } from '../lib/labelScan';

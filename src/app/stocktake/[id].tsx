@@ -1,7 +1,8 @@
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useRef, useState } from 'react';
-import { Alert, Text, View } from 'react-native';
+import { Alert, View } from 'react-native';
+import { Text } from '../../components/Text';
 
 import { CardList, CardListRow, RowChip, useCardListStyles } from '../../components/CardList';
 import { NumberField } from '../../components/NumberField';
