@@ -232,7 +232,7 @@ export function BackupManager() {
       {/* 说明放在卡片上面，和鸿蒙版的导入导出页一样 */}
       <View style={backupStyles.notes}>
         <Footnote>
-          数据只存在这台手机上。导出会生成一个文件（.json），用微信、TypeX、隔空投送等发给别的手机，对方在这里导入；换手机、备份也用它。
+          数据只存在这台手机上。导出会生成一个文件（.json），用微信、隔空投送等发给别的手机，对方在这里导入；换手机、备份也用它。
           {office.multiple ? `每个${terms.place}由一台手机负责记，定期把自己${terms.place}导出发给汇总的人，对方导入时只替换这个${terms.place}。` : ''}
           {`导出、导入、撤销都只对现在的「${SCENE_LABELS[scene]}」场景，另一个场景的数据不动。`}
         </Footnote>
