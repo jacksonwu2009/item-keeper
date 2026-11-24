@@ -13,6 +13,7 @@ import { Button } from '../components/ui';
 import { findDeviceBySerial } from '../db/devices';
 import { findByBarcode } from '../db/stock';
 import { useOffice } from '../hooks/useOffice';
+import { isProductBarcode, normalizeBarcodeInput, NOT_PRODUCT_BARCODE, PRODUCT_BARCODE_ERROR } from '../lib/barcode';
 import { parseDeviceCode } from '../lib/devicePresets';
 import { putScanResult } from '../lib/scanHandoff';
 import { isStockKind } from '../lib/stock';
@@ -22,6 +23,8 @@ import { colors, CONTENT_MAX_WIDTH, font, radius } from '../theme';
  * 几种用法：
  * - /scan?kind=food|daily：扫商品条码。认识的条码直接打开该物品（入库/出库），不认识的进新建页。
  * - /scan?target=xxx：给表单扫一个码，扫到后返回上一页。
+ * - 食品、日用品扫商品条码（不带 target 的「扫码入库」，或 mode=product 给表单扫条码、包装条码）：只认 8–14 位数字，
+ *   扫到二维码、带字母的码提示「这不是商品条码」，不填进去；手动输入不合规的在框下面提示。
  * - mode=device：扫设备序列号。只认序列号条码（苹果包装盒上的去掉前面的 S），扫到商品条码、型号编号会提示换一个；
  *   不带 target 时，登记过的序列号直接打开那台设备，没登记过的进新增页（带 template 时沿用那一台的信息）。
  */
@@ -33,16 +36,33 @@ export default function ScanScreen() {
   const kind = isStockKind(params.kind) ? params.kind : 'food';
   const target = typeof params.target === 'string' ? params.target : null;
   const deviceMode = params.mode === 'device';
+  const productMode = !deviceMode && (!target || params.mode === 'product');
   const templateId = typeof params.template === 'string' ? params.template : null;
   const [notice, setNotice] = useState<string | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [manualCode, setManualCode] = useState('');
+  const [manualError, setManualError] = useState<string | null>(null);
   const [torch, setTorch] = useState(false);
   const handled = useRef(false);
 
-  async function handleCode(raw: string, barcodeType: string | null = null) {
-    const code = raw.trim();
+  /** manual：下面手动输入的（不合规时在输入框下面提示，不在相机画面上提示） */
+  async function handleCode(raw: string, barcodeType: string | null = null, manual = false) {
+    const code = productMode ? normalizeBarcodeInput(raw) : raw.trim();
     if (!code || handled.current) return;
+    if (productMode && !isProductBarcode(code)) {
+      if (manual) {
+        setManualError(PRODUCT_BARCODE_ERROR);
+        return;
+      }
+      // 扫到的不是商品条码：提示一下，过一会儿接着扫（相机会一直报同一个码，不能马上放开）
+      handled.current = true;
+      setNotice(NOT_PRODUCT_BARCODE);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => undefined);
+      setTimeout(() => {
+        handled.current = false;
+      }, 1500);
+      return;
+    }
     handled.current = true;
 
     if (deviceMode) {
@@ -131,23 +151,28 @@ export default function ScanScreen() {
       <View style={scanStyles.manualRow}>
         <TextInput
           value={manualCode}
-          onChangeText={setManualCode}
+          onChangeText={(value) => {
+            // 商品条码只能是数字：空格输入时就去掉
+            setManualCode(productMode ? normalizeBarcodeInput(value) : value);
+            setManualError(null);
+          }}
           placeholder={deviceMode ? '例如 C02XK1ABJGH5' : '例如 6901234567892'}
           placeholderTextColor={colors.faint}
-          keyboardType={target || deviceMode ? 'default' : 'number-pad'}
+          keyboardType={productMode ? 'number-pad' : 'default'}
           autoCapitalize="characters"
-          style={scanStyles.manualInput}
+          style={[scanStyles.manualInput, manualError ? scanStyles.manualInputError : null]}
           returnKeyType="done"
-          onSubmitEditing={() => handleCode(manualCode)}
+          onSubmitEditing={() => handleCode(manualCode, null, true)}
         />
         <Button
           title="确定"
           variant="secondary"
-          onPress={() => handleCode(manualCode)}
+          onPress={() => handleCode(manualCode, null, true)}
           disabled={!manualCode.trim()}
           style={scanStyles.manualButton}
         />
       </View>
+      {manualError ? <Text style={scanStyles.manualError}>{manualError}</Text> : null}
       {labelEntry}
     </View>
   );
@@ -194,11 +219,11 @@ export default function ScanScreen() {
         <Text style={scanStyles.tip}>
           {deviceMode
             ? '扫包装盒标签上 Serial No. 的条码'
-            : target?.startsWith('stocktake')
-              ? '扫物品或包装上的条码，设备扫序列号'
-              : target
-                ? '对准序列号条码或二维码'
-                : '把商品条码放进框里'}
+            : productMode
+              ? '把商品条码放进框里'
+              : target?.startsWith('stocktake')
+                ? '扫物品或包装上的条码，设备扫序列号'
+                : '对准序列号条码或二维码'}
         </Text>
         {deviceMode && !notice ? (
           <Text style={scanStyles.subTip}>没有包装盒的，序列号在电脑「关于本机」里，可以在下面手动输入</Text>
@@ -266,6 +291,8 @@ const scanStyles = StyleSheet.create({
     color: colors.ink,
     fontSize: font.body,
   },
+  manualInputError: { borderWidth: 1, borderColor: colors.danger },
+  manualError: { color: colors.danger, fontSize: font.small },
   manualButton: { minHeight: 44 },
   labelEntry: {
     flexDirection: 'row',

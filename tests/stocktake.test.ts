@@ -210,7 +210,7 @@ describe('盘点（真实 SQLite）', () => {
     const db = await openDb();
     const colaId = await createProduct(
       db,
-      product({ barcode: '690', packs: [{ unit: '箱', size: 12, barcode: '1690' }] }),
+      product({ barcode: '6901234567892', packs: [{ unit: '箱', size: 12, barcode: '16901234567899' }] }),
       { quantity: 10, expiryDate: '2027-03-01' },
     );
     await stockIn(db, colaId, { quantity: 4, expiryDate: '2026-12-01' });
@@ -262,8 +262,8 @@ describe('盘点（真实 SQLite）', () => {
     const { db } = await officeWithStock();
     const id = await startStocktake(db, 1, ['food', 'devices']);
     const items = await listStocktakeItems(db, id);
-    assert.deepEqual(await findStocktakeItemByCode(db, id, '690'), { itemId: itemNamed(items, '可乐').id, packUnit: null });
-    assert.deepEqual(await findStocktakeItemByCode(db, id, ' 1690 '), { itemId: itemNamed(items, '可乐').id, packUnit: '箱' });
+    assert.deepEqual(await findStocktakeItemByCode(db, id, '6901234567892'), { itemId: itemNamed(items, '可乐').id, packUnit: null });
+    assert.deepEqual(await findStocktakeItemByCode(db, id, ' 16901234567899 '), { itemId: itemNamed(items, '可乐').id, packUnit: '箱' });
     assert.deepEqual(await findStocktakeItemByCode(db, id, 'SN-1'), { itemId: itemNamed(items, 'U2723QE').id, packUnit: null });
     assert.equal(await findStocktakeItemByCode(db, id, '999'), null);
   });

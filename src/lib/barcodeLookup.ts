@@ -4,6 +4,8 @@
  * 填过一次之后同一条码再扫就直接从本机库里认出来。
  */
 
+import { isProductBarcode } from './barcode';
+
 export type BarcodeInfo = {
   name: string | null;
   brand: string | null;
@@ -51,12 +53,9 @@ export function lookupFieldsOf(info: BarcodeInfo | null): LookupFields {
   return { name: nameWithBrand(info?.name ?? null, info?.brand ?? null), spec: info?.spec ?? '' };
 }
 
-export function looksLikeProductBarcode(code: string): boolean {
-  return /^\d{8,14}$/.test(code.trim());
-}
-
 export async function lookupBarcode(code: string, timeoutMs = 6000): Promise<BarcodeInfo | null> {
-  if (!looksLikeProductBarcode(code)) return null;
+  // 只查商品条码（8–14 位数字），别的不发出去
+  if (!isProductBarcode(code.trim())) return null;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {

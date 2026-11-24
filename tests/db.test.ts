@@ -69,15 +69,37 @@ describe('数据层（真实 SQLite）', () => {
   it('同一条码可以在不同办公点各录一份，同一办公点里不行；扫箱码能认出物品', async () => {
     const db = await openDb();
     const shanghai = await createOffice(db, '上海');
-    const packs = [{ unit: '箱', size: 24, barcode: '1690' }];
-    await createProduct(db, product({ barcode: '690', packs }), null);
-    await createProduct(db, product({ officeId: shanghai, barcode: '690', packs }), null);
-    await assert.rejects(createProduct(db, product({ name: '雪碧', barcode: '1690' }), null), /已经给「可乐」的箱用了/);
-    const match = await findByBarcode(db, '1690', shanghai);
+    const packs = [{ unit: '箱', size: 24, barcode: '16901234567899' }];
+    await createProduct(db, product({ barcode: '6901234567892', packs }), null);
+    await createProduct(db, product({ officeId: shanghai, barcode: '6901234567892', packs }), null);
+    await assert.rejects(createProduct(db, product({ name: '雪碧', barcode: '16901234567899' }), null), /已经给「可乐」的箱用了/);
+    const match = await findByBarcode(db, '16901234567899', shanghai);
     assert.equal(match?.product.officeId, shanghai);
     assert.equal(match?.pack?.unit, '箱');
     assert.equal((await listProducts(db, 'food', shanghai)).length, 1);
     assert.equal((await listProducts(db, 'food', null)).length, 2);
+  });
+
+  it('条码只能是 8–14 位数字：新建、修改都拦下（包装条码也一样），可以不填；老数据清空或改成数字就能存', async () => {
+    const db = await openDb();
+    await assert.rejects(createProduct(db, product({ barcode: '测试' }), null), /条码只能是 8–14 位数字/);
+    await assert.rejects(createProduct(db, product({ barcode: '690' }), null), /条码只能是 8–14 位数字/);
+    await assert.rejects(
+      createProduct(db, product({ barcode: '6901234567892', packs: [{ unit: '箱', size: 24, barcode: 'BOX-1' }] }), null),
+      /条码只能是 8–14 位数字/,
+    );
+    assert.equal((await listProducts(db, 'food', null)).length, 0);
+
+    const id = await createProduct(db, product({ barcode: null }), null);
+    // 改规则以前存进来的不合规条码：照常能读、能按它找到
+    await db.runAsync("UPDATE stock_product SET barcode = '测试' WHERE id = ?", [id]);
+    assert.equal((await getProduct(db, id))?.barcode, '测试');
+    assert.equal((await findByBarcode(db, '测试', 1))?.product.id, id);
+    await assert.rejects(updateProduct(db, id, product({ barcode: '测试' })), /条码只能是 8–14 位数字/);
+    await updateProduct(db, id, product({ barcode: null }));
+    assert.equal((await getProduct(db, id))?.barcode, null);
+    await updateProduct(db, id, product({ barcode: '96385074', packs: [{ unit: '箱', size: 24, barcode: '16901234567899' }] }));
+    assert.equal((await getProduct(db, id))?.barcode, '96385074');
   });
 
   it('整箱入库、按瓶出库：先扣先到期的，流水记下按什么单位', async () => {
@@ -307,13 +329,13 @@ describe('手机之间按办公点传数据（真实 SQLite）', () => {
   async function beijingPhone() {
     const db = await openDb();
     await db.runAsync("UPDATE office SET name = '北京' WHERE id = 1");
-    await createProduct(db, product({ barcode: '690' }), {
+    await createProduct(db, product({ barcode: '6901234567892' }), {
       quantity: 12,
       expiryDate: '2027-01-31',
       entry: { qty: 12, unit: '瓶' },
       price: { unitPrice: 3, totalPrice: 36 },
     });
-    await createProduct(db, product({ kind: 'daily', name: '抽纸', unit: '包', barcode: '777' }), {
+    await createProduct(db, product({ kind: 'daily', name: '抽纸', unit: '包', barcode: '6907777777770' }), {
       quantity: 10,
       expiryDate: null,
     });
@@ -340,7 +362,7 @@ describe('手机之间按办公点传数据（真实 SQLite）', () => {
 
     const hq = await openDb();
     await renameFirstOffice(hq, '总部');
-    await createProduct(hq, product({ name: '总部的咖啡', barcode: '690' }), { quantity: 2, expiryDate: null });
+    await createProduct(hq, product({ name: '总部的咖啡', barcode: '6901234567892' }), { quantity: 2, expiryDate: null });
     await replaceData(hq, file, { scope: ['food'], offices: ['北京'] });
 
     const offices = await listOffices(hq);
@@ -385,10 +407,10 @@ describe('手机之间按办公点传数据（真实 SQLite）', () => {
     const file = await collectBackup(source, ['food'], [1]);
     const hq = await openDb();
     await renameFirstOffice(hq, '北京');
-    await createProduct(hq, product({ kind: 'daily', name: '洗衣液', barcode: '690' }), { quantity: 1, expiryDate: null });
+    await createProduct(hq, product({ kind: 'daily', name: '洗衣液', barcode: '6901234567892' }), { quantity: 1, expiryDate: null });
     await assert.rejects(
       replaceData(hq, file, { scope: ['food'], offices: ['北京'] }),
-      /「北京」：条码 690 在备份的「可乐」和手机上日用品里的「洗衣液」重复/,
+      /「北京」：条码 6901234567892 在备份的「可乐」和手机上日用品里的「洗衣液」重复/,
     );
     assert.equal((await listProducts(hq, 'food', 1)).length, 0);
   });

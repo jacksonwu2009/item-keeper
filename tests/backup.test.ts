@@ -160,6 +160,17 @@ describe('备份导入校验', () => {
     assert.equal(result.data.settings.expiryLeadDays, 5);
   });
 
+  it('条码不合规（改规则以前录的）照样能导入，不拒绝整份文件', () => {
+    const data = exported();
+    data.products[0].barcode = '测试';
+    data.products[0].packs[0].barcode = 'BOX-1';
+    const result = parseBackup(JSON.stringify(data));
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.data.products[0].barcode, '测试');
+    assert.equal(result.data.products[0].packs[0].barcode, 'BOX-1');
+  });
+
   it('容忍多余字段和缺省的可选字段', () => {
     const data = exported();
     data.products[0].totalQty = 6;

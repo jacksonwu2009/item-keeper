@@ -1,5 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
+import { isProductBarcode, PRODUCT_BARCODE_ERROR } from '../lib/barcode';
 import { todayStr, type ShelfLife, type ShelfLifeUnit } from '../lib/dates';
 import type { PackUnit } from '../lib/packs';
 import { perBaseUnitPrice, roundTotalPrice, roundUnitPrice, type EntryPrice } from '../lib/price';
@@ -195,6 +196,14 @@ export async function findByBarcode(
   return owner ? { product: owner, pack: { unit: pack.unit, size: pack.size, barcode: pack.barcode } } : null;
 }
 
+/** 物品条码、包装条码要是商品条码（8–14 位数字），不是就抛出给用户看的错误；空着可以。备份导入不走这里（照旧宽松）。 */
+function assertProductBarcodes(input: StockProductInput): void {
+  for (const code of [input.barcode, ...input.packs.map((pack) => pack.barcode)]) {
+    const value = code?.trim();
+    if (value && !isProductBarcode(value)) throw new Error(PRODUCT_BARCODE_ERROR);
+  }
+}
+
 /** 物品条码和包装条码不能和同一办公点里别的物品撞；撞了抛出给用户看的错误。 */
 async function assertBarcodesFree(db: SQLiteDatabase, input: StockProductInput, selfId: number | null): Promise<void> {
   const own = [input.barcode, ...input.packs.map((pack) => pack.barcode)]
@@ -284,6 +293,7 @@ export async function createProduct(
   input: StockProductInput,
   firstBatch: BatchInput | null,
 ): Promise<number> {
+  assertProductBarcodes(input);
   await assertBarcodesFree(db, input, null);
   let productId = 0;
   await db.withTransactionAsync(async () => {
@@ -316,6 +326,7 @@ export async function createProduct(
 }
 
 export async function updateProduct(db: SQLiteDatabase, id: number, input: StockProductInput): Promise<void> {
+  assertProductBarcodes(input);
   await assertBarcodesFree(db, input, id);
   await db.withTransactionAsync(async () => {
     await db.runAsync(

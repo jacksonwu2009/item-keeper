@@ -7,14 +7,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { isLabelOcrAvailable } from '../../modules/label-ocr';
 import type { AppSettings } from '../db/settings';
 import { findByBarcode, listLocations, validShelfLife, type BarcodeMatch, type BatchInput, type StockProductInput } from '../db/stock';
-import {
-  EMPTY_LOOKUP_FIELDS,
-  lookupBarcode,
-  lookupFieldsOf,
-  looksLikeProductBarcode,
-  mergeLookupFields,
-  type LookupFields,
-} from '../lib/barcodeLookup';
+import { barcodeFieldError, isProductBarcode, normalizeBarcodeInput, PRODUCT_BARCODE_ERROR, productBarcodeError } from '../lib/barcode';
+import { EMPTY_LOOKUP_FIELDS, lookupBarcode, lookupFieldsOf, mergeLookupFields, type LookupFields } from '../lib/barcodeLookup';
 import { CATEGORIES, categoryForKind } from '../lib/categories';
 import type { ShelfLife, ShelfLifeUnit } from '../lib/dates';
 import { planExpiryFill, type ExpiryFill, type ScanTag } from '../lib/labelScan';
@@ -38,11 +32,13 @@ const SCAN_TARGET = 'stock-form-barcode';
 const PACK_SCAN_PREFIX = 'stock-form-pack-';
 const PACK_SUGGESTIONS = ['箱', '提', '包', '盒', '袋', '件'];
 
-type PackRow = { key: number; unit: string; sizeText: string; barcode: string };
+/** openedBarcode：打开表单时这个包装的条码（老数据不合规时提示要改）；barcodeTouched：离开过条码框 */
+type PackRow = { key: number; unit: string; sizeText: string; barcode: string; openedBarcode?: string; barcodeTouched?: boolean };
 
 let packRowKey = 0;
 function toPackRow(pack: PackUnit): PackRow {
-  return { key: ++packRowKey, unit: pack.unit, sizeText: formatQty(pack.size), barcode: pack.barcode ?? '' };
+  const barcode = pack.barcode ?? '';
+  return { key: ++packRowKey, unit: pack.unit, sizeText: formatQty(pack.size), barcode, openedBarcode: barcode };
 }
 
 type LookupState = 'idle' | 'loading' | 'found' | 'notfound';
@@ -125,7 +121,7 @@ export function StockProductForm({
     initial.barcode &&
     !initial.name &&
     settings.onlineLookup &&
-    looksLikeProductBarcode(initial.barcode)
+    isProductBarcode(initial.barcode)
       ? initial.barcode
       : null;
   const [lookup, setLookup] = useState<LookupState>(autoLookupCode ? 'loading' : 'idle');
@@ -141,6 +137,8 @@ export function StockProductForm({
   const [lastInEdited, setLastInEdited] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
+  // 离开过条码框：之后位数不对也提示（还在输的时候不提示）
+  const [barcodeTouched, setBarcodeTouched] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const lookedUp = useRef<string | null>(null);
   // 上一次扫码从商品库带出来的名称、规格：再扫别的条码时，没手动改过的这两项换成新查到的
@@ -173,7 +171,7 @@ export function StockProductForm({
 
   const runLookup = useCallback(
     (code: string) => {
-      if (!settings.onlineLookup || !looksLikeProductBarcode(code) || lookedUp.current === code) return;
+      if (!settings.onlineLookup || !isProductBarcode(code) || lookedUp.current === code) return;
       lookedUp.current = code;
       setLookup('loading');
       applyLookup(code).catch(() => setLookup('notfound'));
@@ -212,10 +210,11 @@ export function StockProductForm({
     };
   }, [checkLocal, confirmedCode, officeId, db, runLookup]);
 
-  /** 条码定下来了（扫到、输完）：要先查本机的去查本机，否则直接查商品库 */
+  /** 条码定下来了（扫到、输完）：要先查本机的去查本机，否则直接查商品库；不是商品条码（8–14 位数字）的不查 */
   const confirmBarcode = useCallback(
     (raw: string) => {
-      const code = raw.trim();
+      const code = normalizeBarcodeInput(raw);
+      if (!isProductBarcode(code)) return;
       if (checkLocal) setConfirmedCode(code);
       else runLookup(code);
     },
@@ -273,9 +272,13 @@ export function StockProductForm({
   const packs: PackUnit[] = packRows.map((row) => ({
     unit: row.unit.trim(),
     size: parseQty(row.sizeText) ?? Number.NaN,
-    barcode: row.barcode.trim() || null,
+    barcode: normalizeBarcodeInput(row.barcode) || null,
   }));
   const packError = validatePacks(baseUnit, packs);
+  // 各个包装的条码框下面显示的提示（规则同物品条码）
+  const packBarcodeErrors = new Map(
+    packRows.map((row) => [row.key, barcodeFieldError(row.barcode, row.openedBarcode, showErrors || !!row.barcodeTouched)]),
+  );
   const usablePacks = packError ? [] : packs;
   const baseQty = qty === null ? null : toBaseQty(qty, entryUnit, baseUnit, usablePacks) ?? qty;
   // 包装规格还在改、选的单位暂时无效时，按最小单位算（和保存时一致）
@@ -297,6 +300,8 @@ export function StockProductForm({
     shelfText.trim() === '' ? null : validShelfLife({ amount: editShelfAmount, unit: shelfUnit });
 
   const errors = {
+    barcode: productBarcodeError(barcode),
+    packBarcodes: packRows.some((row) => productBarcodeError(row.barcode)) ? PRODUCT_BARCODE_ERROR : null,
     name: name.trim() ? null : '请填写名称',
     shelfLife: !withFirstBatch && shelfText.trim() !== '' && !editShelfLife ? '请填正整数，留空表示不记' : null,
     lowStock: lowStockText.trim() !== '' && lowStockThreshold === null ? '请填数字，留空表示不提醒' : null,
@@ -321,7 +326,7 @@ export function StockProductForm({
         {
           officeId,
           kind,
-          barcode: barcode.trim() || null,
+          barcode: normalizeBarcodeInput(barcode) || null,
           name,
           category: categoryForKind(kind, category),
           spec,
@@ -414,21 +419,30 @@ export function StockProductForm({
           label="条码"
           value={barcode}
           onChangeText={(value) => {
-            setBarcode(value);
+            // 只能是数字：空格（印刷时隔开写的）输入时就去掉
+            setBarcode(normalizeBarcodeInput(value));
             setLookup('idle');
           }}
           // 离开输入框、按回车（扫码枪扫完会带回车）时查本机、商品库。网页版不支持 onEndEditing，所以用这两个
-          onBlur={() => confirmBarcode(barcode)}
-          onSubmitEditing={() => confirmBarcode(barcode)}
+          onBlur={() => {
+            setBarcodeTouched(true);
+            confirmBarcode(barcode);
+          }}
+          onSubmitEditing={() => {
+            setBarcodeTouched(true);
+            confirmBarcode(barcode);
+          }}
           placeholder="扫码或手动输入，可不填"
           keyboardType="number-pad"
+          error={barcodeFieldError(barcode, initial.barcode, showErrors || barcodeTouched)}
           right={
             <CircleIconButton
               icon="barcode-outline"
               label="扫描条码"
               tone="accent"
               size={44}
-              onPress={() => router.push({ pathname: '/scan', params: { target: SCAN_TARGET } })}
+              // mode=product：扫到的不是商品条码（二维码、带字母的码）不填进来
+              onPress={() => router.push({ pathname: '/scan', params: { target: SCAN_TARGET, mode: 'product' } })}
             />
           }
         />
@@ -562,17 +576,21 @@ export function StockProductForm({
             </View>
             <Field
               value={row.barcode}
-              onChangeText={(value) => updatePackRow(row.key, { barcode: value })}
+              onChangeText={(value) => updatePackRow(row.key, { barcode: normalizeBarcodeInput(value) })}
+              onBlur={() => updatePackRow(row.key, { barcodeTouched: true })}
               placeholder={`${row.unit || '这个包装'}的条码，可不填`}
               keyboardType="number-pad"
-              style={formStyles.packInput}
+              style={[formStyles.packInput, packBarcodeErrors.get(row.key) ? formStyles.packInputError : null]}
+              error={packBarcodeErrors.get(row.key)}
               right={
                 <CircleIconButton
                   icon="barcode-outline"
                   label="扫描包装条码"
                   tone="accent"
                   size={44}
-                  onPress={() => router.push({ pathname: '/scan', params: { target: `${PACK_SCAN_PREFIX}${row.key}` } })}
+                  onPress={() =>
+                    router.push({ pathname: '/scan', params: { target: `${PACK_SCAN_PREFIX}${row.key}`, mode: 'product' } })
+                  }
                 />
               }
             />
@@ -704,6 +722,8 @@ const formStyles = StyleSheet.create({
   packUnit: { width: 72 },
   packSize: { flex: 1, minWidth: 0 },
   packInput: { backgroundColor: colors.surface, borderColor: colors.surface },
+  // 包装条码不合规：白底输入框也要描红（上面那条把边框颜色盖成了白色）
+  packInputError: { borderColor: colors.danger },
   packAdd: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   noteInput: { minHeight: 88, textAlignVertical: 'top' },
   // 拍包装识别：入口在页面最上面（浅主色），识别完换成浅蓝一条
