@@ -306,6 +306,7 @@ export default function StockDetailScreen() {
         <SectionTitle title="信息" />
         <GroupCard>
           {office.multiple ? <InfoRow label={terms.place} value={office.officeName(product.officeId)} /> : null}
+          <InfoRow label="分类" value={[KIND_LABEL[product.kind], product.category].filter(Boolean).join(' · ')} />
           <InfoRow label="条码" value={product.barcode ?? '—'} />
           {product.spec ? <InfoRow label="规格" value={product.spec} /> : null}
           <InfoRow label="包装规格" value={packs.length ? describePacks(product.unit, packs) : '—'} />
