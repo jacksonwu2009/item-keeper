@@ -1,13 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, Stack } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useCallback, useState, type ReactNode } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { memo, useCallback, useMemo, useState, type ReactNode } from 'react';
+import { Alert, FlatList, Pressable, StyleSheet, View, type ListRenderItem } from 'react-native';
 import { Text } from '../components/Text';
 
-import { Button, Card, Chip, ChoiceChips, Label, LIST_PRESS_DELAY, Screen, SectionTitle, type Tone } from '../components/ui';
+import { Button, Card, Chip, ChoiceChips, Label, LIST_PRESS_DELAY, SectionTitle, type Tone } from '../components/ui';
 import { ALL_OFFICES } from '../db/offices';
-import { EMPTY_REPORT_SOURCE, loadReportSource } from '../db/report';
+import { EMPTY_REPORT_SOURCE, loadReportSource, type ReportSource } from '../db/report';
 import { useFocusData } from '../hooks/useFocusData';
 import { useOffice } from '../hooks/useOffice';
 import { useScene } from '../hooks/useScene';
@@ -28,15 +28,18 @@ import {
   summarizeInventory,
   summarizePurchases,
   type CsvTable,
+  type ProductDetailRow,
   type ProductRef,
   type ReportPeriodKey,
 } from '../lib/report';
-import { formatQty, KIND_LABEL, type StockKind } from '../lib/stock';
+import { formatQty, KIND_LABEL } from '../lib/stock';
 import { makeStyles, useColors } from '../hooks/useTheme';
-import { font } from '../theme';
+import { font, radius } from '../theme';
 
 /** 物品明细先显示这么多行，多了点「查看全部」 */
 const DETAIL_PREVIEW_ROWS = 30;
+/** 过期丢弃和坏了先显示这么多条，多了点「查看全部」 */
+const LOSS_PREVIEW_ROWS = 10;
 /** 领用排行先显示这么多人 */
 const HOLDER_PREVIEW_ROWS = 10;
 
@@ -49,6 +52,25 @@ function openProduct(productId: number) {
 function openDevice(deviceId: number) {
   router.push({ pathname: '/device/[id]', params: { id: String(deviceId) } });
 }
+
+/**
+ * 报表上的各项汇总：在读完数据时算一次（不是每次渲染都把几万条出入库记录算一遍），回到前台、换时间段重读时再算。
+ * 库存概况、设备按「今天」算。
+ */
+function summarizeSource(source: ReportSource, today: string) {
+  return {
+    inventory: summarizeInventory(source.products, today, source.settings.expiryLeadDays),
+    purchases: summarizePurchases(source.movements),
+    consumption: summarizeConsumption(source.movements, source.priceHistory),
+    details: productDetails(source.products, source.movements),
+    devices: summarizeDevices(source.devices, source.assignments, today),
+  };
+}
+
+const EMPTY_SUMMARY = summarizeSource(EMPTY_REPORT_SOURCE, todayStr());
+
+/** 物品明细的一行，以及要不要在它上面写分类（食品、日用品各组的第一行） */
+type DetailItem = { row: ProductDetailRow; kindTitle: boolean };
 
 /** ISO 时间按手机本地日期显示成「11月18日」 */
 function localDay(iso: string): string {
@@ -67,6 +89,7 @@ export default function ReportScreen() {
   const [periodKey, setPeriodKey] = useState<ReportPeriodKey>('thisMonth');
   const [showAllDetails, setShowAllDetails] = useState(false);
   const [showAllHolders, setShowAllHolders] = useState(false);
+  const [showAllLosses, setShowAllLosses] = useState(false);
   const [exporting, setExporting] = useState<ExportKind | null>(null);
   // 选中的办公点被删了就按全部算
   const officeFilter =
@@ -75,23 +98,24 @@ export default function ReportScreen() {
   const loader = useCallback(async () => {
     const period = periodRange(periodKey);
     const source = await loadReportSource(db, officeFilter, period);
-    return { period, source };
+    return { period, source, summary: summarizeSource(source, todayStr()) };
   }, [db, officeFilter, periodKey]);
-  const [data, , loaded] = useFocusData(loader, { period: periodRange('thisMonth'), source: EMPTY_REPORT_SOURCE });
+  const [data, , loaded] = useFocusData(loader, { period: periodRange('thisMonth'), source: EMPTY_REPORT_SOURCE, summary: EMPTY_SUMMARY });
   const { period, source } = data;
+  const { inventory, purchases, consumption, details, devices } = data.summary;
 
-  const today = todayStr();
-  const inventory = summarizeInventory(source.products, today, source.settings.expiryLeadDays);
-  const purchases = summarizePurchases(source.movements);
-  const consumption = summarizeConsumption(source.movements, source.priceHistory);
-  const details = productDetails(source.products, source.movements);
-  const devices = summarizeDevices(source.devices, source.assignments, today);
+  // 物品明细是下面那个列表的数据：先显示前 30 行，「查看全部」后几千行也只画看得见的
+  const detailItems = useMemo<DetailItem[]>(() => {
+    const visible = showAllDetails ? details : details.slice(0, DETAIL_PREVIEW_ROWS);
+    return visible.map((row, index) => ({ row, kindTitle: index === 0 || visible[index - 1].kind !== row.kind }));
+  }, [details, showAllDetails]);
   // 文件名里的办公点：选了某个办公点用它的名字；只有一个办公点时也用它的名字
   const officeLabel =
     officeFilter !== null ? office.officeName(officeFilter) : office.multiple ? null : (office.offices[0]?.name ?? null);
   const officeNameOf = (officeId: number) => source.officeNames.get(officeId) ?? '';
 
   async function exportTable(kind: ExportKind) {
+    const today = todayStr();
     let table: CsvTable;
     let fileName: string;
     if (kind === 'movements') {
@@ -120,14 +144,12 @@ export default function ReportScreen() {
 
   if (!loaded) return <Stack.Screen options={{ title: '报表' }} />;
 
-  const visibleDetails = showAllDetails ? details : details.slice(0, DETAIL_PREVIEW_ROWS);
+  const visibleLosses = showAllLosses ? consumption.losses : consumption.losses.slice(0, LOSS_PREVIEW_ROWS);
   const visibleHolders = showAllHolders ? devices.holders : devices.holders.slice(0, HOLDER_PREVIEW_ROWS);
   const periodSuffix = `（${period.label}）`;
 
-  return (
-    <Screen>
-      <Stack.Screen options={{ title: '报表' }} />
-
+  const header = (
+    <View style={reportStyles.section}>
       <Card>
         {office.multiple ? (
           <View style={reportStyles.group}>
@@ -223,7 +245,7 @@ export default function ReportScreen() {
             {consumption.losses.length ? (
               <>
                 <Text style={reportStyles.subTitle}>过期丢弃和坏了</Text>
-                {consumption.losses.map((loss) => (
+                {visibleLosses.map((loss) => (
                   <ValueRow
                     key={loss.movementId}
                     name={loss.name}
@@ -232,6 +254,14 @@ export default function ReportScreen() {
                     onPress={() => openProduct(loss.productId)}
                   />
                 ))}
+                {consumption.losses.length > LOSS_PREVIEW_ROWS ? (
+                  <Button
+                    title={showAllLosses ? '收起' : `查看全部 ${consumption.losses.length} 条`}
+                    variant="ghost"
+                    compact
+                    onPress={() => setShowAllLosses((value) => !value)}
+                  />
+                ) : null}
                 <Text style={reportStyles.hint}>
                   估算损失 {formatPrice(consumption.estimatedLossTotal)}（按出库前最近一次的进价算）
                   {consumption.unestimatedLossCount > 0
@@ -246,37 +276,35 @@ export default function ReportScreen() {
       </Card>
 
       <SectionTitle title={`物品明细${periodSuffix}`} />
-      <Card style={reportStyles.tightCard}>
-        {details.length === 0 ? (
+      {details.length === 0 ? (
+        <Card style={reportStyles.tightCard}>
           <Text style={reportStyles.muted}>还没有食品和日用品。</Text>
-        ) : (
-          <>
-            {visibleDetails.map((row, index) => {
-              const previousKind: StockKind | null = index > 0 ? visibleDetails[index - 1].kind : null;
-              return (
-                <View key={row.productId}>
-                  {row.kind !== previousKind ? <Text style={reportStyles.subTitle}>{KIND_LABEL[row.kind]}</Text> : null}
-                  <ValueRow
-                    name={row.name}
-                    detail={`入 ${formatQty(row.inQty)} · 出 ${formatQty(row.outQty)} · 现有 ${formatQty(row.currentQty)} ${row.unit}`}
-                    value={row.purchaseAmount === null ? '—' : formatPrice(row.purchaseAmount)}
-                    onPress={() => openProduct(row.productId)}
-                  />
-                </View>
-              );
-            })}
-            <Text style={reportStyles.hint}>右边是这段时间的进货金额，没填价格的显示「—」。</Text>
-            {details.length > DETAIL_PREVIEW_ROWS ? (
-              <Button
-                title={showAllDetails ? '收起' : `查看全部 ${details.length} 个`}
-                variant="ghost"
-                compact
-                onPress={() => setShowAllDetails((value) => !value)}
-              />
-            ) : null}
-          </>
-        )}
-      </Card>
+        </Card>
+      ) : (
+        // 明细卡片的上沿；明细一行一行是下面列表的数据，卡片下沿（说明、查看全部）在列表的页脚里
+        <View style={reportStyles.detailCardTop} />
+      )}
+    </View>
+  );
+
+  const footer = (
+    <View style={reportStyles.section}>
+      {details.length > 0 ? (
+        <View style={reportStyles.detailCardBottom}>
+          <Text style={reportStyles.hint}>右边是这段时间的进货金额，没填价格的显示「—」。</Text>
+          {details.length > DETAIL_PREVIEW_ROWS ? (
+            <Button
+              title={showAllDetails ? '收起' : `查看全部 ${details.length} 个`}
+              variant="ghost"
+              compact
+              onPress={() => setShowAllDetails((value) => !value)}
+            />
+          ) : null}
+        </View>
+      ) : (
+        // 没有明细时页头最后是那张「还没有」的卡片：放一个空的占位，下面的「设备」和它照样隔 16
+        <View />
+      )}
 
       <SectionTitle title="设备" />
       <Card style={reportStyles.tightCard}>
@@ -389,9 +417,50 @@ export default function ReportScreen() {
           onPress={() => exportTable('devices')}
         />
       </Card>
-    </Screen>
+    </View>
+  );
+
+  // 整页是一个列表：上面的汇总卡片是页头，物品明细一行一行是列表的数据，设备和导出是页脚。
+  // 明细「查看全部」后有几千行时，只画屏幕上看得见的几行
+  return (
+    <View style={reportStyles.screen}>
+      <Stack.Screen options={{ title: '报表' }} />
+      <FlatList
+        style={reportStyles.screen}
+        contentContainerStyle={reportStyles.listContent}
+        data={detailItems}
+        keyExtractor={detailKey}
+        renderItem={renderDetail}
+        ListHeaderComponent={header}
+        ListFooterComponent={footer}
+        initialNumToRender={DETAIL_PREVIEW_ROWS}
+        windowSize={11}
+      />
+    </View>
   );
 }
+
+function detailKey(item: DetailItem): string {
+  return String(item.row.productId);
+}
+
+const renderDetail: ListRenderItem<DetailItem> = ({ item }) => <DetailRow row={item.row} kindTitle={item.kindTitle} />;
+
+/** 物品明细的一行（白底，左右留 16，连起来是一张卡片）；memo：展开、收起时已经画好的行不重画 */
+const DetailRow = memo(function DetailRow({ row, kindTitle }: { row: ProductDetailRow; kindTitle: boolean }) {
+  const reportStyles = useReportStyles();
+  return (
+    <View style={reportStyles.detailRow}>
+      {kindTitle ? <Text style={reportStyles.subTitle}>{KIND_LABEL[row.kind]}</Text> : null}
+      <ValueRow
+        name={row.name}
+        detail={`入 ${formatQty(row.inQty)} · 出 ${formatQty(row.outQty)} · 现有 ${formatQty(row.currentQty)} ${row.unit}`}
+        value={row.purchaseAmount === null ? '—' : formatPrice(row.purchaseAmount)}
+        onPress={() => openProduct(row.productId)}
+      />
+    </View>
+  );
+});
 
 /** 一个大数字 + 下面的说明，居中（照鸿蒙版 IkBigNumber）；color 不给就是黑字 */
 function BigNumber({ label, value, color }: { label: string; value: string; color?: string }) {
@@ -498,6 +567,25 @@ function ExpandableList({ title, items, tone }: { title: string; items: ProductR
 
 // 照鸿蒙版 ReportPage：报表卡片上下留 12、左右 16，里面一行最矮 48、行上面一条分隔线；大数字居中
 const useReportStyles = makeStyles((colors) => ({
+  screen: { flex: 1, backgroundColor: colors.bg },
+  // 和原来的 Screen 一样：四周留 16、底下留 40，卡片之间隔 16
+  listContent: { padding: 16, paddingBottom: 40 },
+  section: { gap: 16 },
+  // 物品明细卡片拆成三段：上沿（圆角、上边距 12）、一行一行（左右 16）、下沿（说明、按钮，圆角、下边距 12）
+  detailCardTop: {
+    height: 12,
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+  },
+  detailRow: { backgroundColor: colors.surface, paddingHorizontal: 16 },
+  detailCardBottom: {
+    backgroundColor: colors.surface,
+    borderBottomLeftRadius: radius.lg,
+    borderBottomRightRadius: radius.lg,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+  },
   group: { gap: 8 },
   // 报表卡片里行与行紧挨着（靠分隔线隔开），说明文字上面自己留一点
   hint: { fontSize: font.small, color: colors.faint, lineHeight: 18, paddingTop: 4 },

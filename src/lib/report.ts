@@ -290,6 +290,40 @@ export function priceBefore(history: readonly PricedStockIn[], productId: number
   return latest ? perBaseUnitPrice(latest) : null;
 }
 
+type PricedEntry = { entry: PricedStockIn; order: number };
+
+/**
+ * 查「某物品在某时刻之前最近一次填了价格的入库」：先按物品分组、组里按时间排好，每次查用二分查找，
+ * 不再每条损耗都把全部进价记录从头扫一遍。结果和 priceBefore 一样：时间相同的几条取原来排在后面的那条。
+ */
+export function createPriceLookup(history: readonly PricedStockIn[]): (productId: number, beforeIso: string) => number | null {
+  const byProduct = new Map<number, PricedEntry[]>();
+  history.forEach((entry, order) => {
+    const list = byProduct.get(entry.productId);
+    if (list) list.push({ entry, order });
+    else byProduct.set(entry.productId, [{ entry, order }]);
+  });
+  // 按时间（和 priceBefore 一样直接比字符串）排，时间相同的按原来的先后
+  for (const list of byProduct.values()) {
+    list.sort((left, right) =>
+      left.entry.happenedAt < right.entry.happenedAt ? -1 : left.entry.happenedAt > right.entry.happenedAt ? 1 : left.order - right.order,
+    );
+  }
+  return (productId, beforeIso) => {
+    const list = byProduct.get(productId);
+    if (!list) return null;
+    // 找第一条晚于 beforeIso 的，它前面那条就是最近一次
+    let low = 0;
+    let high = list.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (list[middle].entry.happenedAt > beforeIso) high = middle;
+      else low = middle + 1;
+    }
+    return low === 0 ? null : perBaseUnitPrice(list[low - 1].entry);
+  };
+}
+
 export function summarizeConsumption(
   movements: readonly ReportMovement[],
   priceHistory: readonly PricedStockIn[],
@@ -298,6 +332,7 @@ export function summarizeConsumption(
   const reasonCounts = new Map<string, number>();
   const byProduct = new Map<number, ConsumptionRank>();
   const losses: LossEntry[] = [];
+  const priceAt = createPriceLookup(priceHistory);
   let stockOutCount = 0;
   for (const movement of movements) {
     if (movement.type !== 'out' || movement.delta >= 0) continue;
@@ -317,7 +352,7 @@ export function summarizeConsumption(
     rank.quantity += quantity;
     byProduct.set(movement.productId, rank);
     if (LOSS_REASONS.includes(reason)) {
-      const unitCost = priceBefore(priceHistory, movement.productId, movement.happenedAt);
+      const unitCost = priceAt(movement.productId, movement.happenedAt);
       losses.push({
         movementId: movement.id,
         productId: movement.productId,
