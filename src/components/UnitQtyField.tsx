@@ -1,8 +1,9 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { toBaseQty, unitOptions, type PackUnit } from '../lib/packs';
 import { formatQty, parseQty } from '../lib/stock';
-import { colors, font } from '../theme';
+import { makeStyles } from '../hooks/useTheme';
+import { font } from '../theme';
 import { NumberField } from './NumberField';
 import { ChoiceChips, Label } from './ui';
 
@@ -36,6 +37,7 @@ export function UnitQtyField({
   /** 最多填多少（最小单位，比如出库时的现有数）：按当前单位换算，到了上限「+」变灰 */
   max?: number;
 }) {
+  const unitStyles = useUnitStyles();
   const options = unitOptions(baseUnit, packs);
   const current = options.some((option) => option.value === unit) ? unit : baseUnit;
   const qty = parseQty(qtyText);
@@ -73,7 +75,7 @@ export function UnitQtyField({
   );
 }
 
-const unitStyles = StyleSheet.create({
+const useUnitStyles = makeStyles((colors) => ({
   wrap: { gap: 8 },
   hint: { fontSize: font.small, color: colors.faint },
-});
+}));

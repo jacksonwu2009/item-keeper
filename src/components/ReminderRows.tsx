@@ -3,11 +3,13 @@ import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { moreText } from '../lib/reminderList';
-import { colors, font } from '../theme';
+import { makeStyles, useColors } from '../hooks/useTheme';
+import { font } from '../theme';
 import { Card, Chip, LIST_PRESS_DELAY, type Tone } from './ui';
 
 /** 提醒页和「查看全部」页共用：一组列表的白卡片（不留内边距，按下的底色铺满整行） */
 export function ReminderCard({ children }: { children: ReactNode }) {
+  const rowStyles = useRowStyles();
   return <Card style={rowStyles.card}>{children}</Card>;
 }
 
@@ -26,6 +28,8 @@ export function ReminderRow({
   onPress: () => void;
 }) {
   // 分隔线单独画，左边留空、右边到头
+  const colors = useColors();
+  const rowStyles = useRowStyles();
   return (
     <>
       {first ? null : <View style={rowStyles.divider} />}
@@ -52,6 +56,8 @@ export function ReminderRow({
 
 /** 卡片最后一行「查看全部 12 样 ›」 */
 export function ReminderMoreRow({ total, onPress }: { total: number; onPress: () => void }) {
+  const colors = useColors();
+  const rowStyles = useRowStyles();
   return (
     <>
       <View style={rowStyles.divider} />
@@ -68,7 +74,7 @@ export function ReminderMoreRow({ total, onPress }: { total: number; onPress: ()
   );
 }
 
-const rowStyles = StyleSheet.create({
+const useRowStyles = makeStyles((colors) => ({
   card: { padding: 0, gap: 0, overflow: 'hidden' },
   row: {
     flexDirection: 'row',
@@ -93,4 +99,4 @@ const rowStyles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   moreText: { fontSize: font.body, color: colors.accent, fontWeight: '500' },
-});
+}));

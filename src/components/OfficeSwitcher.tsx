@@ -1,16 +1,19 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, Text, View } from 'react-native';
 
 import { ALL_OFFICES } from '../db/offices';
 import { useOffice } from '../hooks/useOffice';
 import { useTerms } from '../hooks/useScene';
-import { colors, font, radius } from '../theme';
+import { makeStyles, useColors } from '../hooks/useTheme';
+import { font, radius } from '../theme';
 import { Button, ChoiceChips, Label, Sheet } from './ui';
 
 /** 标签页右上角的办公点切换。只有一个办公点时不显示。 */
 export function OfficeSwitcher() {
+  const colors = useColors();
+  const switcherStyles = useSwitcherStyles();
   const office = useOffice();
   const terms = useTerms();
   const [open, setOpen] = useState(false);
@@ -88,6 +91,7 @@ export function OfficeSwitcher() {
 
 /** 表单里选「放在哪个办公点」。只有一个办公点时不显示。 */
 export function OfficeChooser({ value, onChange }: { value: number; onChange: (id: number) => void }) {
+  const switcherStyles = useSwitcherStyles();
   const office = useOffice();
   const terms = useTerms();
   if (!office.multiple) return null;
@@ -103,7 +107,7 @@ export function OfficeChooser({ value, onChange }: { value: number; onChange: (i
   );
 }
 
-const switcherStyles = StyleSheet.create({
+const useSwitcherStyles = makeStyles((colors) => ({
   trigger: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -135,4 +139,4 @@ const switcherStyles = StyleSheet.create({
   optionName: { fontSize: font.body, fontWeight: '600', color: colors.ink },
   optionDetail: { fontSize: font.small, color: colors.muted, marginTop: 2 },
   chooser: { gap: 8 },
-});
+}));

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { isLabelOcrAvailable } from '../../modules/label-ocr';
 import { expiryFromShelfLife, formatDate, todayStr, type ShelfLife, type ShelfLifeUnit } from '../lib/dates';
 import type { DateRole } from '../lib/labelParse';
 import { planExpiryFill, type ExpiryFill } from '../lib/labelScan';
-import { colors, font, radius } from '../theme';
+import { makeStyles } from '../hooks/useTheme';
+import { font, radius } from '../theme';
 import { DateField } from './DateField';
 import { LabelCamera, type DateScanResult } from './LabelCamera';
 import { NumberField } from './NumberField';
@@ -49,6 +50,7 @@ export function ExpiryInput({
   allowNone: boolean;
   onChange: (value: ExpiryValue) => void;
 }) {
+  const expiryStyles = useExpiryStyles();
   const [mode, setMode] = useState<ExpiryMode>(fill?.mode ?? initialMode);
   const [expiry, setExpiry] = useState<string | null>(fill ? fill.expiry : initialExpiry);
   const [productionDate, setProductionDate] = useState<string | null>(
@@ -221,7 +223,7 @@ export function ExpiryInput({
 }
 
 // 照鸿蒙版 StockInputs.ets 的 ExpiryInput：分段选填法，下面的日期、保质期上下排，间隔 12
-const expiryStyles = StyleSheet.create({
+const useExpiryStyles = makeStyles((colors) => ({
   // 「拍日期」和旁边的日期框一样高、一样的圆角，排在一起是一个整体
   scanButton: { alignSelf: 'stretch', minHeight: 44, borderRadius: radius.sm },
   wrap: { gap: 12 },
@@ -230,4 +232,4 @@ const expiryStyles = StyleSheet.create({
   note: { fontSize: font.small, color: colors.faint },
   confirmed: { fontSize: font.small, color: colors.ok, fontWeight: '600' },
   scanNote: { fontSize: font.small, color: colors.warn, lineHeight: 18 },
-});
+}));

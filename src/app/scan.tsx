@@ -17,7 +17,8 @@ import { isProductBarcode, normalizeBarcodeInput, NOT_PRODUCT_BARCODE, PRODUCT_B
 import { parseDeviceCode } from '../lib/devicePresets';
 import { putScanResult } from '../lib/scanHandoff';
 import { isStockKind } from '../lib/stock';
-import { colors, CONTENT_MAX_WIDTH, font, radius } from '../theme';
+import { makeStyles, useColors } from '../hooks/useTheme';
+import { cameraColors, CONTENT_MAX_WIDTH, font, radius } from '../theme';
 
 /**
  * 几种用法：
@@ -29,6 +30,8 @@ import { colors, CONTENT_MAX_WIDTH, font, radius } from '../theme';
  *   不带 target 时，登记过的序列号直接打开那台设备，没登记过的进新增页（带 template 时沿用那一台的信息）。
  */
 export default function ScanScreen() {
+  const colors = useColors();
+  const scanStyles = useScanStyles();
   const db = useSQLiteContext();
   const office = useOffice();
   const insets = useSafeAreaInsets();
@@ -243,8 +246,8 @@ export default function ScanScreen() {
 }
 
 // 相机画面上的东西：白色取景框和提示字；关闭、手电筒是浅灰圆形按钮；出错提示是浅红底红字；手动输入是白色卡片
-const scanStyles = StyleSheet.create({
-  dark: { flex: 1, backgroundColor: '#0B0F0D' },
+const useScanStyles = makeStyles((colors) => ({
+  dark: { flex: 1, backgroundColor: cameraColors.bg },
   light: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: 16 },
   overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', gap: 16 },
   frame: {
@@ -252,11 +255,11 @@ const scanStyles = StyleSheet.create({
     aspectRatio: 1.6,
     maxWidth: 360,
     borderWidth: 3,
-    borderColor: '#FFFFFF',
+    borderColor: cameraColors.ink,
     borderRadius: radius.lg,
   },
-  tip: { color: '#FFFFFF', fontSize: font.heading, fontWeight: '500', textAlign: 'center', paddingHorizontal: 24 },
-  subTip: { color: 'rgba(255,255,255,0.8)', fontSize: font.small, textAlign: 'center', paddingHorizontal: 32 },
+  tip: { color: cameraColors.ink, fontSize: font.heading, fontWeight: '500', textAlign: 'center', paddingHorizontal: 24 },
+  subTip: { color: cameraColors.inkSoft, fontSize: font.small, textAlign: 'center', paddingHorizontal: 32 },
   notice: {
     color: colors.danger,
     fontSize: font.small,
@@ -308,4 +311,4 @@ const scanStyles = StyleSheet.create({
   permissionTitle: { color: colors.ink, fontSize: font.heading, fontWeight: '500', textAlign: 'center' },
   permissionText: { color: colors.muted, fontSize: font.small, lineHeight: 20, textAlign: 'center' },
   permissionButton: { marginTop: 4, alignSelf: 'stretch' },
-});
+}));

@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { derivePrice, storedPriceDraft, type EntryPrice, type PriceDraft } from '../lib/price';
 import { describeStockIn, enteredQtyOf, type StockInRecord } from '../lib/stockInDefaults';
-import { colors, font } from '../theme';
+import { makeStyles } from '../hooks/useTheme';
+import { font } from '../theme';
 import { PriceFields } from './PriceFields';
 import { Button, Sheet } from './ui';
 
@@ -25,6 +26,7 @@ export function StockInPriceFields({
   draft: PriceDraft;
   onChange: (draft: PriceDraft) => void;
 }) {
+  const priceEditStyles = usePriceEditStyles();
   const entered = enteredQtyOf(record, baseUnit);
   return (
     <View style={priceEditStyles.wrap}>
@@ -61,6 +63,7 @@ export function MovementPriceSheet({
   onClose: () => void;
   onSave: (price: EntryPrice | null) => Promise<void>;
 }) {
+  const priceEditStyles = usePriceEditStyles();
   const [draft, setDraft] = useState<PriceDraft>(() => storedPriceDraft(record));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -87,8 +90,8 @@ export function MovementPriceSheet({
   );
 }
 
-const priceEditStyles = StyleSheet.create({
+const usePriceEditStyles = makeStyles((colors) => ({
   wrap: { gap: 12 },
   record: { fontSize: font.body, color: colors.ink, fontWeight: '500' },
   error: { fontSize: font.small, color: colors.danger },
-});
+}));

@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useMemo, useState } from 'react';
-import { FlatList, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { FlatList, ScrollView, Text, View } from 'react-native';
 
 import { DEFAULT_SETTINGS, getSettings } from '../db/settings';
 import { deleteProduct, listAllPacks, listProducts, type StockProductSummary } from '../db/stock';
@@ -15,13 +15,16 @@ import { formatBreakdown, type PackUnit } from '../lib/packs';
 import { rescheduleReminders } from '../lib/notifications';
 import { expiryStatus, isLowStock } from '../lib/status';
 import { formatQty, KIND_LABEL, type StockKind } from '../lib/stock';
-import { colors, font, radius } from '../theme';
+import { makeStyles, useColors } from '../hooks/useTheme';
+import { font, radius } from '../theme';
 import { SwipeRow, UndoBar } from './SwipeRow';
 import { Chip, ChoiceChips, Empty, LARGE_TITLE_SCROLL_INSET, ListActions, SearchField, Segmented } from './ui';
 
 type Filter = 'all' | 'attention' | 'low';
 
 export function StockList({ kind }: { kind: StockKind }) {
+  const colors = useColors();
+  const listStyles = useListStyles();
   const db = useSQLiteContext();
   const office = useOffice();
   const officeFilter = office.filterId;
@@ -210,7 +213,7 @@ export function StockList({ kind }: { kind: StockKind }) {
 }
 
 // 照鸿蒙版 StockTab.ets：每一行是一张白底圆角卡片，左边名称、说明和状态标签，右边大数字和单位
-const listStyles = StyleSheet.create({
+const useListStyles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.bg },
   gestureHint: { fontSize: font.small, color: colors.faint, textAlign: 'center' },
   list: { flex: 1, backgroundColor: colors.bg },
@@ -237,4 +240,4 @@ const listStyles = StyleSheet.create({
   qty: { fontSize: font.title, fontWeight: '700', color: colors.ink, fontVariant: ['tabular-nums'] },
   unit: { fontSize: font.tiny, color: colors.muted },
   breakdown: { fontSize: font.tiny, color: colors.accent, fontWeight: '500' },
-});
+}));

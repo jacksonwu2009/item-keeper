@@ -31,7 +31,8 @@ import {
   type ReportPeriodKey,
 } from '../lib/report';
 import { formatQty, KIND_LABEL, type StockKind } from '../lib/stock';
-import { colors, font } from '../theme';
+import { makeStyles, useColors } from '../hooks/useTheme';
+import { font } from '../theme';
 
 /** 物品明细先显示这么多行，多了点「查看全部」 */
 const DETAIL_PREVIEW_ROWS = 30;
@@ -54,6 +55,8 @@ function localDay(iso: string): string {
 }
 
 export default function ReportScreen() {
+  const colors = useColors();
+  const reportStyles = useReportStyles();
   const db = useSQLiteContext();
   const office = useOffice();
   const { scene, terms } = useScene();
@@ -390,10 +393,12 @@ export default function ReportScreen() {
 }
 
 /** 一个大数字 + 下面的说明，居中（照鸿蒙版 IkBigNumber）；color 不给就是黑字 */
-function BigNumber({ label, value, color = colors.ink }: { label: string; value: string; color?: string }) {
+function BigNumber({ label, value, color }: { label: string; value: string; color?: string }) {
+  const colors = useColors();
+  const reportStyles = useReportStyles();
   return (
     <View style={reportStyles.bigNumber}>
-      <Text style={[reportStyles.bigValue, { color }]} numberOfLines={1} adjustsFontSizeToFit>
+      <Text style={[reportStyles.bigValue, { color: color ?? colors.ink }]} numberOfLines={1} adjustsFontSizeToFit>
         {value}
       </Text>
       <Text style={reportStyles.bigLabel}>{label}</Text>
@@ -415,6 +420,8 @@ function ValueRow({
   tone?: Tone;
   onPress?: () => void;
 }) {
+  const colors = useColors();
+  const reportStyles = useReportStyles();
   const valueColor = tone === 'danger' ? colors.danger : tone === 'warn' ? colors.warn : colors.ink;
   const content: ReactNode = (
     <>
@@ -447,6 +454,8 @@ function ValueRow({
 
 /** 「库存不足 3 种」这样一行，点开列出名单，名单里点一个进物品详情。 */
 function ExpandableList({ title, items, tone }: { title: string; items: ProductRef[]; tone: Tone }) {
+  const colors = useColors();
+  const reportStyles = useReportStyles();
   const [open, setOpen] = useState(false);
   const empty = items.length === 0;
   return (
@@ -487,7 +496,7 @@ function ExpandableList({ title, items, tone }: { title: string; items: ProductR
 }
 
 // 照鸿蒙版 ReportPage：报表卡片上下留 12、左右 16，里面一行最矮 48、行上面一条分隔线；大数字居中
-const reportStyles = StyleSheet.create({
+const useReportStyles = makeStyles((colors) => ({
   group: { gap: 8 },
   // 报表卡片里行与行紧挨着（靠分隔线隔开），说明文字上面自己留一点
   hint: { fontSize: font.small, color: colors.faint, lineHeight: 18, paddingTop: 4 },
@@ -518,4 +527,4 @@ const reportStyles = StyleSheet.create({
   rowName: { fontSize: font.body, color: colors.ink },
   rowDetail: { fontSize: font.small, color: colors.muted, marginTop: 1 },
   rowValue: { fontSize: font.body, fontWeight: '700', fontVariant: ['tabular-nums'], textAlign: 'right' },
-});
+}));

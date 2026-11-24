@@ -1,9 +1,9 @@
 import { router, Stack } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
-import { CardList, CardListRow, cardListStyles, RowChip } from '../../components/CardList';
+import { CardList, CardListRow, RowChip, useCardListStyles } from '../../components/CardList';
 import { Button, Card, ChoiceChips, Empty, Label, MultiChips, Screen, SectionTitle, Sheet } from '../../components/ui';
 import { ALL_OFFICES } from '../../db/offices';
 import { getOpenStocktake, listStocktakes, startStocktake, type StocktakeListEntry } from '../../db/stocktake';
@@ -18,7 +18,8 @@ import {
   STOCKTAKE_STATUS_LABEL,
   type StocktakeKind,
 } from '../../lib/stocktake';
-import { colors, font } from '../../theme';
+import { makeStyles } from '../../hooks/useTheme';
+import { font } from '../../theme';
 
 function openStocktake(id: number) {
   router.push({ pathname: '/stocktake/[id]', params: { id: String(id) } });
@@ -31,6 +32,7 @@ function localDay(iso: string): string {
 
 /** 盘点列表：进行中的在最上面，下面是历史。 */
 export default function StocktakeListScreen() {
+  const listStyles = useListStyles();
   const db = useSQLiteContext();
   const office = useOffice();
   const officeFilter = office.filterId;
@@ -97,6 +99,8 @@ export default function StocktakeListScreen() {
 }
 
 function EntryRow({ entry, first, showOffice }: { entry: StocktakeListEntry; first: boolean; showOffice: boolean }) {
+  const listStyles = useListStyles();
+  const cardListStyles = useCardListStyles();
   const terms = useTerms();
   const { summary } = entry;
   const subtitle = [
@@ -141,6 +145,7 @@ function StartSheet({
   start: (officeId: number, kinds: StocktakeKind[]) => Promise<number>;
   findOpen: (officeId: number) => Promise<number | null>;
 }) {
+  const listStyles = useListStyles();
   const office = useOffice();
   const { scene, terms } = useScene();
   const [officeId, setOfficeId] = useState(defaultOfficeId);
@@ -204,7 +209,7 @@ function StartSheet({
   );
 }
 
-const listStyles = StyleSheet.create({
+const useListStyles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.bg },
   intro: { gap: 12 },
   introText: { fontSize: font.small, color: colors.muted, lineHeight: 20 },
@@ -214,4 +219,4 @@ const listStyles = StyleSheet.create({
   group: { gap: 8 },
   hint: { fontSize: font.small, color: colors.faint },
   error: { fontSize: font.small, color: colors.danger },
-});
+}));

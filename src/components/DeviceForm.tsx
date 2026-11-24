@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { DEVICE_CATEGORIES, type DeviceInput } from '../db/devices';
 import { useOffice } from '../hooks/useOffice';
@@ -24,7 +24,8 @@ import {
 } from '../lib/devicePresets';
 import { takeScanResult } from '../lib/scanHandoff';
 import { validateAccessories, warrantyEnd, type WarrantyUnit } from '../lib/warranty';
-import { colors, font, radius } from '../theme';
+import { makeStyles, useColors } from '../hooks/useTheme';
+import { font, radius } from '../theme';
 import { DateField } from './DateField';
 import { IntegerField } from './NumberField';
 import { OfficeChooser } from './OfficeSwitcher';
@@ -56,6 +57,8 @@ export function DeviceForm({
   /** 传了就多一个「保存并扫下一台」按钮（同款批量登记） */
   onSubmitAndNext?: (input: DeviceInput) => Promise<void>;
 }) {
+  const colors = useColors();
+  const formStyles = useFormStyles();
   const office = useOffice();
   // 家庭场景：类别、配件建议换成家里常见的
   const home = useScene().scene === 'home';
@@ -408,7 +411,7 @@ export function DeviceForm({
 
 // 照鸿蒙版 DeviceFormPage.ets：快速选择、配件建议是浅灰小胶囊；表单卡片里各栏隔 16；
 // 电脑配置是卡片里一块浅灰底小圆角；配件一行是名称框、数量框、删除按钮，不再套灰底；备注也放进卡片
-const formStyles = StyleSheet.create({
+const useFormStyles = makeStyles((colors) => ({
   group: { gap: 8 },
   card: { gap: 16 },
   config: { gap: 8, padding: 12, borderRadius: radius.md, backgroundColor: colors.bg },
@@ -421,4 +424,4 @@ const formStyles = StyleSheet.create({
   accessoryName: { flex: 1, minWidth: 0 },
   accessoryQty: { width: 140 },
   noteInput: { minHeight: 80, textAlignVertical: 'top' },
-});
+}));

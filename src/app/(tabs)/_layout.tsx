@@ -9,7 +9,7 @@ import { OfficeSwitcher } from '../../components/OfficeSwitcher';
 import { TabSwipe } from '../../components/TabSwipe';
 import type { IconName } from '../../components/ui';
 import { TAB_PATHS, TAB_ROUTES, TAB_SLIDE_MS, TAB_TITLES, tabSlideRange, type TabRoute } from '../../lib/tabs';
-import { colors } from '../../theme';
+import { useColors } from '../../hooks/useTheme';
 
 /** 标签栏图标：选中的用实心图标，没选中的用线条图标（和鸿蒙版底部标签栏一样） */
 function tabIcon(name: IconName, focusedName: IconName) {
@@ -59,6 +59,7 @@ function TabBarButtonWithoutRipple({
 const PRELOAD_TABS = Platform.OS !== 'web';
 
 export default function TabsLayout() {
+  const colors = useColors();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   /** 正在左右滑动切去的标签：这次新页面整页滑进来；点标签栏、滑完了清掉（点标签栏切换不要动画） */

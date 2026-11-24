@@ -4,7 +4,7 @@ import { Platform } from 'react-native';
 import { useOffice } from '../hooks/useOffice';
 import { IOS_BEFORE_LIQUID_GLASS, IOS_LIQUID_GLASS } from '../lib/liquidGlass';
 import { TAB_TITLES, type TabRoute } from '../lib/tabs';
-import { colors } from '../theme';
+import { useColors } from '../hooks/useTheme';
 import { OfficeSwitcher } from './OfficeSwitcher';
 
 /**
@@ -28,6 +28,7 @@ export function TabStack({ route, withOffice = true }: { route: TabRoute; withOf
 
 /** iOS：一层系统导航栏，里面只有这个标签的页面（同一文件夹下的 index），标题栏开大标题 */
 function LargeTitleStack({ route, withOffice }: { route: TabRoute; withOffice: boolean }) {
+  const colors = useColors();
   const office = useOffice();
   // 办公点切换只有多个办公点时才显示。系统标题栏右边放了按钮位就会画按钮底（iOS 26 起是玻璃底），里面是空的也会画，所以没东西时别放
   const headerRightShown = withOffice && office.multiple;

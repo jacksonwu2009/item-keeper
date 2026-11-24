@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import { formatDate, formatShortDate } from '../lib/dates';
 import { sanitizeNumberText } from '../lib/number';
@@ -14,7 +14,8 @@ import {
   skipsEarliestBatch,
   type BatchAllocation,
 } from '../lib/stock';
-import { colors, font, radius } from '../theme';
+import { makeStyles } from '../hooks/useTheme';
+import { font, radius } from '../theme';
 import { NumberField } from './NumberField';
 import { Label } from './ui';
 
@@ -76,6 +77,7 @@ export function BatchPicker({
   collapsible?: boolean;
   showErrors?: boolean;
 }) {
+  const pickerStyles = usePickerStyles();
   const [open, setOpen] = useState(!collapsible);
   const [texts, setTexts] = useState<Record<number, string>>({});
   const inStock = batches.filter((batch) => batch.quantity > 0);
@@ -187,7 +189,7 @@ export function BatchPicker({
 }
 
 // 照鸿蒙版 BatchPickerBox：浅灰圆角块，每一批一行（左边到期日和现有数量，右边白底小输入框）
-const pickerStyles = StyleSheet.create({
+const usePickerStyles = makeStyles((colors) => ({
   box: {
     gap: 8,
     borderRadius: radius.md,
@@ -219,4 +221,4 @@ const pickerStyles = StyleSheet.create({
   note: { fontSize: font.small, color: colors.warn, lineHeight: 19 },
   warn: { fontSize: font.small, color: colors.warn, lineHeight: 19 },
   error: { fontSize: font.small, color: colors.danger },
-});
+}));

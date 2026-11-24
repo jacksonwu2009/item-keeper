@@ -66,7 +66,8 @@ import {
 } from '../../lib/price';
 import { expiryStatus, isLowStock } from '../../lib/status';
 import { formatQty, KIND_LABEL, NOTE_INPUT_MAX, outNote, parseQty, roundQty, type BatchAllocation } from '../../lib/stock';
-import { colors, font, radius } from '../../theme';
+import { makeStyles, useColors } from '../../hooks/useTheme';
+import { font, radius } from '../../theme';
 
 type SheetState =
   | { type: 'in' }
@@ -76,6 +77,8 @@ type SheetState =
   | null;
 
 export default function StockDetailScreen() {
+  const colors = useColors();
+  const detailStyles = useDetailStyles();
   const db = useSQLiteContext();
   const office = useOffice();
   const terms = useTerms();
@@ -455,6 +458,8 @@ function MovementRow({
   /** 入库记录：点了改价格；别的记录没有价格，是 null */
   onEditPrice: (() => void) | null;
 }) {
+  const colors = useColors();
+  const detailStyles = useDetailStyles();
   const positive = movement.delta > 0;
   const enteredInPack =
     movement.inputUnit && movement.inputUnit !== unit && movement.inputQty !== null
@@ -530,6 +535,7 @@ function StockInSheet({
   ) => Promise<void>;
 }) {
   /** 1 个这种单位等于多少最小单位（1 箱 = 24 瓶） */
+  const detailStyles = useDetailStyles();
   const unitSize = (entry: string) => toBaseQty(1, entry, unit, packs) ?? 1;
   const [qtyText, setQtyText] = useState('1');
   const [entryUnit, setEntryUnit] = useState(defaultUnit);
@@ -634,6 +640,7 @@ function StockOutSheet({
   onSubmit: (quantity: number, reason: string, entry: EntryQty, allocations: BatchAllocation[] | null) => Promise<void>;
 }) {
   // 现有不到 1 时默认填现有的全部，免得一打开就超了
+  const detailStyles = useDetailStyles();
   const [qtyText, setQtyText] = useState(total > 0 && total < 1 ? formatQty(total) : '1');
   const [entryUnit, setEntryUnit] = useState(unit);
   const [reason, setReason] = useState<string>(OUT_REASONS[0]);
@@ -730,6 +737,7 @@ function BatchSheet({
   onSave: (quantity: number, expiryDate: string | null) => Promise<void>;
   onDelete: () => Promise<void>;
 }) {
+  const detailStyles = useDetailStyles();
   const [qtyText, setQtyText] = useState(formatQty(batch.quantity));
   const [expiryDate, setExpiryDate] = useState<string | null>(batch.expiryDate);
   const qty = parseQty(qtyText);
@@ -762,7 +770,7 @@ function BatchSheet({
 
 // 照鸿蒙版 ProductDetailPage.ets：顶上一张大卡片（分类、名称、大数字、状态、入库出库），批次一批一张小卡片，
 // 记录和信息是不留内边距的分组卡片、行间画分隔线
-const detailStyles = StyleSheet.create({
+const useDetailStyles = makeStyles((colors) => ({
   flex: { flex: 1, minWidth: 0 },
   banner: {
     backgroundColor: colors.infoSoft,
@@ -826,4 +834,4 @@ const detailStyles = StyleSheet.create({
   hintText: { fontSize: font.small, color: colors.faint },
   group: { gap: 8 },
   breakdown: { fontSize: font.small, color: colors.accent, fontWeight: '600', marginTop: 2 },
-});
+}));

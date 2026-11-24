@@ -5,7 +5,7 @@
     "version": "1.9.8",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.itemkeeper.app",
@@ -68,7 +68,10 @@
           "image": "./assets/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#F2F4F1"
+          "backgroundColor": "#F2F4F1",
+          "dark": {
+            "backgroundColor": "#101512"
+          }
         }
       ]
     ],

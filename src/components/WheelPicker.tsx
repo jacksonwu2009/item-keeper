@@ -33,8 +33,9 @@ import {
   wheelYears,
   type WheelDate,
 } from '../lib/wheelPicker';
-import { colors, font, radius } from '../theme';
-import { Button, styles as uiStyles } from './ui';
+import { makeStyles, useColors } from '../hooks/useTheme';
+import { font, radius, fadeFrom } from '../theme';
+import { Button, useStyles as useUiStyles } from './ui';
 
 /**
  * 安卓的日期、时间选择：底部白色面板里放我们自己画的滚轮（安卓系统的日期对话框样子旧，和 App 不搭）。
@@ -52,10 +53,7 @@ const SIDE_ROWS = (VISIBLE_ROWS - 1) / 2;
  * 有惯性的话 onMomentumScrollBegin 紧跟着来，取消这次，等 onMomentumScrollEnd。
  */
 const DRAG_SETTLE_DELAY_MS = 100;
-/** 离中间两行的字（比 colors.faint 再浅一档，和效果图一样） */
-const FAR_ROW_COLOR = '#C3CCC6';
-/** 早于最早日期、不能选的年月日 */
-const DISABLED_ROW_COLOR = '#D3DAD5';
+/** 离中间两行的字比 colors.faint 再浅一档（colors.wheelFar），早于最早日期、不能选的年月日更浅（colors.wheelDisabled） */
 /** 上下两头渐隐：从面板的白色渐变到透明 */
 const FADE_HEIGHT = 56;
 
@@ -77,6 +75,7 @@ function WheelColumn({
   onSelect: (index: number) => void;
   accessibilityLabel: string;
 }) {
+  const wheelStyles = useWheelStyles();
   const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
   // 打开时直接停在当前值上（安卓认 contentOffset；万一没认，onLayout 里再滚一次）
   const [initialOffset] = useState(() => ({ x: 0, y: selectedIndex * ROW_HEIGHT }));
@@ -203,6 +202,7 @@ function WheelColumn({
 
 /** 几列滚轮并排，中间垫一条浅绿色条，上下两头渐隐；narrow 是时间那种两列的，窄一点居中 */
 function WheelGroup({ narrow, children }: { narrow?: boolean; children: ReactNode }) {
+  const wheelStyles = useWheelStyles();
   return (
     <View style={[wheelStyles.wheels, narrow && wheelStyles.wheelsNarrow]}>
       <View style={wheelStyles.band} />
@@ -227,6 +227,9 @@ function WheelSheet({
   actions: ReactNode;
   children: ReactNode;
 }) {
+  const colors = useColors();
+  const wheelStyles = useWheelStyles();
+  const uiStyles = useUiStyles();
   const insets = useSafeAreaInsets();
   // 打开时收起键盘：刚在输入框里打完字就点日期框的话，键盘会挡住面板下半截
   useEffect(() => {
@@ -277,6 +280,7 @@ export function DateWheelSheet({
   onConfirm: (value: string | null) => void;
   onClose: () => void;
 }) {
+  const wheelStyles = useWheelStyles();
   const [today] = useState(() => todayStr());
   const [years] = useState(() => wheelYears({ today, value, minimumDate }));
   const [selection, setSelection] = useState<WheelDate>(() => initialWheelDate(value, today, minimumDate));
@@ -349,6 +353,7 @@ export function TimeWheelSheet({
   onConfirm: (hour: number, minute: number) => void;
   onClose: () => void;
 }) {
+  const wheelStyles = useWheelStyles();
   const [hours] = useState(wheelHours);
   const [minutes] = useState(() => wheelMinutes(minute));
   const [selection, setSelection] = useState({ hour, minute });
@@ -378,7 +383,7 @@ export function TimeWheelSheet({
   );
 }
 
-const wheelStyles = StyleSheet.create({
+const useWheelStyles = makeStyles((colors) => ({
   preview: {
     paddingHorizontal: 16,
     paddingTop: 4,
@@ -411,14 +416,14 @@ const wheelStyles = StyleSheet.create({
   rowText: { fontVariant: ['tabular-nums'] },
   rowTextSelected: { fontSize: 20, fontWeight: '700', color: colors.ink },
   rowTextNear: { fontSize: 17, color: colors.faint },
-  rowTextFar: { fontSize: 15, color: FAR_ROW_COLOR },
-  rowTextDisabled: { color: DISABLED_ROW_COLOR },
+  rowTextFar: { fontSize: 15, color: colors.wheelFar },
+  rowTextDisabled: { color: colors.wheelDisabled },
   // 渐隐层盖在滚轮上面，不接手势
   fade: { position: 'absolute', left: 0, right: 0, height: FADE_HEIGHT, pointerEvents: 'none' },
-  fadeTop: { top: 0, backgroundImage: 'linear-gradient(rgba(255, 255, 255, 1), rgba(255, 255, 255, 0))' },
-  fadeBottom: { bottom: 0, backgroundImage: 'linear-gradient(rgba(255, 255, 255, 0), rgba(255, 255, 255, 1))' },
+  fadeTop: { top: 0, backgroundImage: fadeFrom(colors.surface, 'down') },
+  fadeBottom: { bottom: 0, backgroundImage: fadeFrom(colors.surface, 'up') },
   actions: { flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingTop: 16 },
   // 「清除」「今天」各占一份，「确定」占两份（最宽）
   minorAction: { flex: 1, paddingHorizontal: 8 },
   mainAction: { flex: 2 },
-});
+}));

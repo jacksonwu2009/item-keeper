@@ -1,13 +1,14 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { useState, type ReactNode } from 'react';
-import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Platform, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { dateStrToLocalDate, formatDate, formatTime, toDateStr, todayStr } from '../lib/dates';
 import type { ScanTag } from '../lib/labelScan';
-import { colors, font, radius } from '../theme';
-import { Button, Label, RECOGNIZED_INPUT_STYLE } from './ui';
+import { makeStyles, useColors, useColorScheme } from '../hooks/useTheme';
+import { font, radius } from '../theme';
+import { Button, Label, recognizedInputStyle } from './ui';
 import { DateWheelSheet, TimeWheelSheet } from './WheelPicker';
 
 type PickerMode = 'date' | 'time';
@@ -33,6 +34,9 @@ function IosPickerSheet({
   onConfirm: (date: Date) => void;
   onClose: () => void;
 }) {
+  const colors = useColors();
+  const scheme = useColorScheme();
+  const pickerStyles = usePickerStyles();
   const insets = useSafeAreaInsets();
   const [draft, setDraft] = useState(initialValue);
   return (
@@ -47,7 +51,7 @@ function IosPickerSheet({
           minimumDate={minimumDate}
           minuteInterval={mode === 'time' ? 5 : undefined}
           accentColor={colors.accent}
-          themeVariant="light"
+          themeVariant={scheme}
           onValueChange={(_event, date) => setDraft(date)}
         />
         <Button
@@ -87,6 +91,8 @@ export function DateField({
   /** 日期框右边放的东西（比如「拍日期」） */
   right?: ReactNode;
 }) {
+  const colors = useColors();
+  const pickerStyles = usePickerStyles();
   const [pickerOpen, setPickerOpen] = useState(false);
 
   return (
@@ -100,7 +106,7 @@ export function DateField({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={label ? `${label}：${value ? formatDate(value) : '未设置'}` : undefined}
-          style={[pickerStyles.box, tag === 'recognized' && RECOGNIZED_INPUT_STYLE]}
+          style={[pickerStyles.box, tag === 'recognized' && recognizedInputStyle(colors)]}
           onPress={() => setPickerOpen(true)}
         >
           <Ionicons name="calendar-outline" size={18} color={colors.accent} />
@@ -149,6 +155,8 @@ export function TimeField({
   minute: number;
   onChange: (hour: number, minute: number) => void;
 }) {
+  const colors = useColors();
+  const pickerStyles = usePickerStyles();
   const [pickerOpen, setPickerOpen] = useState(false);
   const current = new Date();
   current.setHours(hour, minute, 0, 0);
@@ -223,7 +231,7 @@ export function TimePickerSheet({
   return <IosPickerSheet mode="time" initialValue={current} onConfirm={(date) => onChange(date.getHours(), date.getMinutes())} onClose={onClose} />;
 }
 
-const pickerStyles = StyleSheet.create({
+const usePickerStyles = makeStyles((colors) => ({
   field: { gap: 6 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   // 和输入框一样浅灰底不描边
@@ -243,7 +251,7 @@ const pickerStyles = StyleSheet.create({
   boxText: { fontSize: font.body, color: colors.ink, fontVariant: ['tabular-nums'] },
   placeholder: { color: colors.faint },
   hint: { fontSize: font.small, color: colors.faint },
-  backdrop: { flex: 1, backgroundColor: 'rgba(16, 24, 20, 0.35)' },
+  backdrop: { flex: 1, backgroundColor: colors.scrim },
   sheet: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: radius.lg,
@@ -251,4 +259,4 @@ const pickerStyles = StyleSheet.create({
     padding: 16,
     gap: 12,
   },
-});
+}));

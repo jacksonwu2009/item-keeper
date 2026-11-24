@@ -1,9 +1,9 @@
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useRef, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, Text, View } from 'react-native';
 
-import { CardList, CardListRow, cardListStyles, RowChip } from '../../components/CardList';
+import { CardList, CardListRow, RowChip, useCardListStyles } from '../../components/CardList';
 import { NumberField } from '../../components/NumberField';
 import { ScanSearchField } from '../../components/ScanSearchField';
 import {
@@ -59,7 +59,8 @@ import {
   type CountState,
   type ItemFilter,
 } from '../../lib/stocktake';
-import { colors, font } from '../../theme';
+import { makeStyles, useColors } from '../../hooks/useTheme';
+import { font } from '../../theme';
 
 const STATE_TONE: Record<CountState, Tone> = {
   uncounted: 'neutral',
@@ -77,6 +78,7 @@ const FILTERS: { value: ItemFilter; label: string }[] = [
 type CountTarget = { itemId: number; unit: string | null };
 
 export default function StocktakeScreen() {
+  const pageStyles = usePageStyles();
   const db = useSQLiteContext();
   const office = useOffice();
   const terms = useTerms();
@@ -322,6 +324,8 @@ export default function StocktakeScreen() {
 }
 
 function ItemRow({ item, first, onPress }: { item: StocktakeItem; first: boolean; onPress: () => void }) {
+  const pageStyles = usePageStyles();
+  const cardListStyles = useCardListStyles();
   const state = countState(item);
   const detail =
     item.countedQty === null
@@ -362,6 +366,7 @@ function CountSheet({
   onSave: (countedQty: number) => Promise<void>;
   onClear: () => Promise<void>;
 }) {
+  const sheetStyles = useSheetStyles();
   const { scene, terms } = useScene();
   // 家庭场景设备盘一共有几件，办公场景盘在库
   const home = scene === 'home';
@@ -461,6 +466,9 @@ function ResultView({
   scopeText: string;
   officeLabel: string | null;
 }) {
+  const colors = useColors();
+  const pageStyles = usePageStyles();
+  const cardListStyles = useCardListStyles();
   const home = useScene().scene === 'home';
   const [exporting, setExporting] = useState(false);
   const summary = summarizeCounts(items);
@@ -568,6 +576,7 @@ function ResultView({
 
 /** 一个大数字 + 下面的说明（照鸿蒙版 IkBigNumber：不加底色，数字用状态色） */
 function Tile({ label, value, tone }: { label: string; value: number; tone: string }) {
+  const pageStyles = usePageStyles();
   return (
     <View style={pageStyles.tile}>
       <Text style={[pageStyles.tileValue, { color: tone }]}>{value}</Text>
@@ -577,7 +586,7 @@ function Tile({ label, value, tone }: { label: string; value: number; tone: stri
 }
 
 // 照鸿蒙版 StocktakePage / StocktakeResultView：清点进度卡片、按分类的列表卡片（行间分隔线左边留 16）、结果页的大数字
-const pageStyles = StyleSheet.create({
+const usePageStyles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.bg },
   summary: { gap: 8 },
   meta: { fontSize: font.small, color: colors.muted },
@@ -599,12 +608,12 @@ const pageStyles = StyleSheet.create({
   tile: { flex: 1, minWidth: 0, alignItems: 'center', gap: 2, paddingVertical: 8 },
   tileValue: { fontSize: font.title, fontWeight: '700', fontVariant: ['tabular-nums'] },
   tileLabel: { fontSize: font.small, color: colors.muted },
-});
+}));
 
 // 清点面板：说明是灰色正文
-const sheetStyles = StyleSheet.create({
+const useSheetStyles = makeStyles((colors) => ({
   book: { fontSize: font.body, color: colors.muted },
   actions: { flexDirection: 'row', gap: 12 },
   flex: { flex: 1 },
   error: { fontSize: font.small, color: colors.danger },
-});
+}));

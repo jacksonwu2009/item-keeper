@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View, type StyleProp, type TextStyle } from 'react-native';
+import { Pressable, Text, TextInput, View, type StyleProp, type TextStyle } from 'react-native';
 
 import type { ScanTag } from '../lib/labelScan';
 import { parseNumberText, sanitizeNumberText, stepNumberText } from '../lib/number';
-import { colors, font, radius } from '../theme';
-import { Label, RECOGNIZED_INPUT_STYLE } from './ui';
+import { makeStyles, useColors } from '../hooks/useTheme';
+import { font, radius } from '../theme';
+import { Label, recognizedInputStyle } from './ui';
 
 type NumberFieldProps = {
   label?: string;
@@ -58,6 +59,8 @@ export function NumberField({
   disabled = false,
   tag,
 }: NumberFieldProps) {
+  const colors = useColors();
+  const numberStyles = useNumberStyles();
   const current = parseNumberText(value);
   const atMin = current !== null && current <= min;
   const atMax = current !== null && current >= max;
@@ -94,7 +97,7 @@ export function NumberField({
           style={[
             numberStyles.input,
             buttons && numberStyles.inputCentered,
-            tag === 'recognized' ? RECOGNIZED_INPUT_STYLE : null,
+            tag === 'recognized' ? recognizedInputStyle(colors) : null,
             inputStyle,
             error ? numberStyles.inputError : null,
           ]}
@@ -129,6 +132,8 @@ function StepButton({
   disabled: boolean;
   onPress: () => void;
 }) {
+  const colors = useColors();
+  const numberStyles = useNumberStyles();
   return (
     <Pressable
       accessibilityRole="button"
@@ -193,7 +198,7 @@ export function IntegerField({
 }
 
 // 照鸿蒙版 FormFields.ets 的 NumberField：输入框浅灰底不描边（出错描红边），两边是浅灰底的圆形 − / + 按钮
-const numberStyles = StyleSheet.create({
+const useNumberStyles = makeStyles((colors) => ({
   field: { gap: 6 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   input: {
@@ -226,4 +231,4 @@ const numberStyles = StyleSheet.create({
   suffix: { fontSize: font.body, color: colors.muted, marginLeft: 2 },
   error: { fontSize: font.small, color: colors.danger },
   hint: { fontSize: font.small, color: colors.faint, lineHeight: 18 },
-});
+}));

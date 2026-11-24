@@ -24,7 +24,8 @@ import {
 } from '../db/people';
 import { useFocusData } from '../hooks/useFocusData';
 import { useScene } from '../hooks/useScene';
-import { colors, font, radius } from '../theme';
+import { makeStyles, useColors } from '../hooks/useTheme';
+import { font, radius } from '../theme';
 import { Footnote, ListCard, ListRow } from './ListRows';
 import { Button, Card, ChoiceChips, Field, IconButton, Label, SectionTitle, Sheet } from './ui';
 
@@ -44,6 +45,7 @@ function errorText(error: unknown, fallback: string): string {
  * 列表按部门分组（没有部门的放最后「未分部门」），「管理部门」里新建、改名、删除部门。家庭场景不显示部门和邮箱。
  */
 export function PeopleManager() {
+  const peopleStyles = usePeopleStyles();
   const db = useSQLiteContext();
   const { scene, terms } = useScene();
   const office = scene === 'office';
@@ -277,6 +279,7 @@ function PersonSheet({
   onSave: (name: string, note: string | null, details: PersonDetails) => Promise<void>;
   onDelete: () => Promise<void>;
 }) {
+  const peopleStyles = usePeopleStyles();
   const db = useSQLiteContext();
   const { terms } = useScene();
   const [name, setName] = useState(person.name);
@@ -361,6 +364,8 @@ function DepartmentsSheet({
   /** 增删改之后重新读名单和部门 */
   onChanged: () => Promise<void>;
 }) {
+  const colors = useColors();
+  const peopleStyles = usePeopleStyles();
   const db = useSQLiteContext();
   const [newName, setNewName] = useState('');
   const [renaming, setRenaming] = useState<number | null>(null);
@@ -467,7 +472,7 @@ function DepartmentsSheet({
   );
 }
 
-const peopleStyles = StyleSheet.create({
+const usePeopleStyles = makeStyles((colors) => ({
   actions: { flexDirection: 'row', gap: 12 },
   flex: { flex: 1, minWidth: 0 },
   field: { gap: 8 },
@@ -482,4 +487,4 @@ const peopleStyles = StyleSheet.create({
   departmentText: { flex: 1, minWidth: 0, gap: 2 },
   departmentName: { fontSize: font.body, color: colors.ink },
   departmentMeta: { fontSize: font.small, color: colors.muted },
-});
+}));

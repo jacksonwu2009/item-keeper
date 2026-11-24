@@ -1,17 +1,23 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 
-import { colors } from '../theme';
+import { useColors } from '../hooks/useTheme';
+import type { Colors } from '../theme';
 import type { IconName } from './ui';
 
 type CircleTone = 'neutral' | 'accent' | 'plain';
 
 /** 三种底色：浅灰底深色图标（返回、关闭）、浅主色底主色图标（输入框旁的扫码）、透明底（行里的删除） */
-const CIRCLE_TONES: Record<CircleTone, { bg: string; fg: string }> = {
-  neutral: { bg: colors.surfaceSunken, fg: colors.ink },
-  accent: { bg: colors.accentSoft, fg: colors.accent },
-  plain: { bg: 'transparent', fg: colors.accent },
-};
+function circleTone(colors: Colors, tone: CircleTone): { bg: string; fg: string } {
+  switch (tone) {
+    case 'neutral':
+      return { bg: colors.surfaceSunken, fg: colors.ink };
+    case 'accent':
+      return { bg: colors.accentSoft, fg: colors.accent };
+    case 'plain':
+      return { bg: 'transparent', fg: colors.accent };
+  }
+}
 
 /**
  * 圆形图标按钮，照鸿蒙版 Button({ type: ButtonType.Circle })：二级页左上角的返回、输入框右边的扫码、包装规格行的删除。
@@ -34,7 +40,8 @@ export function CircleIconButton({
   color?: string;
   style?: StyleProp<ViewStyle>;
 }) {
-  const palette = CIRCLE_TONES[tone];
+  const colors = useColors();
+  const palette = circleTone(colors, tone);
   return (
     <Pressable
       accessibilityRole="button"

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Animated, Easing, Pressable, StyleSheet } from 'react-native';
+import { Animated, Easing, Pressable } from 'react-native';
 
-import { colors } from '../theme';
+import { makeStyles, useColors } from '../hooks/useTheme';
 
 /**
  * 鸿蒙版样式的开关：细长的胶囊底（开：主色，关：浅灰），白色圆钮在里面左右滑。
@@ -12,11 +12,12 @@ const TRACK_HEIGHT = 24;
 const KNOB_GAP = 2;
 const KNOB_SIZE = TRACK_HEIGHT - KNOB_GAP * 2;
 const KNOB_TRAVEL = TRACK_WIDTH - KNOB_SIZE - KNOB_GAP * 2;
-/** 关着时的底色：鸿蒙系统开关关着是半透明的深色，落在白卡片上是浅灰 */
-const OFF_TRACK_COLOR = 'rgba(24, 33, 28, 0.16)';
+/** 关着时的底色（colors.switchOff）：鸿蒙系统开关关着是半透明的深色，落在白卡片上是浅灰；深色模式下反过来，半透明的浅色 */
 
 /** 只画样子、不处理点按（放在整行可点的 SwitchRow 里用） */
 export function SwitchTrack({ value, disabled = false }: { value: boolean; disabled?: boolean }) {
+  const colors = useColors();
+  const switchStyles = useSwitchStyles();
   const [progress] = useState(() => new Animated.Value(value ? 1 : 0));
 
   useEffect(() => {
@@ -28,7 +29,7 @@ export function SwitchTrack({ value, disabled = false }: { value: boolean; disab
     }).start();
   }, [progress, value]);
 
-  const trackColor = progress.interpolate({ inputRange: [0, 1], outputRange: [OFF_TRACK_COLOR, colors.accent] });
+  const trackColor = progress.interpolate({ inputRange: [0, 1], outputRange: [colors.switchOff, colors.accent] });
   const knobOffset = progress.interpolate({ inputRange: [0, 1], outputRange: [0, KNOB_TRAVEL] });
 
   return (
@@ -64,7 +65,7 @@ export function HarmonySwitch({
   );
 }
 
-const switchStyles = StyleSheet.create({
+const useSwitchStyles = makeStyles((colors) => ({
   track: {
     width: TRACK_WIDTH,
     height: TRACK_HEIGHT,
@@ -76,12 +77,12 @@ const switchStyles = StyleSheet.create({
     width: KNOB_SIZE,
     height: KNOB_SIZE,
     borderRadius: KNOB_SIZE / 2,
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000000',
+    backgroundColor: colors.switchKnob,
+    shadowColor: colors.shadow,
     shadowOpacity: 0.18,
     shadowRadius: 2,
     shadowOffset: { width: 0, height: 1 },
     elevation: 2,
   },
   disabled: { opacity: 0.4 },
-});
+}));

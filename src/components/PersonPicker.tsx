@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import { filterPeople, findPersonByName, type Person } from '../db/people';
 import { useScene } from '../hooks/useScene';
-import { colors, font } from '../theme';
+import { makeStyles, useColors } from '../hooks/useTheme';
+import { font } from '../theme';
 import { ChoiceChips } from './ui';
 
 /** 输入的名字要不要提示「同时加到名单」：填了、而且名单里没有（不分大小写） */
@@ -36,6 +37,8 @@ export function PersonPicker({
   addToRoster: boolean;
   onAddToRosterChange: (value: boolean) => void;
 }) {
+  const colors = useColors();
+  const pickerStyles = usePickerStyles();
   const { scene, terms } = useScene();
   /** 打开时框里的名字（修改已有记录时是原来的使用人）：没改过就不按它过滤 */
   const [initialValue] = useState(value.trim());
@@ -70,9 +73,9 @@ export function PersonPicker({
   );
 }
 
-const pickerStyles = StyleSheet.create({
+const usePickerStyles = makeStyles((colors) => ({
   hint: { fontSize: font.small, color: colors.faint },
   check: { flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start', paddingVertical: 2 },
   checkText: { flexShrink: 1 },
   checkLabel: { fontSize: font.body, color: colors.ink },
-});
+}));

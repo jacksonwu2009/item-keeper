@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
+import { Pressable, SectionList, Text, View } from 'react-native';
 
 import { SwipeRow, UndoBar } from '../../../components/SwipeRow';
 import { Chip, ChoiceChips, Empty, LARGE_TITLE_SCROLL_INSET, LIST_PRESS_DELAY, ListActions, SearchField, Segmented } from '../../../components/ui';
@@ -21,7 +21,8 @@ import { diffDays, formatDate, todayStr } from '../../../lib/dates';
 import { describeConfig } from '../../../lib/devicePresets';
 import { rescheduleReminders } from '../../../lib/notifications';
 import { warrantyStatus } from '../../../lib/warranty';
-import { colors, font, radius } from '../../../theme';
+import { makeStyles, useColors } from '../../../hooks/useTheme';
+import { font, radius } from '../../../theme';
 
 type ListMode = 'device' | 'person';
 /** 办公场景按借出、在库筛；家庭场景按保修筛 */
@@ -30,6 +31,8 @@ const HOME_FILTERS: Filter[] = ['all', 'warrantySoon', 'warrantyExpired'];
 const OFFICE_FILTERS: Filter[] = ['all', 'out', 'in'];
 
 export default function DevicesScreen() {
+  const colors = useColors();
+  const deviceStyles = useDeviceStyles();
   const db = useSQLiteContext();
   const office = useOffice();
   const { scene } = useScene();
@@ -342,7 +345,7 @@ export default function DevicesScreen() {
 
 // 照鸿蒙版 DevicesTab.ets：每台设备一张白底大圆角卡片，左边名称、配置、使用人，右边「在库」标签和总数；
 // 分组标题是卡片外面的灰色小字，离上一组远一点、贴着下面的卡片
-const deviceStyles = StyleSheet.create({
+const useDeviceStyles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.bg },
   gestureHint: { fontSize: font.small, color: colors.faint, textAlign: 'center' },
   list: { flex: 1, backgroundColor: colors.bg },
@@ -374,4 +377,4 @@ const deviceStyles = StyleSheet.create({
   countBox: { alignItems: 'flex-end', gap: 4 },
   dateBox: { alignItems: 'flex-end', gap: 2 },
   dateText: { fontSize: font.small, color: colors.ink, fontVariant: ['tabular-nums'] },
-});
+}));

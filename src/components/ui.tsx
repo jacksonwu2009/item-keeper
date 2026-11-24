@@ -19,21 +19,30 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { ScanTag } from '../lib/labelScan';
-import { colors, CONTENT_MAX_WIDTH, font, radius } from '../theme';
+import { makeStyles, useColors } from '../hooks/useTheme';
+import { CONTENT_MAX_WIDTH, font, radius, type Colors } from '../theme';
 import { SwitchTrack } from './HarmonySwitch';
 
 export type IconName = ComponentProps<typeof Ionicons>['name'];
 export type Tone = 'danger' | 'warn' | 'ok' | 'info' | 'neutral' | 'accent';
 
 /** 状态色：每种一深一浅，深色写字、浅色做底（和鸿蒙版 Tones.ets 一一对应） */
-export const TONES: Record<Tone, { bg: string; fg: string }> = {
-  danger: { bg: colors.dangerSoft, fg: colors.danger },
-  warn: { bg: colors.warnSoft, fg: colors.warn },
-  ok: { bg: colors.okSoft, fg: colors.ok },
-  info: { bg: colors.infoSoft, fg: colors.info },
-  neutral: { bg: colors.surfaceSunken, fg: colors.muted },
-  accent: { bg: colors.accentSoft, fg: colors.accent },
-};
+export function toneColors(colors: Colors, tone: Tone): { bg: string; fg: string } {
+  switch (tone) {
+    case 'danger':
+      return { bg: colors.dangerSoft, fg: colors.danger };
+    case 'warn':
+      return { bg: colors.warnSoft, fg: colors.warn };
+    case 'ok':
+      return { bg: colors.okSoft, fg: colors.ok };
+    case 'info':
+      return { bg: colors.infoSoft, fg: colors.info };
+    case 'neutral':
+      return { bg: colors.surfaceSunken, fg: colors.muted };
+    case 'accent':
+      return { bg: colors.accentSoft, fg: colors.accent };
+  }
+}
 
 /**
  * iOS 上标签页的标题是系统导航栏的大标题（见 TabStack）：页面最外层的滚动视图要让系统按标题栏的高度自动留出上边距，
@@ -54,6 +63,7 @@ export function Screen({
   /** 要在页面里滚到某个位置时传（比如提醒页点数字块滚到对应的一组） */
   scrollRef?: Ref<ComponentRef<typeof ScrollView>>;
 }) {
+  const styles = useStyles();
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
@@ -77,6 +87,7 @@ export const LIST_PRESS_DELAY = 130;
 
 /** 白底圆角卡片，四周留边距；里面的东西上下排，间隔 12 */
 export function Card({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
+  const styles = useStyles();
   return <View style={[styles.card, style]}>{children}</View>;
 }
 
@@ -85,6 +96,7 @@ export function Card({ children, style }: { children: ReactNode; style?: StylePr
  * 行与行之间画一条分隔线（左边留空、右边到头，和鸿蒙版的列表一样）。null、false 不算一行。
  */
 export function GroupCard({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
+  const styles = useStyles();
   const rows = Children.toArray(children);
   return (
     <View style={[styles.groupCard, style]}>
@@ -119,6 +131,8 @@ export function Button({
   style?: StyleProp<ViewStyle>;
   compact?: boolean;
 }) {
+  const colors = useColors();
+  const styles = useStyles();
   const palette = {
     primary: { bg: colors.accent, fg: colors.accentInk },
     secondary: { bg: colors.accentSoft, fg: colors.accent },
@@ -153,6 +167,7 @@ export function Button({
  * 食品、日用品、设备三个列表页都用它，文字按各自的意思传（扫码入库 / 扫码录入）。
  */
 export function ListActions({ scanTitle, onScan, onAdd }: { scanTitle: string; onScan: () => void; onAdd: () => void }) {
+  const styles = useStyles();
   return (
     <View style={styles.listActions}>
       <Button title={scanTitle} icon="barcode-outline" onPress={onScan} style={styles.listAction} />
@@ -165,13 +180,16 @@ export function IconButton({
   icon,
   onPress,
   label,
-  color = colors.accent,
+  color,
 }: {
   icon: IconName;
   onPress: () => void;
   label: string;
+  /** 不给就是主色 */
   color?: string;
 }) {
+  const colors = useColors();
+  const styles = useStyles();
   return (
     <Pressable
       accessibilityRole="button"
@@ -180,7 +198,7 @@ export function IconButton({
       hitSlop={8}
       style={({ pressed }) => [styles.iconButton, { opacity: pressed ? 0.6 : 1 }]}
     >
-      <Ionicons name={icon} size={22} color={color} />
+      <Ionicons name={icon} size={22} color={color ?? colors.accent} />
     </Pressable>
   );
 }
@@ -199,9 +217,13 @@ export function ScanTagChip({ tag }: { tag: ScanTag }) {
 }
 
 /** 照片里认出来的格子：浅蓝底、蓝边（照效果图） */
-export const RECOGNIZED_INPUT_STYLE = { backgroundColor: colors.infoSoft, borderColor: colors.info };
+export function recognizedInputStyle(colors: Colors) {
+  return { backgroundColor: colors.infoSoft, borderColor: colors.info };
+}
 
 export function Label({ children, required, tag }: { children: ReactNode; required?: boolean; tag?: ScanTag | null }) {
+  const colors = useColors();
+  const styles = useStyles();
   const text = (
     <Text style={styles.label}>
       {children}
@@ -234,6 +256,8 @@ export function Field({
   /** 拍照识别填的：recognized 时输入框浅蓝底，标签后面标「识别」；missing 标「没认出来」 */
   tag?: ScanTag | null;
 }) {
+  const colors = useColors();
+  const styles = useStyles();
   return (
     <View style={styles.field}>
       {label ? (
@@ -247,7 +271,7 @@ export function Field({
           {...inputProps}
           style={[
             styles.input,
-            tag === 'recognized' ? RECOGNIZED_INPUT_STYLE : null,
+            tag === 'recognized' ? recognizedInputStyle(colors) : null,
             error ? styles.inputError : null,
             inputProps.style,
           ]}
@@ -261,6 +285,8 @@ export function Field({
 
 /** 搜索框：胶囊形浅灰底，左边一个放大镜；属性和 TextInput 一样。获得焦点时描一圈主色。 */
 export function SearchField({ style, onFocus, onBlur, ...inputProps }: TextInputProps) {
+  const colors = useColors();
+  const styles = useStyles();
   const [focused, setFocused] = useState(false);
   return (
     <View style={[styles.search, focused && styles.searchFocused]}>
@@ -283,7 +309,9 @@ export function SearchField({ style, onFocus, onBlur, ...inputProps }: TextInput
 }
 
 export function Chip({ text, tone = 'neutral', icon }: { text: string; tone?: Tone; icon?: IconName }) {
-  const palette = TONES[tone];
+  const colors = useColors();
+  const styles = useStyles();
+  const palette = toneColors(colors, tone);
   return (
     <View style={[styles.chip, { backgroundColor: palette.bg }]}>
       {icon ? <Ionicons name={icon} size={12} color={palette.fg} /> : null}
@@ -301,6 +329,7 @@ export function ChoiceChips<T extends string | number>({
   value: T | null;
   onChange: (value: T) => void;
 }) {
+  const styles = useStyles();
   return (
     <View style={styles.choiceWrap}>
       {options.map((option) => {
@@ -331,6 +360,8 @@ export function MultiChips<T extends string>({
   values: T[];
   onChange: (values: T[]) => void;
 }) {
+  const colors = useColors();
+  const styles = useStyles();
   return (
     <View style={styles.choiceWrap}>
       {options.map((option) => {
@@ -367,6 +398,7 @@ export function Segmented<T extends string | number>({
   value: T;
   onChange: (value: T) => void;
 }) {
+  const styles = useStyles();
   return (
     <View style={styles.segmented}>
       {options.map((option) => {
@@ -396,6 +428,7 @@ export function Segmented<T extends string | number>({
 }
 
 export function SectionTitle({ title, right }: { title: string; right?: ReactNode }) {
+  const styles = useStyles();
   return (
     <View style={styles.sectionTitleRow}>
       <Text style={styles.sectionTitle}>{title}</Text>
@@ -405,6 +438,7 @@ export function SectionTitle({ title, right }: { title: string; right?: ReactNod
 }
 
 export function InfoRow({ label, value }: { label: string; value: ReactNode }) {
+  const styles = useStyles();
   return (
     <View style={styles.infoRow}>
       <Text style={styles.infoLabel}>{label}</Text>
@@ -419,8 +453,6 @@ export function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-/** iOS 系统开关关着时的底色（iOS 默认的浅灰） */
-const IOS_SWITCH_OFF_COLOR = '#E9E9EA';
 
 export function SwitchRow({
   title,
@@ -434,6 +466,8 @@ export function SwitchRow({
   onChange: (value: boolean) => void;
 }) {
   // iOS 用系统开关（拨动有触感反馈），和 iOS 设置一样只有开关本身能点，整行不切换
+  const colors = useColors();
+  const styles = useStyles();
   if (Platform.OS === 'ios') {
     return (
       <View style={styles.switchRow}>
@@ -444,8 +478,8 @@ export function SwitchRow({
         <Switch
           value={value}
           onValueChange={onChange}
-          trackColor={{ true: colors.accent, false: IOS_SWITCH_OFF_COLOR }}
-          ios_backgroundColor={IOS_SWITCH_OFF_COLOR}
+          trackColor={{ true: colors.accent, false: colors.iosSwitchOff }}
+          ios_backgroundColor={colors.iosSwitchOff}
           accessibilityLabel={title}
         />
       </View>
@@ -470,6 +504,8 @@ export function SwitchRow({
 }
 
 export function Empty({ icon, title, text, children }: { icon: IconName; title: string; text?: string; children?: ReactNode }) {
+  const colors = useColors();
+  const styles = useStyles();
   return (
     <View style={styles.empty}>
       <Ionicons name={icon} size={48} color={colors.faint} />
@@ -496,6 +532,8 @@ export function Sheet({
   onClose: () => void;
   children: ReactNode;
 }) {
+  const colors = useColors();
+  const styles = useStyles();
   const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -525,7 +563,7 @@ export function Sheet({
 }
 
 // 尺寸、留白照鸿蒙版 Theme.ets：页面左右 16，卡片内边距 16，分组之间 24，同组元素之间 8～12
-export const styles = StyleSheet.create({
+export const useStyles = makeStyles((colors) => ({
   flex: { flex: 1 },
   flexShrink: { flexShrink: 1, flexGrow: 1 },
   screen: { flex: 1, backgroundColor: colors.bg },
@@ -673,8 +711,8 @@ export const styles = StyleSheet.create({
   emptyTitle: { fontSize: font.heading, fontWeight: '600', color: colors.ink, textAlign: 'center', marginTop: 4 },
   emptyText: { fontSize: font.small, color: colors.muted, textAlign: 'center', lineHeight: 20 },
   emptyActions: { flexDirection: 'row', gap: 10, marginTop: 10, flexWrap: 'wrap', justifyContent: 'center' },
-  backdrop: { flex: 1, backgroundColor: 'rgba(16, 24, 20, 0.35)' },
-  sheetOverlay: { backgroundColor: 'rgba(16, 24, 20, 0.35)', justifyContent: 'flex-end' },
+  backdrop: { flex: 1, backgroundColor: colors.scrim },
+  sheetOverlay: { backgroundColor: colors.scrim, justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: radius.sheet,
@@ -704,4 +742,4 @@ export const styles = StyleSheet.create({
   },
   sheetClosePressed: { opacity: 0.6 },
   sheetBody: { padding: 16, paddingTop: 12, gap: 16 },
-});
+}));

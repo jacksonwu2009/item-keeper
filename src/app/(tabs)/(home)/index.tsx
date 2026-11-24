@@ -2,10 +2,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback } from 'react';
-import { Linking, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Linking, Pressable, Text, useWindowDimensions, View } from 'react-native';
 
 import { ReminderCard, ReminderMoreRow, ReminderRow } from '../../../components/ReminderRows';
-import { Button, Card, Screen, SectionTitle, TONES, type IconName, type Tone } from '../../../components/ui';
+import { Button, Card, Screen, SectionTitle, toneColors, type IconName, type Tone } from '../../../components/ui';
 import { listActiveAssignments, listDevices, type ActiveAssignment, type DeviceSummary } from '../../../db/devices';
 import { DEFAULT_SETTINGS, getDataSince, getLastExportAt, getSettings } from '../../../db/settings';
 import { useFocusData } from '../../../hooks/useFocusData';
@@ -34,7 +34,8 @@ import {
   type ReminderGroup,
 } from '../../../lib/reminderList';
 import { planReminders, statusForDay, type ExpiryEntry, type PlanProduct, type PlanWarranty } from '../../../lib/reminderPlan';
-import { colors, font, radius } from '../../../theme';
+import { makeStyles, useColors } from '../../../hooks/useTheme';
+import { font, radius } from '../../../theme';
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
 /** 窗口至少这么宽（平板、电脑）时四个数字排一行，手机上两行两列 */
@@ -55,6 +56,8 @@ function openBorrowedDevices() {
 }
 
 export default function RemindersScreen() {
+  const colors = useColors();
+  const dash = useDash();
   const db = useSQLiteContext();
   const office = useOffice();
   const { scene } = useScene();
@@ -247,6 +250,8 @@ export default function RemindersScreen() {
 
 /** 常用入口（盘点、报表）：白底圆角小块，上面图标、下面文字 */
 function Shortcut({ title, icon, onPress }: { title: string; icon: IconName; onPress: () => void }) {
+  const colors = useColors();
+  const dash = useDash();
   return (
     <Pressable
       accessibilityRole="button"
@@ -274,7 +279,9 @@ function Tile({
   inOneRow: boolean;
   onPress: () => void;
 }) {
-  const palette = TONES[tone];
+  const colors = useColors();
+  const dash = useDash();
+  const palette = toneColors(colors, tone);
   const active = value > 0;
   const boxStyle = [dash.tile, inOneRow ? dash.tileOneRow : dash.tileTwoColumns, active && { backgroundColor: palette.bg }];
   const content = (
@@ -334,7 +341,7 @@ function ExpirySection({
   );
 }
 
-const dash = StyleSheet.create({
+const useDash = makeStyles((colors) => ({
   date: { fontSize: font.small, color: colors.muted, fontWeight: '500' },
   headline: { fontSize: 26, fontWeight: '800', color: colors.ink, marginTop: 2 },
   permission: { backgroundColor: colors.warnSoft },
@@ -370,4 +377,4 @@ const dash = StyleSheet.create({
   next: { fontSize: font.small, color: colors.muted, lineHeight: 19 },
   allGood: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   allGoodText: { flex: 1, fontSize: font.small, color: colors.muted, lineHeight: 20 },
-});
+}));

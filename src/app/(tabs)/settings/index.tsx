@@ -3,9 +3,10 @@ import Constants from 'expo-constants';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
 import { router } from 'expo-router';
-import { Linking, StyleSheet, Text, View } from 'react-native';
+import { Linking, Text, View } from 'react-native';
 
 import { describeLastExport } from '../../../components/BackupManager';
+import { ColorModeOptions } from '../../../components/ColorModeOptions';
 import { TimePickerSheet } from '../../../components/DateField';
 import { IntegerField } from '../../../components/NumberField';
 import { SceneOptions } from '../../../components/SceneOptions';
@@ -16,6 +17,7 @@ import { DEFAULT_SETTINGS, getLastExportAt, getSettings, saveSettings, type AppS
 import { useFocusData } from '../../../hooks/useFocusData';
 import { useOffice } from '../../../hooks/useOffice';
 import { useScene } from '../../../hooks/useScene';
+import { COLOR_MODE_LABELS } from '../../../lib/colorMode';
 import { formatTime } from '../../../lib/dates';
 import {
   getPermissionState,
@@ -25,7 +27,8 @@ import {
   type PermissionState,
 } from '../../../lib/notifications';
 import { SCENE_LABELS } from '../../../lib/terms';
-import { colors, font } from '../../../theme';
+import { makeStyles, useColorMode, useColors } from '../../../hooks/useTheme';
+import { font } from '../../../theme';
 
 const REPEAT_OPTIONS = [
   { value: 1, label: '每天' },
@@ -56,16 +59,19 @@ function backupReminderHint(place: string): string {
 }
 
 /** 点一行打开的改值面板：到期前几天、多久提醒一次、提醒时间、备份提醒天数、新物品默认库存下限 */
-type ValueSheet = 'expiryLead' | 'repeat' | 'time' | 'backupDays' | 'lowStock' | 'scene';
+type ValueSheet = 'expiryLead' | 'repeat' | 'time' | 'backupDays' | 'lowStock' | 'scene' | 'colorMode';
 
 /**
  * 设置页，结构照鸿蒙版 SettingsTab：一项一行，开关在行内，数值、频率、时间点开底部面板改（面板里还是原来的输入框、分段、时间框，
  * 改了马上存，和原来一样）；导入导出、办公点各是一行，点进单独的页面。
- * 分组顺序：提醒 → 通知 → 录入 → 数据 → 通用。「通用」放使用场景、办公点（家庭场景叫地点）和人员名单（员工名单 / 家庭成员）：都很少改，放最下面；
+ * 分组顺序：提醒 → 通知 → 录入 → 数据 → 通用。「通用」放使用场景、办公点（家庭场景叫地点）、人员名单（员工名单 / 家庭成员）和颜色模式：都很少改，放最下面；
  * 办公点只有一个时右上角没有切换，这一行是加第二个的入口。
  * 提醒、备份提醒这些设置是当前场景自己的（两个场景各一个库），换了场景这里显示的是另一套。
+ * 颜色模式是整个 App 一份（两个场景共用，只存在本机，见 hooks/useTheme），不在场景的库里。
  */
 export default function SettingsScreen() {
+  const colors = useColors();
+  const setStyles = useSetStyles();
   const db = useSQLiteContext();
   const office = useOffice();
   const { scene, terms, choose } = useScene();
@@ -96,6 +102,8 @@ export default function SettingsScreen() {
   const [valueSheet, setValueSheet] = useState<ValueSheet | null>(null);
   const [sceneBusy, setSceneBusy] = useState(false);
   const [sceneError, setSceneError] = useState<string | null>(null);
+  const colorMode = useColorMode();
+  const [colorModeError, setColorModeError] = useState(false);
   const current = settings ?? data.settings;
   /** 到期提醒、库存提醒至少开着一个：「多久提醒一次」「提醒时间」才用得上 */
   const reminderOn = current.expiryEnabled || current.lowStockEnabled;
@@ -260,6 +268,15 @@ export default function SettingsScreen() {
           chevron
           onPress={() => router.push('/people')}
         />
+        <ListRow
+          title="颜色模式"
+          value={COLOR_MODE_LABELS[colorMode]}
+          chevron
+          onPress={() => {
+            setColorModeError(false);
+            setValueSheet('colorMode');
+          }}
+        />
       </ListCard>
 
       <Text style={setStyles.footer}>物品管家 {Constants.expoConfig?.version ?? ''}</Text>
@@ -336,6 +353,15 @@ export default function SettingsScreen() {
           </View>
         </Sheet>
       ) : null}
+      {valueSheet === 'colorMode' ? (
+        <Sheet visible title="颜色模式" onClose={closeSheet}>
+          <View style={setStyles.group}>
+            <ColorModeOptions onSaveFailed={() => setColorModeError(true)} />
+            {colorModeError ? <Text style={setStyles.error}>没存上，重开 App 后要再选一次。</Text> : null}
+            <Text style={setStyles.hint}>选了马上生效，家庭和办公共用。</Text>
+          </View>
+        </Sheet>
+      ) : null}
       {valueSheet === 'lowStock' ? (
         <Sheet visible title="新物品默认库存下限" onClose={closeSheet}>
           <IntegerField
@@ -351,7 +377,7 @@ export default function SettingsScreen() {
   );
 }
 
-const setStyles = StyleSheet.create({
+const useSetStyles = makeStyles((colors) => ({
   group: { gap: 8 },
   row: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
   permissionRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -359,4 +385,4 @@ const setStyles = StyleSheet.create({
   hint: { fontSize: font.small, color: colors.faint, lineHeight: 18 },
   error: { fontSize: font.small, color: colors.danger },
   footer: { fontSize: font.small, color: colors.faint, textAlign: 'center', marginTop: 8 },
-});
+}));

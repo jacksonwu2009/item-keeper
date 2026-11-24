@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import { isLabelOcrAvailable } from '../../modules/label-ocr';
 import type { AppSettings } from '../db/settings';
@@ -16,7 +16,8 @@ import { toBaseQty, validatePacks, type PackUnit } from '../lib/packs';
 import { convertPriceUnit, derivePrice, EMPTY_PRICE, storedPriceDraft, type EntryPrice, type PriceDraft } from '../lib/price';
 import { takeScanResult, takeScanResultWithPrefix } from '../lib/scanHandoff';
 import { DEFAULT_UNITS, formatQty, KIND_LABEL, parseQty, type StockKind } from '../lib/stock';
-import { colors, CONTENT_MAX_WIDTH, font, radius } from '../theme';
+import { makeStyles, useColors } from '../hooks/useTheme';
+import { CONTENT_MAX_WIDTH, font, radius } from '../theme';
 import { useOffice } from '../hooks/useOffice';
 import { CircleIconButton } from './CircleIconButton';
 import { ExpiryInput, type ExpiryValue } from './ExpiryInput';
@@ -79,6 +80,8 @@ export function StockProductForm({
   /** 改资料时：最近一次入库，在「最近一次入库的价格」里改它的单价、总价，保存时改那条记录 */
   lastStockIn?: StockInPriceRecord | null;
 }) {
+  const colors = useColors();
+  const formStyles = useFormStyles();
   const db = useSQLiteContext();
   const office = useOffice();
   const [officeId, setOfficeId] = useState(initial.officeId ?? office.defaultId);
@@ -703,7 +706,7 @@ export function StockProductForm({
   );
 }
 
-const formStyles = StyleSheet.create({
+const useFormStyles = makeStyles((colors) => ({
   page: { width: '100%', maxWidth: CONTENT_MAX_WIDTH, alignSelf: 'center' },
   card: { gap: 16 },
   group: { gap: 8 },
@@ -746,4 +749,4 @@ const formStyles = StyleSheet.create({
   candidate: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.pill, backgroundColor: colors.surfaceSunken },
   candidateText: { fontSize: font.small, color: colors.ink },
   pressed: { opacity: 0.6 },
-});
+}));

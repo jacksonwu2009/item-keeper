@@ -21,7 +21,8 @@ import {
   type ScanProblem,
   type Size,
 } from '../lib/labelScan';
-import { colors, CONTENT_MAX_WIDTH, font, radius } from '../theme';
+import { makeStyles, useColors } from '../hooks/useTheme';
+import { cameraColors, CONTENT_MAX_WIDTH, font, radius } from '../theme';
 import { CircleIconButton } from './CircleIconButton';
 import { Button } from './ui';
 
@@ -69,6 +70,8 @@ function deleteTempPhoto(uri: string) {
  * 拍得不好（糊、暗、反光，或者什么都没认出来）时提示重拍。
  */
 export function LabelCamera(props: Props) {
+  const colors = useColors();
+  const cameraStyles = useCameraStyles();
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
   const camera = useRef<CameraView>(null);
@@ -315,7 +318,7 @@ export function LabelCamera(props: Props) {
     if (phase.kind === 'working') {
       return (
         <View style={cameraStyles.working}>
-          <ActivityIndicator size="large" color="#FFFFFF" />
+          <ActivityIndicator size="large" color={cameraColors.ink} />
           <Text style={cameraStyles.workingText}>正在识别…</Text>
           {!modelLoaded ? <Text style={cameraStyles.workingSub}>第一次要加载识别模型，稍等几秒</Text> : null}
         </View>
@@ -409,6 +412,7 @@ export function LabelCamera(props: Props) {
 }
 
 function StepPill({ index, text, active }: { index: number; text: string; active: boolean }) {
+  const cameraStyles = useCameraStyles();
   return (
     <View style={[cameraStyles.stepPill, active && cameraStyles.stepPillActive]}>
       <Text style={[cameraStyles.stepText, active && cameraStyles.stepTextActive]}>
@@ -429,6 +433,7 @@ function RoundAction({
   accessibilityLabel: string;
   onPress: () => void;
 }) {
+  const cameraStyles = useCameraStyles();
   return (
     <Pressable
       accessibilityRole="button"
@@ -437,7 +442,7 @@ function RoundAction({
       style={({ pressed }) => [cameraStyles.roundAction, pressed && cameraStyles.pressed]}
     >
       <View style={cameraStyles.roundIcon}>
-        <Ionicons name={icon} size={24} color="#FFFFFF" />
+        <Ionicons name={icon} size={24} color={cameraColors.ink} />
       </View>
       <Text style={cameraStyles.roundLabel}>{label}</Text>
     </Pressable>
@@ -446,6 +451,7 @@ function RoundAction({
 
 /** 选日期时上面放拍到的那一小块，一眼能对照 */
 function CropPreview({ shot }: { shot: Shot }) {
+  const cameraStyles = useCameraStyles();
   const [width, setWidth] = useState(0);
   // 相机拍的按竖的算（有的手机返回的宽高没按方向转）；相册里的照片宽高是摆正过的
   const portrait = shot.crop !== null;
@@ -477,18 +483,18 @@ function CropPreview({ shot }: { shot: Shot }) {
 
 // 相机画面上的东西照扫码页：白色取景框和提示字，浅灰圆形的关闭；下面三个按钮照效果图（相册、快门、补光）。
 // 结果面板是白色底部面板（和别处的面板一样上面两个大圆角）
-const cameraStyles = StyleSheet.create({
+const useCameraStyles = makeStyles((colors) => ({
   flex: { flex: 1 },
-  dark: { flex: 1, backgroundColor: '#0B0F0D' },
+  dark: { flex: 1, backgroundColor: cameraColors.bg },
   light: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: 16, alignItems: 'center' },
   header: { position: 'absolute', flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerSpacer: { width: 40 },
   steps: { flex: 1, flexDirection: 'row', justifyContent: 'center', gap: 8 },
   // 画面很亮（白墙、白标签）时也看得清：没选中的是深色半透明底白字
   stepPill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: 'rgba(0,0,0,0.5)' },
-  stepPillActive: { backgroundColor: '#FFFFFF' },
+  stepPillActive: { backgroundColor: cameraColors.ink },
   stepText: { color: 'rgba(255,255,255,0.85)', fontSize: font.small, fontWeight: '500' },
-  stepTextActive: { color: colors.ink, fontWeight: '600' },
+  stepTextActive: { color: cameraColors.inkOnWhite, fontWeight: '600' },
   overlay: {
     position: 'absolute',
     top: 0,
@@ -501,7 +507,7 @@ const cameraStyles = StyleSheet.create({
   },
   // 提示字压在深色半透明胶囊上，画面亮的时候也看得清
   tip: {
-    color: '#FFFFFF',
+    color: cameraColors.ink,
     fontSize: font.heading,
     fontWeight: '500',
     textAlign: 'center',
@@ -513,7 +519,7 @@ const cameraStyles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)',
   },
   subTip: {
-    color: '#FFFFFF',
+    color: cameraColors.ink,
     fontSize: font.small,
     textAlign: 'center',
     marginHorizontal: 32,
@@ -523,7 +529,7 @@ const cameraStyles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: 'rgba(0,0,0,0.45)',
   },
-  frame: { borderWidth: 3, borderColor: '#FFFFFF', borderRadius: radius.lg },
+  frame: { borderWidth: 3, borderColor: cameraColors.ink, borderRadius: radius.lg },
   // 拍日期：只框喷码的一小条
   frameDate: { width: '84%', maxWidth: 360, aspectRatio: 3.2 },
   // 拍标签：竖着的一大块
@@ -548,7 +554,7 @@ const cameraStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  shutterInner: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#FFFFFF' },
+  shutterInner: { width: 60, height: 60, borderRadius: 30, backgroundColor: cameraColors.ink },
   pressed: { opacity: 0.6 },
   roundAction: { alignItems: 'center', gap: 6, width: 72 },
   roundIcon: {
@@ -559,7 +565,7 @@ const cameraStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  roundLabel: { color: '#FFFFFF', fontSize: font.small },
+  roundLabel: { color: cameraColors.ink, fontSize: font.small },
   working: {
     position: 'absolute',
     top: 0,
@@ -571,8 +577,8 @@ const cameraStyles = StyleSheet.create({
     justifyContent: 'center',
     gap: 12,
   },
-  workingText: { color: '#FFFFFF', fontSize: font.heading, fontWeight: '500' },
-  workingSub: { color: 'rgba(255,255,255,0.8)', fontSize: font.small },
+  workingText: { color: cameraColors.ink, fontSize: font.heading, fontWeight: '500' },
+  workingSub: { color: cameraColors.inkSoft, fontSize: font.small },
   dim: { position: 'absolute',
     top: 0,
     left: 0,
@@ -623,4 +629,4 @@ const cameraStyles = StyleSheet.create({
   permissionTitle: { color: colors.ink, fontSize: font.heading, fontWeight: '500', textAlign: 'center' },
   permissionText: { color: colors.muted, fontSize: font.small, lineHeight: 20, textAlign: 'center' },
   permissionButton: { marginTop: 4, alignSelf: 'stretch' },
-});
+}));

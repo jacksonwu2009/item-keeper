@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { locatePlace, LocateError } from '../lib/locate';
 import { suggestOfficeNames } from '../lib/placeName';
-import { colors, font } from '../theme';
+import { makeStyles } from '../hooks/useTheme';
+import { font } from '../theme';
 import { Button, ChoiceChips } from './ui';
 
 type State = { status: 'idle' } | { status: 'locating' } | { status: 'done'; names: string[] } | { status: 'error'; message: string };
@@ -16,6 +17,7 @@ export function PlaceNameSuggest({
   existingNames: readonly string[];
   onPick: (name: string) => void;
 }) {
+  const suggestStyles = useSuggestStyles();
   const [state, setState] = useState<State>({ status: 'idle' });
 
   async function locate() {
@@ -58,9 +60,9 @@ export function PlaceNameSuggest({
   );
 }
 
-const suggestStyles = StyleSheet.create({
+const useSuggestStyles = makeStyles((colors) => ({
   wrap: { gap: 8 },
   row: { flexDirection: 'row' },
   hint: { fontSize: font.small, color: colors.faint, lineHeight: 18 },
   error: { fontSize: font.small, color: colors.warn, lineHeight: 18 },
-});
+}));

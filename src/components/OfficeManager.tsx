@@ -1,18 +1,21 @@
 import { useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, Text, View } from 'react-native';
 
 import { createOffice, deleteOffice, OFFICE_NAME_MAX, renameOffice, type Office } from '../db/offices';
 import { useOffice } from '../hooks/useOffice';
 import { useTerms } from '../hooks/useScene';
-import { colors, font } from '../theme';
+import { makeStyles, useColors } from '../hooks/useTheme';
+import { font } from '../theme';
 import { PlaceNameSuggest } from './PlaceNameSuggest';
 import { Footnote } from './ListRows';
 import { Button, Field, GroupCard, IconButton, Sheet } from './ui';
 
 /** 办公点管理（设置页「管理办公点」点进去的那一页）：添加、改名、删除（只能删空的）。 */
 export function OfficeManager() {
+  const colors = useColors();
+  const managerStyles = useManagerStyles();
   const db = useSQLiteContext();
   const office = useOffice();
   const terms = useTerms();
@@ -124,6 +127,7 @@ function RenameSheet({
   onClose: () => void;
   onSave: (name: string) => Promise<void>;
 }) {
+  const managerStyles = useManagerStyles();
   const terms = useTerms();
   const [name, setName] = useState(office.name);
   const [error, setError] = useState<string | null>(null);
@@ -148,7 +152,7 @@ function RenameSheet({
   );
 }
 
-const managerStyles = StyleSheet.create({
+const useManagerStyles = makeStyles((colors) => ({
   hint: { fontSize: font.small, color: colors.faint, lineHeight: 18 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   rowText: { flex: 1, minWidth: 0, gap: 2 },
@@ -156,4 +160,4 @@ const managerStyles = StyleSheet.create({
   name: { fontSize: font.body, fontWeight: '500', color: colors.ink },
   meta: { fontSize: font.small, color: colors.muted },
   error: { fontSize: font.small, color: colors.danger },
-});
+}));

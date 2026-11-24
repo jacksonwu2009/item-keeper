@@ -2,7 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { colors, radius } from '../theme';
+import { makeStyles, useColors } from '../hooks/useTheme';
+import { radius } from '../theme';
 import { Chip, LIST_PRESS_DELAY, type IconName, type Tone } from './ui';
 
 /**
@@ -10,6 +11,7 @@ import { Chip, LIST_PRESS_DELAY, type IconName, type Tone } from './ui';
  * 照鸿蒙版的列表：行与行之间的分隔线左边留 16、右边到头，按下时整行（到卡片边缘）变灰。
  */
 export function CardList({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
+  const cardListStyles = useCardListStyles();
   return <View style={[cardListStyles.card, style]}>{children}</View>;
 }
 
@@ -32,6 +34,8 @@ export function CardListRow({
   style?: StyleProp<ViewStyle>;
   children: ReactNode;
 }) {
+  const colors = useColors();
+  const cardListStyles = useCardListStyles();
   return (
     <>
       {first ? null : <View style={cardListStyles.divider} />}
@@ -65,7 +69,7 @@ export function RowChip({ text, tone, icon }: { text: string; tone?: Tone; icon?
   );
 }
 
-export const cardListStyles = StyleSheet.create({
+export const useCardListStyles = makeStyles((colors) => ({
   card: { backgroundColor: colors.surface, borderRadius: radius.lg, overflow: 'hidden' },
   // 左边 16（和卡片、分组标题对齐），右边 12（右边一般是状态标签或箭头）
   row: {
@@ -81,4 +85,4 @@ export const cardListStyles = StyleSheet.create({
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.line, marginLeft: 16 },
   // 行里左边的两行字：标题 + 说明
   main: { flex: 1, minWidth: 0, gap: 2 },
-});
+}));

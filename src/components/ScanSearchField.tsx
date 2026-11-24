@@ -2,8 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
 
-import { colors } from '../theme';
-import { styles } from './ui';
+import { makeStyles, useColors } from '../hooks/useTheme';
+import { useStyles } from './ui';
 
 /**
  * 带扫码按钮的搜索框（清点页用）：和 SearchField 一样是胶囊形浅灰底、左边放大镜；
@@ -18,6 +18,9 @@ export function ScanSearchField({
   onBlur,
   ...inputProps
 }: TextInputProps & { onScan?: () => void; scanLabel?: string }) {
+  const colors = useColors();
+  const styles = useStyles();
+  const scanStyles = useScanStyles();
   const [focused, setFocused] = useState(false);
   return (
     <View style={[styles.search, onScan ? scanStyles.withScan : null, focused && styles.searchFocused]}>
@@ -53,7 +56,7 @@ export function ScanSearchField({
   );
 }
 
-const scanStyles = StyleSheet.create({
+const useScanStyles = makeStyles((colors) => ({
   // 网页上浏览器默认的焦点框是 outline-style: auto，只把宽度设成 0 去不掉；改成实线再配宽度 0 才不画（焦点由外面一圈胶囊边框表示）
   input: { outlineStyle: 'solid', outlineWidth: 0 },
   // 右边是圆形的扫码按钮，胶囊右侧只留 2
@@ -61,4 +64,4 @@ const scanStyles = StyleSheet.create({
   divider: { width: StyleSheet.hairlineWidth * 2, height: 20, backgroundColor: colors.line },
   scan: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   scanPressed: { backgroundColor: colors.line },
-});
+}));

@@ -15,7 +15,8 @@ import { exportBackup, importBackup, pickBackup, readUndoSnapshot, undoLastImpor
 import { diffDays, formatDateTime, toDateStr, todayStr } from '../lib/dates';
 import { stocktakesClearedByImport, type OpenStocktakeScope } from '../lib/stocktake';
 import { currentTerms, SCENE_LABELS } from '../lib/terms';
-import { colors, font } from '../theme';
+import { makeStyles, useColors } from '../hooks/useTheme';
+import { font } from '../theme';
 import { Footnote } from './ListRows';
 import { Button, Card, Label, MultiChips, Sheet } from './ui';
 
@@ -62,6 +63,8 @@ type PendingImport = { fileName: string; data: BackupData; summary: BackupSummar
 type DataNotice = { text: string; tone: 'ok' | 'error' };
 
 export function BackupManager() {
+  const colors = useColors();
+  const backupStyles = useBackupStyles();
   const db = useSQLiteContext();
   const office = useOffice();
   const { scene, terms } = useScene();
@@ -431,7 +434,7 @@ function importPlanText({
   return `会替换本机的：${parts.join('；')}。没选的${terms.place}和分类不动。${peopleNote}${stocktakeNote}替换前会自动留一份，导错了可以撤销。`;
 }
 
-const backupStyles = StyleSheet.create({
+const useBackupStyles = makeStyles((colors) => ({
   notes: { gap: 8 },
   // 确认导入面板里的备份摘要：面板是白底，卡片换成浅灰底才圈得出来
   summary: { backgroundColor: colors.bg },
@@ -442,4 +445,4 @@ const backupStyles = StyleSheet.create({
   undo: { gap: 6, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line, paddingTop: 10 },
   warning: { fontSize: font.small, color: colors.warn, lineHeight: 20 },
   flex: { flex: 1 },
-});
+}));

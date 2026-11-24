@@ -1,14 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Pressable, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { GestureDetector, Pressable as GesturePressable, usePanGesture } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scheduleOnRN } from 'react-native-worklets';
 
 import { rowSwipeIntent, type RowSwipeIntent } from '../lib/tabs';
-import { colors, font, radius } from '../theme';
+import { makeStyles, useColors } from '../hooks/useTheme';
+import { font, radius } from '../theme';
 import { useTabSwipe } from './TabSwipe';
 import { LIST_PRESS_DELAY } from './ui';
 
@@ -53,6 +54,8 @@ export function SwipeRow({
   cornerRadius?: number;
 }) {
   /** 删除按钮露出来多少：0 = 收起，ACTION_WIDTH = 完全露出 */
+  const colors = useColors();
+  const swipeStyles = useSwipeStyles();
   const reveal = useSharedValue(0);
   const dragStart = useSharedValue(0);
   const rightActivation = useSharedValue(CLOSED_RIGHT_ACTIVATION);
@@ -186,7 +189,7 @@ export function SwipeRow({
               onPress={remove}
               style={({ pressed }) => [swipeStyles.deleteAction, pressed && { opacity: 0.8 }]}
             >
-              <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
+              <Ionicons name="trash-outline" size={20} color={colors.dangerFillInk} />
               <Text style={swipeStyles.deleteText}>删除</Text>
             </Pressable>
           </Animated.View>
@@ -198,6 +201,7 @@ export function SwipeRow({
 
 /** 删除后底部出现几秒的「撤销」条。 */
 export function UndoBar({ text, onUndo }: { text: string; onUndo: () => void }) {
+  const swipeStyles = useSwipeStyles();
   const insets = useSafeAreaInsets();
   return (
     <View
@@ -214,7 +218,7 @@ export function UndoBar({ text, onUndo }: { text: string; onUndo: () => void }) 
   );
 }
 
-const swipeStyles = StyleSheet.create({
+const useSwipeStyles = makeStyles((colors) => ({
   // 每一行都是一张圆角卡片；收起时删除按钮停在右边界外，靠 overflow 和透明度藏起来
   container: { overflow: 'hidden', borderRadius: radius.md },
   panel: {
@@ -226,29 +230,29 @@ const swipeStyles = StyleSheet.create({
   },
   deleteAction: {
     flex: 1,
-    backgroundColor: colors.danger,
+    backgroundColor: colors.dangerFill,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 2,
   },
-  deleteText: { color: '#FFFFFF', fontSize: font.small, fontWeight: '700' },
+  deleteText: { color: colors.dangerFillInk, fontSize: font.small, fontWeight: '700' },
   undoBar: {
     position: 'absolute',
     bottom: 16,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: colors.ink,
+    backgroundColor: colors.toast,
     borderRadius: radius.md,
     paddingVertical: 12,
     paddingHorizontal: 16,
-    shadowColor: '#000000',
+    shadowColor: colors.shadow,
     shadowOpacity: 0.2,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
     elevation: 6,
   },
-  undoText: { flex: 1, color: '#FFFFFF', fontSize: font.body },
+  undoText: { flex: 1, color: colors.toastInk, fontSize: font.body },
   undoButton: { paddingHorizontal: 4 },
-  undoButtonText: { color: '#7FD3C3', fontSize: font.body, fontWeight: '700' },
-});
+  undoButtonText: { color: colors.toastAction, fontSize: font.body, fontWeight: '700' },
+}));

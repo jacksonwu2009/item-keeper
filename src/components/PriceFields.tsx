@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import {
   derivePrice,
@@ -8,7 +8,8 @@ import {
   type PriceDraft,
 } from '../lib/price';
 import type { ScanTag } from '../lib/labelScan';
-import { colors, font } from '../theme';
+import { makeStyles } from '../hooks/useTheme';
+import { font } from '../theme';
 import { NumberField } from './NumberField';
 
 /**
@@ -33,6 +34,7 @@ export function PriceFields({
   /** 价格是自动带出来的（如按上次进价）：标在单价后面，人改过就不传 */
   tag?: ScanTag | null;
 }) {
+  const priceStyles = usePriceStyles();
   const { unitText, totalText } = derivePrice(draft, qty);
   return (
     <View style={priceStyles.wrap}>
@@ -66,9 +68,9 @@ export function PriceFields({
   );
 }
 
-const priceStyles = StyleSheet.create({
+const usePriceStyles = makeStyles((colors) => ({
   wrap: { gap: 6 },
   row: { flexDirection: 'row', gap: 12 },
   cell: { flex: 1, minWidth: 0 },
   hint: { fontSize: font.small, color: colors.faint },
-});
+}));
