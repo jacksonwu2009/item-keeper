@@ -51,6 +51,8 @@ export type StockMovement = {
   /** 入库为正、出库为负 */
   delta: number;
   expiryDate: string | null;
+  /** 入库时填的生产日期：按「生产日期+保质期」填才有，别的填法、出库、调整、老记录是 null */
+  productionDate: string | null;
   happenedAt: string;
   note: string | null;
   /** 当时输入的数量和单位，如 2 箱；按最小单位输入时与 delta 相同 */
@@ -93,6 +95,8 @@ export type BatchInput = {
   price?: EntryPrice | null;
   /** 入库：按「生产日期+保质期」填时的保质期。商品资料里还没记保质期就记进去，下次入库默认用这种填法 */
   shelfLife?: ShelfLife | null;
+  /** 入库：按「生产日期+保质期」填时的生产日期，记在入库记录上，下次入库能点「同上次」 */
+  productionDate?: string | null;
 };
 
 export type BarcodeMatch = { product: StockProduct; pack: PackUnit | null };
@@ -108,7 +112,8 @@ const BATCH_COLUMNS = `
   id, product_id AS productId, quantity, expiry_date AS expiryDate, added_on AS addedOn, note`;
 
 const MOVEMENT_COLUMNS = `
-  id, product_id AS productId, type, delta, expiry_date AS expiryDate, happened_at AS happenedAt, note,
+  id, product_id AS productId, type, delta, expiry_date AS expiryDate, production_date AS productionDate,
+  happened_at AS happenedAt, note,
   input_qty AS inputQty, input_unit AS inputUnit, unit_price AS unitPrice, total_price AS totalPrice`;
 
 function nowIso(): string {
@@ -319,6 +324,7 @@ export async function createProduct(
         firstBatch.note ?? null,
         firstBatch.entry,
         firstBatch.price,
+        firstBatch.productionDate ?? null,
       );
     }
   });
@@ -361,14 +367,16 @@ async function recordMovement(
   note: string | null,
   entry: EntryQty | null = null,
   price: EntryPrice | null = null,
+  productionDate: string | null = null,
 ): Promise<void> {
   if (roundQty(delta) === 0 && type !== 'adjust') return;
-  // 只有入库记价格
+  // 只有入库记价格、生产日期（没记过期日期就没有生产日期）
   const recordedPrice = type === 'in' ? price : null;
+  const recordedProductionDate = type === 'in' && expiryDate ? productionDate : null;
   await db.runAsync(
     `INSERT INTO stock_movement
-       (product_id, type, delta, expiry_date, happened_at, note, input_qty, input_unit, unit_price, total_price)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (product_id, type, delta, expiry_date, happened_at, note, input_qty, input_unit, unit_price, total_price, production_date)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       productId,
       type,
@@ -380,6 +388,7 @@ async function recordMovement(
       entry?.unit ?? null,
       recordedPrice ? roundUnitPrice(recordedPrice.unitPrice) : null,
       recordedPrice ? roundTotalPrice(recordedPrice.totalPrice) : null,
+      recordedProductionDate,
     ],
   );
 }
@@ -409,7 +418,17 @@ export async function stockIn(db: SQLiteDatabase, productId: number, batch: Batc
     } else {
       await insertBatch(db, productId, batch);
     }
-    await recordMovement(db, productId, 'in', batch.quantity, batch.expiryDate, batch.note ?? null, batch.entry, batch.price);
+    await recordMovement(
+      db,
+      productId,
+      'in',
+      batch.quantity,
+      batch.expiryDate,
+      batch.note ?? null,
+      batch.entry,
+      batch.price,
+      batch.productionDate ?? null,
+    );
     await db.runAsync('UPDATE stock_product SET updated_at = ? WHERE id = ?', [nowIso(), productId]);
     const shelfLife = validShelfLife(batch.shelfLife);
     if (shelfLife) {
@@ -502,7 +521,7 @@ export async function listMovements(db: SQLiteDatabase, productId: number, limit
   );
 }
 
-/** 最近一次入库（入库记录、数量为正）；没入过库是 null。入库面板按它带出过期日期，编辑页改它的价格 */
+/** 最近一次入库（入库记录、数量为正）；没入过库是 null。入库面板按它带出过期日期、「同上次」的生产日期，编辑页改它的价格 */
 export async function getLastStockIn(db: SQLiteDatabase, productId: number): Promise<StockMovement | null> {
   return db.getFirstAsync<StockMovement>(
     `SELECT ${MOVEMENT_COLUMNS} FROM stock_movement

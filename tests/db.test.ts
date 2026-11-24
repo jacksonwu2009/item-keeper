@@ -297,6 +297,84 @@ describe('数据层（真实 SQLite）', () => {
     assert.equal(productShelfLife((await getProduct(db, other))!), null);
   });
 
+  it('入库按「生产日期+保质期」填的生产日期记在入库记录上，最近一次入库带得出来；别的填法、出库不记', async () => {
+    const db = await openDb();
+    // 新建物品时的第一批也记
+    const id = await createProduct(db, product({ shelfLife: { amount: 12, unit: 'month' } }), {
+      quantity: 6,
+      expiryDate: '2027-10-12',
+      entry: { qty: 6, unit: '瓶' },
+      productionDate: '2026-10-12',
+    });
+    assert.equal((await getLastStockIn(db, id))?.productionDate, '2026-10-12');
+    // 同一个生产日期再入一次：到期日一样，并进上一批
+    await stockIn(db, id, { quantity: 2, expiryDate: '2027-10-12', productionDate: '2026-10-12' });
+    const batches = await listBatches(db, id);
+    assert.deepEqual(batches.map((batch) => [batch.quantity, batch.expiryDate]), [[8, '2027-10-12']]);
+    // 出库不带生产日期，也不算「最近一次入库」
+    await stockOut(db, id, 1, '用掉');
+    assert.equal((await getLastStockIn(db, id))?.productionDate, '2026-10-12');
+    assert.equal((await listMovements(db, id)).find((movement) => movement.type === 'out')?.productionDate, null);
+    // 这次直接选的到期日：没有生产日期，下次入库就没有「同上次」
+    await stockIn(db, id, { quantity: 1, expiryDate: '2027-12-01' });
+    assert.equal((await getLastStockIn(db, id))?.productionDate, null);
+    // 不记过期日期时生产日期也不记
+    await stockIn(db, id, { quantity: 1, expiryDate: null, productionDate: '2026-10-12' });
+    assert.equal((await getLastStockIn(db, id))?.productionDate, null);
+  });
+
+  it('升级到 v14：出入库记录加上生产日期列，老记录是空的、别的数据都在；重复升级不出错', async () => {
+    const db = openRawDb();
+    await migrateDbIfNeeded(db);
+    // 退回 v13 的样子：没有 production_date
+    await db.execAsync(`
+      ALTER TABLE stock_movement DROP COLUMN production_date;
+      PRAGMA user_version = 13;
+    `);
+    await db.runAsync(
+      `INSERT INTO stock_product
+         (office_id, kind, barcode, name, spec, unit, location, low_stock_threshold, expiry_lead_days, note,
+          created_at, updated_at, shelf_life_amount, shelf_life_unit)
+       VALUES (1, 'food', '690', '矿泉水', '550ml', '瓶', '储物柜', 6, 3, '备注', '2026-11-01', '2026-11-02', 12, 'month')`,
+    );
+    const productId = (await db.getFirstAsync<{ id: number }>('SELECT id FROM stock_product'))!.id;
+    await db.runAsync(
+      `INSERT INTO stock_movement (product_id, type, delta, expiry_date, happened_at, note, input_qty, input_unit, unit_price, total_price)
+       VALUES (?, 'in', 12, '2027-10-12', '2026-11-02T03:00:00.000Z', NULL, 1, '箱', 36, 36)`,
+      [productId],
+    );
+
+    await migrateDbIfNeeded(db);
+
+    assert.deepEqual(await db.getFirstAsync('PRAGMA user_version'), { user_version: 14 });
+    const columns = (await db.getAllAsync<{ name: string }>('PRAGMA table_info(stock_movement)')).map((column) => column.name);
+    assert.equal(columns.includes('production_date'), true);
+    const last = (await getLastStockIn(db, productId))!;
+    // 老记录不倒推生产日期
+    assert.deepEqual(
+      [last.delta, last.expiryDate, last.productionDate, last.inputQty, last.inputUnit, last.unitPrice, last.totalPrice],
+      [12, '2027-10-12', null, 1, '箱', 36, 36],
+    );
+    // 列已经在了、版本号还是旧的：再升一次不重复加
+    await db.execAsync('PRAGMA user_version = 13');
+    await migrateDbIfNeeded(db);
+    assert.deepEqual(await db.getFirstAsync('PRAGMA user_version'), { user_version: 14 });
+    await stockIn(db, productId, { quantity: 1, expiryDate: '2027-11-01', productionDate: '2026-11-01' });
+    assert.equal((await getLastStockIn(db, productId))?.productionDate, '2026-11-01');
+  });
+
+  it('生产日期随备份走：导出再导入，最近一次入库还带得出来', async () => {
+    const db = await openDb();
+    const id = await createProduct(db, product({ shelfLife: { amount: 12, unit: 'month' } }), null);
+    await stockIn(db, id, { quantity: 2, expiryDate: '2027-10-12', productionDate: '2026-10-12' });
+    const file = await collectBackup(db);
+    assert.equal(file.products[0].movements[0].productionDate, '2026-10-12');
+    const target = await openDb();
+    await replaceData(target, file, { scope: ['food'], offices: file.offices });
+    const restored = (await listProducts(target, 'food'))[0];
+    assert.equal((await getLastStockIn(target, restored.id))?.productionDate, '2026-10-12');
+  });
+
   it('备份提醒：上次导出时间只在本机，导入别人的设置不会改它；最早录入时间', async () => {
     const db = await openDb();
     assert.equal(await getDataSince(db), null);
@@ -480,7 +558,7 @@ describe('手机之间按办公点传数据（真实 SQLite）', () => {
 
     await migrateDbIfNeeded(db);
 
-    assert.deepEqual(await db.getFirstAsync('PRAGMA user_version'), { user_version: 13 });
+    assert.deepEqual(await db.getFirstAsync('PRAGMA user_version'), { user_version: 14 });
     const columns = (await db.getAllAsync<{ name: string }>('PRAGMA table_info(stock_product)')).map((column) => column.name);
     assert.equal(columns.includes('brand'), false);
     assert.equal(columns.includes('category'), true);

@@ -2,14 +2,14 @@
  * 入库面板的默认值：按这个物品以前的记录带出过期日期的填法，带出的格子标「按上次」「按资料」，人能改。
  * 改入库价格时的说明文字。都是纯函数，有单测。
  */
-import { formatDate, formatShortDate, toDateStr, type ShelfLife } from './dates';
+import { formatDate, formatShortDate, parseDateStr, toDateStr, type ShelfLife } from './dates';
 import type { ExpiryFill } from './labelScan';
 import { formatQty } from './stock';
 
 export type ExpiryFillMode = 'date' | 'shelf' | 'none';
 
-/** 上一次入库：只用到过期日期 */
-export type LastStockIn = { expiryDate: string | null };
+/** 上一次入库：用到过期日期，和当时填的生产日期（按「生产日期+保质期」填才有；老记录、别的填法是 null） */
+export type LastStockIn = { expiryDate: string | null; productionDate?: string | null };
 
 /** 带出的到期日下面那句提示：上次那批的到期日只能当参考，新买的一般更晚，所以宁可偏早 */
 export const LAST_EXPIRY_NOTE = '按上次那批的到期日填的，请照包装上的改';
@@ -63,6 +63,25 @@ export function stockInExpiryDefaults({
       note: LAST_EXPIRY_NOTE,
     },
   };
+}
+
+/**
+ * 上次入库填的生产日期：生产日期格子下面「同上次」按钮用的那一天；上次没记生产日期（或者没入过库）是 null，不出按钮。
+ * 只认入库时真填过、存下来的，不拿「到期日 − 保质期」倒推：上次可能是直接选的到期日，保质期也可能改过，倒推出来的不准。
+ */
+export function lastProductionDate(last: LastStockIn | null): string | null {
+  const date = last?.productionDate;
+  if (!date || !parseDateStr(date)) return null;
+  return date;
+}
+
+/**
+ * 「同上次：2026年10月12日」按钮上的字；不该出按钮时是 null：
+ * 上次没记生产日期，或者生产日期那一格已经是这一天（点过了，或者人自己选了同一天）。
+ */
+export function sameAsLastLabel(lastDate: string | null, current: string | null): string | null {
+  if (!lastDate || lastDate === current) return null;
+  return `同上次：${formatDate(lastDate)}`;
 }
 
 /** 一条入库记录：哪天、几件（当时按什么单位填的），改价格时写在上面 */

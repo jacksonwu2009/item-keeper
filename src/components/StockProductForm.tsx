@@ -107,7 +107,7 @@ export function StockProductForm({
   const [qtyText, setQtyText] = useState('1');
   const [entryUnit, setEntryUnit] = useState(initial.unit ?? '件');
   const [priceDraft, setPriceDraft] = useState<PriceDraft>(EMPTY_PRICE);
-  const [expiry, setExpiry] = useState<ExpiryValue>({ expiry: null, error: null, shelfLife: null });
+  const [expiry, setExpiry] = useState<ExpiryValue>({ expiry: null, error: null, shelfLife: null, productionDate: null });
   const [locations, setLocations] = useState<string[]>([]);
   // 保质期：改资料时单独一栏；新建时在「这次入库」的「生产日期+保质期」里填，拍包装认出的也记进去
   const [shelfText, setShelfText] = useState(initial.shelfLife ? String(initial.shelfLife.amount) : '');
@@ -348,6 +348,7 @@ export function StockProductForm({
               expiryDate: expiry.expiry,
               entry: { qty, unit: effectiveEntryUnit },
               price,
+              productionDate: expiry.productionDate,
             }
           : null,
         lastStockInPrice,

@@ -5,6 +5,7 @@ import { isLabelOcrAvailable } from '../../modules/label-ocr';
 import { expiryFromShelfLife, formatDate, todayStr, type ShelfLife, type ShelfLifeUnit } from '../lib/dates';
 import type { DateRole } from '../lib/labelParse';
 import { planExpiryFill, type ExpiryFill } from '../lib/labelScan';
+import { sameAsLastLabel } from '../lib/stockInDefaults';
 import { makeStyles } from '../hooks/useTheme';
 import { font, radius } from '../theme';
 import { DateField } from './DateField';
@@ -14,8 +15,11 @@ import { Button, ChoiceChips, Segmented } from './ui';
 
 export type ExpiryMode = 'date' | 'shelf' | 'none';
 
-/** expiry 是算出来的到期日；shelfLife 是「生产日期+保质期」填法下填的保质期（别的填法是 null），新建物品时记进商品资料 */
-export type ExpiryValue = { expiry: string | null; error: string | null; shelfLife: ShelfLife | null };
+/**
+ * expiry 是算出来的到期日；shelfLife 是「生产日期+保质期」填法下填的保质期（别的填法是 null），新建物品时记进商品资料；
+ * productionDate 是这种填法下算出到期日用的生产日期（别的填法、没算出来是 null），记在入库记录上
+ */
+export type ExpiryValue = { expiry: string | null; error: string | null; shelfLife: ShelfLife | null; productionDate: string | null };
 
 type Tags = ExpiryFill['tags'];
 
@@ -26,6 +30,9 @@ type Tags = ExpiryFill['tags'];
  * 拍照识别（手机上能用时）：日期格子右边有「拍日期」，拍喷码认出日期直接填；能分清生产日期、到期日的分好，
  * 和保质期对上了提示一下。认出来的格子浅蓝底、标「识别」，改过就不再标。
  * 拍包装识别出的结果由上层通过 fill 传进来（换 key 重新挂载时用作初始值）。
+ *
+ * 「同上次」：这个物品上次入库记了生产日期（lastProductionDate）时，生产日期下面有个小按钮「同上次：某年某月某日」，
+ * 点一下填成那天、标「按上次」，到期日照常按保质期算；人再改日期标记就没了。生产日期已经是那天时不出按钮。
  */
 export function ExpiryInput({
   initialMode,
@@ -34,6 +41,7 @@ export function ExpiryInput({
   initialShelfLife = null,
   shelfLifeHint,
   fill = null,
+  lastProductionDate = null,
   allowNone,
   onChange,
 }: {
@@ -47,6 +55,8 @@ export function ExpiryInput({
   shelfLifeHint?: string | null;
   /** 拍包装识别出来的：填法、日期、保质期和哪几格标「识别」 */
   fill?: ExpiryFill | null;
+  /** 这个物品上次入库填的生产日期（见 lib/stockInDefaults.ts 的 lastProductionDate）；没有就不出「同上次」 */
+  lastProductionDate?: string | null;
   allowNone: boolean;
   onChange: (value: ExpiryValue) => void;
 }) {
@@ -72,26 +82,30 @@ export function ExpiryInput({
   const knownShelfLife: ShelfLife | null = shelfKnown && shelfValid ? { amount, unit: shelfUnit } : null;
   let result: ExpiryValue;
   if (mode === 'none') {
-    result = { expiry: null, error: null, shelfLife: null };
+    result = { expiry: null, error: null, shelfLife: null, productionDate: null };
   } else if (mode === 'date') {
-    result = expiry ? { expiry, error: null, shelfLife: null } : { expiry: null, error: '请选择过期日期', shelfLife: null };
+    result = expiry
+      ? { expiry, error: null, shelfLife: null, productionDate: null }
+      : { expiry: null, error: '请选择过期日期', shelfLife: null, productionDate: null };
   } else if (!productionDate) {
-    result = { expiry: null, error: '请选择生产日期', shelfLife: shelfValid ? { amount, unit: shelfUnit } : null };
+    result = { expiry: null, error: '请选择生产日期', shelfLife: shelfValid ? { amount, unit: shelfUnit } : null, productionDate: null };
   } else if (!shelfValid) {
-    result = { expiry: null, error: '保质期请填正整数', shelfLife: null };
+    result = { expiry: null, error: '保质期请填正整数', shelfLife: null, productionDate: null };
   } else {
     result = {
       expiry: expiryFromShelfLife(productionDate, amount, shelfUnit),
       error: null,
       shelfLife: { amount, unit: shelfUnit },
+      productionDate,
     };
   }
+  const sameAsLast = sameAsLastLabel(lastProductionDate, productionDate);
 
   useEffect(() => {
     onChange(result);
     // 只在算出来的结果变化时上报
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result.expiry, result.error, result.shelfLife?.amount, result.shelfLife?.unit]);
+  }, [result.expiry, result.error, result.shelfLife?.amount, result.shelfLife?.unit, result.productionDate]);
 
   function untag(field: keyof Tags) {
     setTags((current) => {
@@ -100,6 +114,14 @@ export function ExpiryInput({
       delete next[field];
       return next;
     });
+    setNote(null);
+  }
+
+  /** 点「同上次」：生产日期填成上次入库那天，标「按上次」；别的格子的标记不动 */
+  function applyLastProductionDate() {
+    if (!lastProductionDate) return;
+    setProductionDate(lastProductionDate);
+    setTags((current) => ({ ...current, productionDate: 'last' }));
     setNote(null);
   }
 
@@ -173,6 +195,16 @@ export function ExpiryInput({
             tag={tags.productionDate}
             right={scanButton('production')}
           />
+          {sameAsLast ? (
+            <Button
+              title={sameAsLast}
+              icon="time-outline"
+              variant="secondary"
+              compact
+              style={expiryStyles.sameAsLast}
+              onPress={applyLastProductionDate}
+            />
+          ) : null}
           <NumberField
             label="保质期"
             required
@@ -227,6 +259,8 @@ const useExpiryStyles = makeStyles((colors) => ({
   // 「拍日期」和旁边的日期框一样高、一样的圆角，排在一起是一个整体
   scanButton: { alignSelf: 'stretch', minHeight: 44, borderRadius: radius.sm },
   wrap: { gap: 12 },
+  // 「同上次」：贴着生产日期那一格的小按钮，靠左、不占满一行
+  sameAsLast: { alignSelf: 'flex-start', marginTop: -4 },
   computed: { fontSize: font.small, color: colors.muted },
   computedDate: { color: colors.accent, fontWeight: '700' },
   note: { fontSize: font.small, color: colors.faint },

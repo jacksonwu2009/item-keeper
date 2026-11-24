@@ -2,7 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { CONFIG_CATEGORIES, splitLegacyModel } from '../lib/devicePresets';
 
-const DATABASE_VERSION = 13;
+const DATABASE_VERSION = 14;
 
 /**
  * 表结构（家庭、办公两个场景各一个库，表结构和迁移一样；库文件名见 lib/sceneDatabases.ts）
@@ -24,6 +24,8 @@ const DATABASE_VERSION = 13;
  * - stock_product.shelf_life_amount / shelf_life_unit：商品的保质期（如 12 个月，unit 是 day / month / year），可不填；
  *   入库时按生产日期算到期日用，拍包装识别也会填（v12 起）
  * - stock_product.category：物品分类（存分类名，固定选项见 lib/categories.ts），可不填；品牌不用了，brand 列连数据一起删掉（v13 起）
+ * - stock_movement.production_date：入库时填的生产日期（按「生产日期+保质期」填才有），下次入库点「同上次」用；
+ *   升级前的记录没有，不拿到期日和保质期倒推（v14 起）
  * - setting：键值设置（usage.scene 记这个库是哪个场景的）
  */
 export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
@@ -276,6 +278,14 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
     // SQLite 3.35 起能 DROP COLUMN（expo-sqlite 自带 3.53）；brand 上没有索引、约束，可以直接删
     if (columns.some((column) => column.name === 'brand')) {
       await db.execAsync('ALTER TABLE stock_product DROP COLUMN brand');
+    }
+  }
+
+  if (currentVersion < 14) {
+    // 先看有没有：同一个库被新版本打开过、又按旧版本号迁移时不会重复加
+    const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(stock_movement)');
+    if (!columns.some((column) => column.name === 'production_date')) {
+      await db.execAsync('ALTER TABLE stock_movement ADD COLUMN production_date TEXT');
     }
   }
 

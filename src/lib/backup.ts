@@ -62,6 +62,8 @@ export type BackupMovement = {
   /** 入库单价（按 inputUnit 计）和总价，没填为 null */
   unitPrice: number | null;
   totalPrice: number | null;
+  /** 入库时填的生产日期（按「生产日期+保质期」填才有）；没记的记录不写这个字段，老备份里也没有 */
+  productionDate?: string | null;
 };
 
 export type BackupProduct = {
@@ -276,6 +278,7 @@ export function buildBackup(
         inputUnit: movement.inputUnit,
         unitPrice: movement.unitPrice,
         totalPrice: movement.totalPrice,
+        ...(movement.productionDate ? { productionDate: movement.productionDate } : {}),
       })),
     })),
     devices: (included.includes('devices') ? source.devices : [])
@@ -505,6 +508,7 @@ function parseProduct(raw: unknown, index: number, exportedAt: string, offices: 
       inputUnit: optText(movement.inputUnit, at, '输入单位'),
       unitPrice: optNumber(movement.unitPrice, at, '单价', 0, 1e9),
       totalPrice: optNumber(movement.totalPrice, at, '总价', 0, 1e12),
+      ...(movement.productionDate != null ? { productionDate: optDate(movement.productionDate, at, '生产日期') } : {}),
     };
   });
 

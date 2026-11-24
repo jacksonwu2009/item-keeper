@@ -253,6 +253,32 @@ describe('备份导入校验', () => {
     if (!rejected.ok) assert.match(rejected.error, /总价/);
   });
 
+  it('入库记录的生产日期随备份往返；没记的不写，老备份没有也能导；不是日期的拒绝', () => {
+    const withProduction = buildBackup(
+      { ...source, movements: source.movements.map((item, index) => (index === 0 ? { ...item, productionDate: '2026-10-12' } : item)) },
+      new Date('2026-11-18T08:00:00Z'),
+    );
+    const movements = withProduction.products.flatMap((item) => item.movements);
+    assert.equal(movements.filter((item) => item.productionDate === '2026-10-12').length, 1);
+    assert.equal(movements.filter((item) => 'productionDate' in item).length, 1);
+    const result = parseBackup(JSON.stringify(withProduction));
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      const parsed = result.data.products.flatMap((item) => item.movements);
+      assert.equal(parsed.filter((item) => item.productionDate === '2026-10-12').length, 1);
+      assert.equal(parsed.filter((item) => 'productionDate' in item).length, 1);
+    }
+    // 老备份：没有这个字段
+    const old = parseBackup(JSON.stringify(exported()));
+    assert.equal(old.ok, true);
+    if (old.ok) assert.equal(old.data.products[0].movements[0].productionDate, undefined);
+    const bad = JSON.parse(JSON.stringify(withProduction));
+    for (const item of bad.products) for (const movement of item.movements) if (movement.productionDate) movement.productionDate = '2026-13-40';
+    const rejected = parseBackup(JSON.stringify(bad));
+    assert.equal(rejected.ok, false);
+    if (!rejected.ok) assert.match(rejected.error, /生产日期/);
+  });
+
   it('保质期随备份往返；没填的不写，老备份没有也能导；只有数量或单位不对的拒绝', () => {
     const withShelf = buildBackup(
       { ...source, products: source.products.map((item) => (item.id === 1 ? { ...item, shelfLifeAmount: 12, shelfLifeUnit: 'month' as const } : item)) },

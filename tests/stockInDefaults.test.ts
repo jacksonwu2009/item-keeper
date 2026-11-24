@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { describeStockIn, enteredQtyOf, LAST_EXPIRY_NOTE, stockInExpiryDefaults } from '../src/lib/stockInDefaults';
+import {
+  describeStockIn,
+  enteredQtyOf,
+  LAST_EXPIRY_NOTE,
+  lastProductionDate,
+  sameAsLastLabel,
+  stockInExpiryDefaults,
+} from '../src/lib/stockInDefaults';
 
 const TWELVE_MONTHS = { amount: 12, unit: 'month' as const };
 
@@ -43,6 +50,40 @@ describe('入库面板按上次入库带出过期日期', () => {
   it('没入过库、没有保质期：食品选到期日、日用品不记录，什么都不带', () => {
     assert.deepEqual(stockInExpiryDefaults({ last: null, shelfLife: null, isFood: true, canScan: true }), { mode: 'date', fill: null });
     assert.deepEqual(stockInExpiryDefaults({ last: null, shelfLife: null, isFood: false, canScan: true }), { mode: 'none', fill: null });
+  });
+});
+
+describe('生产日期「同上次」', () => {
+  it('上次入库记了生产日期：按钮写「同上次：2026年10月12日」', () => {
+    const date = lastProductionDate({ expiryDate: '2027-10-12', productionDate: '2026-10-12' });
+    assert.equal(date, '2026-10-12');
+    assert.equal(sameAsLastLabel(date, null), '同上次：2026年10月12日');
+  });
+
+  it('上次没记生产日期、没入过库、存的不是日期：没有按钮', () => {
+    assert.equal(lastProductionDate({ expiryDate: '2027-01-31', productionDate: null }), null);
+    assert.equal(lastProductionDate({ expiryDate: '2027-01-31' }), null);
+    assert.equal(lastProductionDate(null), null);
+    assert.equal(lastProductionDate({ expiryDate: '2027-01-31', productionDate: '2026-13-40' }), null);
+    assert.equal(sameAsLastLabel(null, null), null);
+    assert.equal(sameAsLastLabel(null, '2026-10-12'), null);
+  });
+
+  it('生产日期已经是上次那天就不再出按钮，改成别的日期又出来', () => {
+    assert.equal(sameAsLastLabel('2026-10-12', '2026-10-12'), null);
+    assert.equal(sameAsLastLabel('2026-10-12', '2026-11-01'), '同上次：2026年10月12日');
+  });
+
+  it('带出默认值时生产日期照旧空着，不自动填上次的', () => {
+    const plan = stockInExpiryDefaults({
+      last: { expiryDate: '2027-10-12', productionDate: '2026-10-12' },
+      shelfLife: TWELVE_MONTHS,
+      isFood: true,
+      canScan: true,
+    });
+    assert.equal(plan.mode, 'shelf');
+    assert.equal(plan.fill?.productionDate, null);
+    assert.deepEqual(plan.fill?.tags, { shelfLife: 'saved' });
   });
 });
 

@@ -76,9 +76,11 @@ export async function collectBackup(
       inputUnit: string | null;
       unitPrice: number | null;
       totalPrice: number | null;
+      productionDate: string | null;
     }>(
       `SELECT product_id AS productId, type, delta, expiry_date AS expiryDate, happened_at AS happenedAt, note,
-              input_qty AS inputQty, input_unit AS inputUnit, unit_price AS unitPrice, total_price AS totalPrice
+              input_qty AS inputQty, input_unit AS inputUnit, unit_price AS unitPrice, total_price AS totalPrice,
+              production_date AS productionDate
          FROM stock_movement ORDER BY id`,
     ),
     db.getAllAsync<{
@@ -217,8 +219,8 @@ async function insertProduct(db: SQLiteDatabase, officeId: number, product: Back
   for (const movement of product.movements) {
     await db.runAsync(
       `INSERT INTO stock_movement
-         (product_id, type, delta, expiry_date, happened_at, note, input_qty, input_unit, unit_price, total_price)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (product_id, type, delta, expiry_date, happened_at, note, input_qty, input_unit, unit_price, total_price, production_date)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         productId,
         movement.type,
@@ -230,6 +232,7 @@ async function insertProduct(db: SQLiteDatabase, officeId: number, product: Back
         movement.inputUnit,
         movement.type === 'in' ? movement.unitPrice : null,
         movement.type === 'in' ? movement.totalPrice : null,
+        movement.type === 'in' ? (movement.productionDate ?? null) : null,
       ],
     );
   }

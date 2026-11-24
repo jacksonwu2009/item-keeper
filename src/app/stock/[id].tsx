@@ -53,7 +53,7 @@ import { useOffice } from '../../hooks/useOffice';
 import { useTerms } from '../../hooks/useScene';
 import { usePendingDelete } from '../../hooks/usePendingDelete';
 import { formatDate, formatDateTime, formatShelfLife, formatShortDate, toDateStr, todayStr, type ShelfLife } from '../../lib/dates';
-import { stockInExpiryDefaults } from '../../lib/stockInDefaults';
+import { lastProductionDate, stockInExpiryDefaults } from '../../lib/stockInDefaults';
 import { rescheduleReminders } from '../../lib/notifications';
 import { describePacks, formatBreakdown, toBaseQty, type PackUnit } from '../../lib/packs';
 import {
@@ -368,8 +368,8 @@ export default function StockDetailScreen() {
               setSheet(null);
               setKnownNotice(false);
             }}
-            onSubmit={async (quantity, expiryDate, entry, price, usedShelfLife) => {
-              await stockIn(db, product.id, { quantity, expiryDate, entry, price, shelfLife: usedShelfLife });
+            onSubmit={async (quantity, expiryDate, entry, price, usedShelfLife, productionDate) => {
+              await stockIn(db, product.id, { quantity, expiryDate, entry, price, shelfLife: usedShelfLife, productionDate });
               const asEntered = entry.unit !== product.unit ? `${formatQty(entry.qty)} ${entry.unit}，` : '';
               const priceNote = price ? `，总价 ${formatPrice(price.totalPrice)}` : '';
               await afterChange(`已入库 ${asEntered}${formatQty(quantity)} ${product.unit}${priceNote}`);
@@ -532,6 +532,7 @@ function StockInSheet({
     entry: EntryQty,
     price: EntryPrice | null,
     shelfLife: ShelfLife | null,
+    productionDate: string | null,
   ) => Promise<void>;
 }) {
   /** 1 个这种单位等于多少最小单位（1 箱 = 24 瓶） */
@@ -549,7 +550,7 @@ function StockInSheet({
   const [expiryDefaults] = useState(() =>
     stockInExpiryDefaults({ last: lastIn, shelfLife, isFood, canScan: isLabelOcrAvailable() }),
   );
-  const [expiry, setExpiry] = useState<ExpiryValue>({ expiry: null, error: null, shelfLife: null });
+  const [expiry, setExpiry] = useState<ExpiryValue>({ expiry: null, error: null, shelfLife: null, productionDate: null });
   const [showErrors, setShowErrors] = useState(false);
   const [busy, setBusy] = useState(false);
   const qty = parseQty(qtyText);
@@ -600,6 +601,7 @@ function StockInSheet({
         fill={expiryDefaults.fill}
         initialShelfLife={shelfLife}
         initialProductionDate={null}
+        lastProductionDate={lastProductionDate(lastIn)}
         allowNone
         onChange={setExpiry}
       />
@@ -613,7 +615,7 @@ function StockInSheet({
           if (qtyError || expiry.error || qty === null || baseQty === null) return;
           setBusy(true);
           try {
-            await onSubmit(baseQty, expiry.expiry, { qty, unit: entryUnit }, price, expiry.shelfLife);
+            await onSubmit(baseQty, expiry.expiry, { qty, unit: entryUnit }, price, expiry.shelfLife, expiry.productionDate);
           } finally {
             setBusy(false);
           }
