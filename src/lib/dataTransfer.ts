@@ -34,7 +34,10 @@ function undoFile(db: SQLiteDatabase): File {
   return new File(Paths.document, undoFileName(db.databasePath ?? ''));
 }
 
-/** officeIds 为 null 时导出所有办公点。 */
+/**
+ * officeIds 为 null 时导出所有办公点。
+ * 备份文件不加缩进（3000 样东西、约 4 万条记录时从 13 MB 左右降到 7.6 MB 左右，生成也快一半多）；导入用 JSON.parse 读，有没有缩进都一样（鸿蒙版同样）。
+ */
 export async function exportBackup(
   db: SQLiteDatabase,
   scope: readonly BackupScope[],
@@ -43,7 +46,7 @@ export async function exportBackup(
   const data = await collectBackup(db, scope, officeIds);
   const file = new File(Paths.cache, backupFileName(new Date(), scope, officeIds === null ? null : data.offices));
   file.create({ overwrite: true });
-  await file.write(JSON.stringify(data, null, 2));
+  await file.write(JSON.stringify(data));
   if (!(await Sharing.isAvailableAsync())) throw new Error('这台手机不支持系统分享，没法把备份文件存出去');
   await Sharing.shareAsync(file.uri, {
     mimeType: 'application/json',
