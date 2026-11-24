@@ -1,10 +1,10 @@
 /**
- * 列表排序改用模块里建好的中文比较器（compareZh），顺序要和原来的 localeCompare(…, 'zh') 完全一样。
+ * 排序改用模块里建好的比较器：compareZh 要和原来的 localeCompare(…, 'zh') 完全一样，compareDefault 要和不带语言的 localeCompare 一样。
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { compareZh } from '../src/lib/collate';
+import { compareDefault, compareZh } from '../src/lib/collate';
 
 /** 固定种子的伪随机数，失败时能复现 */
 function seeded(seed: number): () => number {
@@ -28,5 +28,21 @@ describe('中文名称排序', () => {
       assert.equal(Math.sign(compareZh(left, right)), Math.sign(left.localeCompare(right, 'zh')), `${left} / ${right}`);
     }
     assert.deepEqual([...names].sort(compareZh), [...names].sort((left, right) => left.localeCompare(right, 'zh')));
+  });
+
+  it('不带语言的比较（名称、ISO 时间、日期、空串）：两两比较的正负、排好的顺序都和 localeCompare 一样', () => {
+    const random = seeded(5);
+    const values = Array.from({ length: 2000 }, (_, index) => {
+      const roll = random();
+      if (roll < 0.3) return new Date(Date.UTC(2026, Math.floor(random() * 12), 1 + Math.floor(random() * 28), Math.floor(random() * 24))).toISOString();
+      if (roll < 0.5) return `2026-${String(1 + Math.floor(random() * 12)).padStart(2, '0')}-${String(1 + Math.floor(random() * 28)).padStart(2, '0')}`;
+      if (roll < 0.55) return '';
+      return PIECES[index % PIECES.length] + PIECES[Math.floor(random() * PIECES.length)];
+    });
+    for (let index = 0; index + 1 < values.length; index++) {
+      const [left, right] = [values[index], values[index + 1]];
+      assert.equal(Math.sign(compareDefault(left, right)), Math.sign(left.localeCompare(right)), `${left} / ${right}`);
+    }
+    assert.deepEqual([...values].sort(compareDefault), [...values].sort((left, right) => left.localeCompare(right)));
   });
 });

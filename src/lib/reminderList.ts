@@ -6,6 +6,7 @@ import { describeDaysLeft } from './dates';
 import type { ExpiryEntry, LowStockEntry } from './reminderPlan';
 import { formatQty, isStockKind, KIND_LABEL } from './stock';
 import { warrantyStatus } from './warranty';
+import { compareDefault } from './collate';
 
 /** 提醒页每组最多显示几样 */
 export const REMINDER_PREVIEW_LIMIT = 5;
@@ -76,7 +77,7 @@ export function sortLowStock(entries: readonly LowStockEntry[]): LowStockEntry[]
     const threshold = entry.product.lowStockThreshold ?? 0;
     return threshold > 0 ? entry.qty / threshold : entry.qty;
   };
-  return [...entries].sort((left, right) => ratio(left) - ratio(right) || left.qty - right.qty || left.name.localeCompare(right.name));
+  return [...entries].sort((left, right) => ratio(left) - ratio(right) || left.qty - right.qty || compareDefault(left.name, right.name));
 }
 
 /** 保修 30 天内到期（含今天）的设备，最快到期的在前（家庭场景提醒页那一组） */

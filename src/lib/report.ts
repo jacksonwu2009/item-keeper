@@ -10,6 +10,7 @@ import { expiryStatus, isLowStock } from './status';
 import { KIND_LABEL, roundQty, type StockKind } from './stock';
 import { currentScene, currentTerms } from './terms';
 import { describeAccessories, warrantyStatus, type Accessory } from './warranty';
+import { compareDefault, compareZh } from './collate';
 
 // ---------- 时间段 ----------
 
@@ -177,7 +178,7 @@ export function summarizeInventory(
   // 最急的排前面：已过期、快到期都按最早过期日期排
   const expiryById = new Map(products.map((product) => [product.id, product.nearestExpiry ?? '']));
   const byExpiry = (left: ProductRef, right: ProductRef) =>
-    (expiryById.get(left.productId) ?? '').localeCompare(expiryById.get(right.productId) ?? '');
+    compareDefault(expiryById.get(left.productId) ?? '', expiryById.get(right.productId) ?? '');
   summary.expired.sort(byExpiry);
   summary.expiringSoon.sort(byExpiry);
   return summary;
@@ -234,7 +235,7 @@ export function summarizePurchases(movements: readonly ReportMovement[], topCoun
   summary.topProducts = [...byProduct.values()]
     .filter((rank) => rank.amount > 0)
     .map((rank) => ({ ...rank, amount: roundTotalPrice(rank.amount) }))
-    .sort((left, right) => right.amount - left.amount || left.name.localeCompare(right.name))
+    .sort((left, right) => right.amount - left.amount || compareDefault(left.name, right.name))
     .slice(0, topCount);
   return summary;
 }
@@ -377,10 +378,10 @@ export function summarizeConsumption(
     .map((rank) => ({ ...rank, quantity: roundQty(rank.quantity) }))
     .sort(
       (left, right) =>
-        right.count - left.count || right.quantity - left.quantity || left.name.localeCompare(right.name),
+        right.count - left.count || right.quantity - left.quantity || compareDefault(left.name, right.name),
     )
     .slice(0, topCount);
-  losses.sort((left, right) => right.happenedAt.localeCompare(left.happenedAt));
+  losses.sort((left, right) => compareDefault(right.happenedAt, left.happenedAt));
   const estimated = losses.filter((loss) => loss.estimatedLoss !== null);
   return {
     stockOutCount,
@@ -444,7 +445,7 @@ export function productDetails(
       outQty: roundQty(row.outQty),
       purchaseAmount: row.purchaseAmount === null ? null : roundTotalPrice(row.purchaseAmount),
     }))
-    .sort((left, right) => kindOrder[left.kind] - kindOrder[right.kind] || left.name.localeCompare(right.name, 'zh'));
+    .sort((left, right) => kindOrder[left.kind] - kindOrder[right.kind] || compareZh(left.name, right.name));
 }
 
 // ---------- 设备 ----------
@@ -518,13 +519,13 @@ export function summarizeDevices(
     }
   }
   summary.byCategory = [...categories.values()].sort(
-    (left, right) => right.total - left.total || left.category.localeCompare(right.category, 'zh'),
+    (left, right) => right.total - left.total || compareZh(left.category, right.category),
   );
   summary.byConfig = [...configs.values()].sort(
     (left, right) =>
       Number(left.config === '没记配置') - Number(right.config === '没记配置') ||
       right.total - left.total ||
-      left.config.localeCompare(right.config, 'zh'),
+      compareZh(left.config, right.config),
   );
   const holders = new Map<string, number>();
   for (const assignment of assignments) {
@@ -532,7 +533,7 @@ export function summarizeDevices(
   }
   summary.holders = [...holders.entries()]
     .map(([person, quantity]) => ({ person, quantity }))
-    .sort((left, right) => right.quantity - left.quantity || left.person.localeCompare(right.person, 'zh'));
+    .sort((left, right) => right.quantity - left.quantity || compareZh(left.person, right.person));
   return summary;
 }
 
