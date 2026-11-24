@@ -20,6 +20,7 @@ import {
   type ScenePlan,
 } from './reminderPlan';
 import { getActiveDatabases, otherScene, sceneOfDatabase } from './sceneDatabases';
+import { createCoalescedQueue, scheduleSignature } from './reschedule';
 import { currentScene, type Scene } from './terms';
 
 const CHANNEL_ID = 'reminders';
@@ -174,6 +175,9 @@ function planScene(scene: Scene, inputs: SceneInputs, now: Date): ScenePlan {
   };
 }
 
+/** 上次排进系统的通知（scheduleSignature）；App 每次启动是 null，启动后第一次一定整份重排 */
+let lastScheduled: string | null = null;
+
 /** 两个场景的提醒都排：db 是当前场景的库，另一个场景的库另外打开读 */
 async function rescheduleNow(db: SQLiteDatabase): Promise<PlannedReminder[]> {
   const databases = getActiveDatabases();
@@ -190,8 +194,17 @@ async function rescheduleNow(db: SQLiteDatabase): Promise<PlannedReminder[]> {
     if (inputs) plans.push(planScene(other, inputs, now));
   }
   const plan = mergeScenePlans(plans);
-  if ((await getPermissionState()) !== 'granted') return plan;
+  const permission = await getPermissionState();
+  // 算出来的通知和上次排进系统的完全一样（权限也没变）：系统里排着的就是对的，不用取消了重排
+  const signature = scheduleSignature(plan, permission);
+  if (signature === lastScheduled) return plan;
+  if (permission !== 'granted') {
+    lastScheduled = signature;
+    return plan;
+  }
 
+  // 先清掉记录：下面排到一半出错时，下次照样整份重排
+  lastScheduled = null;
   await Notifications.cancelAllScheduledNotificationsAsync();
   for (const reminder of plan) {
     await Notifications.scheduleNotificationAsync({
@@ -203,20 +216,19 @@ async function rescheduleNow(db: SQLiteDatabase): Promise<PlannedReminder[]> {
       },
     });
   }
+  lastScheduled = signature;
   return plan;
 }
 
-let queue: Promise<unknown> = Promise.resolve();
-
 /**
  * 重新排未来的提醒（家庭、办公两个场景都排）。db 是当前场景的库，数据一变就调；多次调用会排队依次执行，
- * 避免「取消全部」和「逐条排程」交错。
+ * 避免「取消全部」和「逐条排程」交错。前面已经有一次在排队、还没开始的，这次不再追加（用这次的 db，结果和那次一样）。
  */
 export function rescheduleReminders(db: SQLiteDatabase): Promise<PlannedReminder[]> {
-  const next = queue.then(() => rescheduleNow(db));
-  queue = next.catch(() => undefined);
-  return next;
+  return coalescedReschedule(db);
 }
+
+const coalescedReschedule = createCoalescedQueue(rescheduleNow);
 
 export async function sendTestNotification(): Promise<void> {
   await Notifications.scheduleNotificationAsync({
