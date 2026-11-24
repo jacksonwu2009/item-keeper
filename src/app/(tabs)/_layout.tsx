@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, Tabs } from 'expo-router';
 import type { BottomTabBarButtonProps, BottomTabNavigationOptions } from 'expo-router/tabs';
 import { useCallback, useState } from 'react';

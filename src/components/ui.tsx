@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Children, isValidElement, useState, type ComponentProps, type ComponentRef, type ReactNode, type Ref } from 'react';
 import {
   ActivityIndicator,

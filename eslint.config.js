@@ -21,6 +21,11 @@ module.exports = defineConfig([
               importNames: ['Text'],
               message: '用 src/components/Text（安卓上指定了字体，原因见那个文件）。',
             },
+            {
+              // 从总入口引会把 19 套图标字体全打进安装包（约 2 MB），只用 Ionicons 就单独引它
+              name: '@expo/vector-icons',
+              message: "用 import Ionicons from '@expo/vector-icons/Ionicons'（只打包这一套字体）。",
+            },
           ],
         },
       ],

@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { CameraView, useCameraPermissions, type CameraCapturedPicture } from 'expo-camera';
 import { File, Paths } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
