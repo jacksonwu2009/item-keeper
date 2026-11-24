@@ -30,14 +30,25 @@ async function loadOffices(db: ReturnType<typeof useSQLiteContext>): Promise<{ l
   return { list, currentId: list.some((office) => office.id === saved) ? saved : ALL_OFFICES };
 }
 
+/** 办公点名单内容没变（重读出来一样）：还用原来那个数组，用到办公点的页面不会因为重读就整页重画 */
+function keepIfSame(previous: Office[], next: Office[]): Office[] {
+  return JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
+}
+
+/**
+ * 办公点和选中的办公点。第一次读完办公点（或读失败）以后才渲染下面的页面：
+ * 不然页面会先按「全部办公点」读一遍数据，读出办公点后再按选中的办公点读一遍（启动时首页、物品、设备页都多读一次）。
+ * 第一次读很快（一条本机查询），这段时间开屏还盖着（收起开屏的 HideSplashWhenReady 也在下面）。
+ */
 export function OfficeProvider({ children }: { children: ReactNode }) {
   const db = useSQLiteContext();
   const [offices, setOffices] = useState<Office[]>([]);
   const [currentId, setCurrentId] = useState(ALL_OFFICES);
+  const [ready, setReady] = useState(false);
 
   const reload = useCallback(async () => {
     const result = await loadOffices(db);
-    setOffices(result.list);
+    setOffices((previous) => keepIfSame(previous, result.list));
     setCurrentId(result.currentId);
   }, [db]);
 
@@ -46,10 +57,13 @@ export function OfficeProvider({ children }: { children: ReactNode }) {
     loadOffices(db)
       .then((result) => {
         if (!active) return;
-        setOffices(result.list);
+        setOffices((previous) => keepIfSame(previous, result.list));
         setCurrentId(result.currentId);
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => {
+        if (active) setReady(true);
+      });
     return () => {
       active = false;
     };
@@ -78,7 +92,7 @@ export function OfficeProvider({ children }: { children: ReactNode }) {
     };
   }, [offices, currentId, select, reload]);
 
-  return <OfficeContext.Provider value={value}>{children}</OfficeContext.Provider>;
+  return <OfficeContext.Provider value={value}>{ready ? children : null}</OfficeContext.Provider>;
 }
 
 export function useOffice(): OfficeState {

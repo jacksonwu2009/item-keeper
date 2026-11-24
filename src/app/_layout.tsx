@@ -27,17 +27,29 @@ function HideSplashWhenReady() {
   return null;
 }
 
+/** 启动后等这么久再重排提醒：首页先读数、画出来 */
+const STARTUP_RESCHEDULE_DELAY_MS = 1500;
+
 /** 启动时、换了场景时（整棵树按新库重新挂上）、以及每次 App 回到前台时，按最新库存重排未来的提醒（两个场景都排）。 */
 function ReminderKeeper() {
   const db = useSQLiteContext();
   useEffect(() => {
-    setupNotifications()
-      .then(() => rescheduleReminders(db))
-      .catch(() => undefined);
+    const setup = setupNotifications();
+    setup.catch(() => undefined);
+    // 启动时先让首页读数、画出来，过一会儿再重排提醒（重排要把物品、批次全读一遍再排 60 天）
+    let started = false;
+    const timer = setTimeout(() => {
+      started = true;
+      setup.then(() => rescheduleReminders(db)).catch(() => undefined);
+    }, STARTUP_RESCHEDULE_DELAY_MS);
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') rescheduleReminders(db).catch(() => undefined);
+      // 启动后那次还没排的话等它排，不另外再排
+      if (state === 'active' && started) rescheduleReminders(db).catch(() => undefined);
     });
-    return () => subscription.remove();
+    return () => {
+      clearTimeout(timer);
+      subscription.remove();
+    };
   }, [db]);
   return null;
 }
