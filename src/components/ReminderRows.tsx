@@ -14,7 +14,10 @@ export function ReminderCard({ children }: { children: ReactNode }) {
   return <Card style={rowStyles.card}>{children}</Card>;
 }
 
-/** 一行：左边名称和一行说明，右边状态标签和箭头 */
+/**
+ * 一行：第一行左边名称、右边状态标签；第二行说明（大类、日期）用满整行宽度，不和标签抢位置；最右边箭头。
+ * 标签长（「已过期 423 天 · 24 瓶」）时只挤名称，日期不会被截成「2025年9月28日…」
+ */
 export function ReminderRow({
   title,
   subtitle,
@@ -41,14 +44,16 @@ export function ReminderRow({
         style={({ pressed }) => [rowStyles.row, pressed && rowStyles.pressed]}
       >
         <View style={rowStyles.main}>
-          <Text style={rowStyles.title} numberOfLines={1}>
-            {title}
-          </Text>
+          <View style={rowStyles.titleLine}>
+            <Text style={rowStyles.title} numberOfLines={1}>
+              {title}
+            </Text>
+            <Chip text={chip.text} tone={chip.tone} />
+          </View>
           <Text style={rowStyles.sub} numberOfLines={1}>
             {subtitle}
           </Text>
         </View>
-        <Chip text={chip.text} tone={chip.tone} />
         <Ionicons name="chevron-forward" size={16} color={colors.faint} />
       </Pressable>
     </>
@@ -89,7 +94,9 @@ const useRowStyles = makeStyles((colors) => ({
   pressed: { backgroundColor: colors.surfaceSunken },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.line, marginLeft: 16 },
   main: { flex: 1, minWidth: 0, gap: 2, marginRight: 4 },
-  title: { fontSize: font.body, fontWeight: '500', color: colors.ink },
+  // 名称和标签一行：名称占剩下的宽度、放不下时截断，标签不缩
+  titleLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  title: { flex: 1, minWidth: 0, fontSize: font.body, fontWeight: '500', color: colors.ink },
   sub: { fontSize: font.small, color: colors.muted },
   more: {
     flexDirection: 'row',

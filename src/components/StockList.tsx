@@ -13,6 +13,7 @@ import { useOffice } from '../hooks/useOffice';
 import { usedCategories } from '../lib/categories';
 import { compareZh } from '../lib/collate';
 import { todayStr } from '../lib/dates';
+import { searchKeyword, stockSearchText } from '../lib/listSearch';
 import { formatBreakdown, type PackUnit } from '../lib/packs';
 import { rescheduleReminders } from '../lib/notifications';
 import { expiryStatus, isLowStock, type ExpiryStatus } from '../lib/status';
@@ -83,17 +84,11 @@ export function StockList({ kind }: { kind: StockKind }) {
   );
 
   const rows = useMemo(() => {
-    const keyword = query.trim().toLowerCase();
+    const keyword = searchKeyword(query);
     return decorated
       .filter(({ product, expiry, low }) => {
         if (product.id === deletion.pending?.key) return false;
-        if (keyword) {
-          const haystack = [product.name, product.category, product.spec, product.location, product.barcode]
-            .filter(Boolean)
-            .join(' ')
-            .toLowerCase();
-          if (!haystack.includes(keyword)) return false;
-        }
+        if (keyword && !stockSearchText(product).includes(keyword)) return false;
         if (activeCategory && product.category !== activeCategory) return false;
         if (filter === 'attention') return expiry?.level === 'expired' || expiry?.level === 'soon';
         if (filter === 'low') return low;

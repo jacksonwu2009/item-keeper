@@ -20,6 +20,7 @@ import { useOffice } from '../../../hooks/useOffice';
 import { useScene } from '../../../hooks/useScene';
 import { diffDays, formatDate, todayStr } from '../../../lib/dates';
 import { describeConfig } from '../../../lib/devicePresets';
+import { deviceSearchText, searchKeyword } from '../../../lib/listSearch';
 import { rescheduleReminders } from '../../../lib/notifications';
 import { warrantyStatus } from '../../../lib/warranty';
 import { makeStyles, useColors } from '../../../hooks/useTheme';
@@ -67,7 +68,7 @@ export default function DevicesScreen() {
   // 换了场景，另一个场景的筛选就不算了
   const filter: Filter = (home ? HOME_FILTERS : OFFICE_FILTERS).includes(chosenFilter) ? chosenFilter : 'all';
   const [query, setQuery] = useState('');
-  const keyword = query.trim().toLowerCase();
+  const keyword = searchKeyword(query);
   const today = todayStr();
 
   const deletion = usePendingDelete<number>(
@@ -89,20 +90,7 @@ export default function DevicesScreen() {
       if (filter === 'in' && device.quantity - device.outQty <= 0) return false;
       if (filter === 'warrantySoon' && warrantyStatus(device.warrantyUntil, today)?.level !== 'soon') return false;
       if (filter === 'warrantyExpired' && warrantyStatus(device.warrantyUntil, today)?.level !== 'expired') return false;
-      if (!keyword) return true;
-      return [
-        device.name,
-        device.model,
-        describeConfig(device),
-        device.serialNo,
-        device.invoiceNo,
-        device.category,
-        device.holders,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(keyword);
+      return !keyword || deviceSearchText(device).includes(keyword);
     });
     const groups = new Map<string, DeviceSummary[]>();
     for (const device of matched) {

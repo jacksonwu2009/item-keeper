@@ -102,6 +102,7 @@ export async function loadPlanProducts(db: SQLiteDatabase, officeId: number | nu
     lowStockThreshold: product.lowStockThreshold,
     expiryLeadDays: product.expiryLeadDays,
     batches: byProduct.get(product.id) ?? [],
+    searchFields: product,
   }));
 }
 

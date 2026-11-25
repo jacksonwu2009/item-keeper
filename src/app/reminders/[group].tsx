@@ -1,10 +1,10 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { FlatList, StyleSheet, View, type ListRenderItem } from 'react-native';
 
 import { ReminderRow } from '../../components/ReminderRows';
-import { Empty, type Tone } from '../../components/ui';
+import { Empty, SearchField, type Tone } from '../../components/ui';
 import { listDevices, type DeviceSummary } from '../../db/devices';
 import { listOffices } from '../../db/offices';
 import { getSettings, type AppSettings } from '../../db/settings';
@@ -13,12 +13,16 @@ import { useOffice } from '../../hooks/useOffice';
 import { useScene } from '../../hooks/useScene';
 import { makeStyles } from '../../hooks/useTheme';
 import { todayStr } from '../../lib/dates';
+import { deviceSearchText, stockSearchText } from '../../lib/listSearch';
 import { loadPlanProducts } from '../../lib/notifications';
 import {
   expiryRowText,
+  filterReminderItems,
   isReminderGroup,
   lowStockRowText,
+  noMatchTitle,
   REMINDER_GROUP_TITLES,
+  reminderGroupTitle,
   shortDateIn,
   showKindFor,
   sortLowStock,
@@ -30,8 +34,8 @@ import { statusForDay, type PlanProduct } from '../../lib/reminderPlan';
 import { radius } from '../../theme';
 
 /**
- * 列表的一行（读数据时就算好，滚动时不再算）：点了打开物品或设备详情；
- * first、last：这一行在卡片的顶上、底下（带圆角，第一行不画分隔线）
+ * 列表的一行（读数据时就算好，滚动、搜索时不再算）：点了打开物品或设备详情；
+ * searchText：拿来比搜索关键词的文字，和物品列表、设备列表用同一个函数算（lib/listSearch）
  */
 type ReminderItem = {
   key: string;
@@ -39,14 +43,17 @@ type ReminderItem = {
   subtitle: string;
   chip: { text: string; tone: Tone };
   open: { pathname: '/stock/[id]' | '/device/[id]'; id: number } | null;
-  first: boolean;
-  last: boolean;
+  searchText: string | null;
 };
 
 const NO_ITEMS: ReminderItem[] = [];
 
 function productTarget(product: PlanProduct): ReminderItem['open'] {
   return product.id === undefined ? null : { pathname: '/stock/[id]', id: product.id };
+}
+
+function productSearchText(product: PlanProduct): string | null {
+  return product.searchFields ? stockSearchText(product.searchFields) : null;
 }
 
 /**
@@ -62,7 +69,7 @@ function reminderItems(
   officeNames: Map<number, string> | null,
 ): ReminderItem[] {
   const today = todayStr();
-  let items: Omit<ReminderItem, 'first' | 'last'>[] = [];
+  let items: ReminderItem[] = [];
   if (group === 'expired' || group === 'expiring' || group === 'lowStock') {
     const status = statusForDay(products, { ...settings, expiryEnabled: true, lowStockEnabled: true }, today);
     if (group === 'lowStock') {
@@ -76,6 +83,7 @@ function reminderItems(
           subtitle: text.subtitle,
           chip: { text: text.chip, tone: entry.qty <= 0 ? 'danger' : 'warn' },
           open: productTarget(entry.product),
+          searchText: productSearchText(entry.product),
         };
       });
     } else {
@@ -89,6 +97,7 @@ function reminderItems(
           subtitle: text.subtitle,
           chip: { text: text.chip, tone: group === 'expired' ? 'danger' : 'warn' },
           open: productTarget(entry.product),
+          searchText: productSearchText(entry.product),
         };
       });
     }
@@ -105,14 +114,17 @@ function reminderItems(
         .join(' · '),
       chip: { text: warrantyChipText(daysLeft), tone: 'warn' },
       open: { pathname: '/device/[id]', id: device.id },
+      searchText: deviceSearchText(device),
     }));
   }
-  return items.map((item, index) => ({ ...item, first: index === 0, last: index === items.length - 1 }));
+  return items;
 }
 
 /**
  * 提醒页某一组的完整列表（提醒页每组只显示前几样）。看的是右上角选的办公点，和提醒页一样。
  * 一组可能几百上千样：FlatList 只画屏幕上看得见的几行；各行在读数据时算好（loader 里），滚动、重画时不再算。
+ * 顶上的搜索框和物品列表（保修那一组和设备列表）的搜索规则一样，输入就在已读到的这些行里过滤；
+ * 搜的时候标题写「已过期（3/208）」（搜到几条/一共几条）。
  */
 export default function ReminderGroupScreen() {
   const pageStyles = usePageStyles();
@@ -136,21 +148,49 @@ export default function ReminderGroupScreen() {
     return { items: reminderItems(group, products, settings, devices, homeScene, officeNames) };
   }, [db, officeFilter, group, homeScene, showOffice]);
   const [data, , loaded] = useFocusData(loader, { items: NO_ITEMS });
+  const [query, setQuery] = useState('');
+  const searching = query.trim() !== '';
+  const items = useMemo(() => (loaded ? filterReminderItems(data.items, query) : NO_ITEMS), [loaded, data.items, query]);
   const title = REMINDER_GROUP_TITLES[group];
+  // 第一行、最后一行按过滤后的位置算（圆角、分隔线）
+  const renderItem = useCallback<ListRenderItem<ReminderItem>>(
+    ({ item, index }) => <ReminderListRow item={item} first={index === 0} last={index === items.length - 1} />,
+    [items.length],
+  );
+
+  const header =
+    // 这一组本来就是空的就不放搜索框
+    loaded && (data.items.length > 0 || query !== '') ? (
+      <View style={pageStyles.header}>
+        <SearchField
+          placeholder={group === 'warranty' ? '搜索名称、型号、序列号或谁在用' : '搜索名称、分类、位置或条码'}
+          value={query}
+          onChangeText={setQuery}
+          returnKeyType="search"
+          clearButtonMode="while-editing"
+        />
+      </View>
+    ) : undefined;
 
   return (
     <View style={pageStyles.screen}>
-      <Stack.Screen options={{ title: loaded ? `${title}（${data.items.length}）` : title }} />
+      <Stack.Screen
+        options={{ title: loaded ? reminderGroupTitle(title, data.items.length, searching ? items.length : null) : title }}
+      />
       <FlatList
         style={pageStyles.screen}
         contentContainerStyle={pageStyles.listContent}
-        data={loaded ? data.items : NO_ITEMS}
+        data={items}
         keyExtractor={itemKey}
         renderItem={renderItem}
+        ListHeaderComponent={header}
+        keyboardShouldPersistTaps="handled"
         ListEmptyComponent={
-          loaded ? (
+          !loaded ? undefined : searching ? (
+            <Empty icon="search-outline" title={noMatchTitle(query)} />
+          ) : (
             <Empty icon="checkmark-circle-outline" title={group === 'warranty' ? '现在没有保修快到期的设备' : `现在没有${title}的`} />
-          ) : undefined
+          )
         }
         initialNumToRender={20}
         windowSize={11}
@@ -163,21 +203,19 @@ function itemKey(item: ReminderItem): string {
   return item.key;
 }
 
-const renderItem: ListRenderItem<ReminderItem> = ({ item }) => <ReminderListRow item={item} />;
-
 function openItem(item: ReminderItem) {
   if (item.open) router.push({ pathname: item.open.pathname, params: { id: String(item.open.id) } });
 }
 
 /**
- * 一行：第一行带上圆角、最后一行带下圆角，一组连起来就是原来那张白卡片（ReminderCard）；分隔线由 ReminderRow 画（第一行不画）。
- * memo：重新读数据前已经画好的行不重画
+ * 一行：第一行（first）带上圆角、最后一行（last）带下圆角，一组连起来就是原来那张白卡片（ReminderCard）；分隔线由 ReminderRow 画（第一行不画）。
+ * memo：重新读数据、搜索前已经画好的行（还是同一个对象、位置没变）不重画
  */
-const ReminderListRow = memo(function ReminderListRow({ item }: { item: ReminderItem }) {
+const ReminderListRow = memo(function ReminderListRow({ item, first, last }: { item: ReminderItem; first: boolean; last: boolean }) {
   const pageStyles = usePageStyles();
   return (
-    <View style={[pageStyles.rowCard, item.first ? pageStyles.rowCardFirst : pageStyles.rowCardJoined, item.last && pageStyles.rowCardLast]}>
-      <ReminderRow first={item.first} title={item.title} subtitle={item.subtitle} chip={item.chip} onPress={() => openItem(item)} />
+    <View style={[pageStyles.rowCard, first ? pageStyles.rowCardFirst : pageStyles.rowCardJoined, last && pageStyles.rowCardLast]}>
+      <ReminderRow first={first} title={item.title} subtitle={item.subtitle} chip={item.chip} onPress={() => openItem(item)} />
     </View>
   );
 });
@@ -186,6 +224,7 @@ const usePageStyles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.bg },
   // 和原来的 Screen 一样四周留 16、底下留 40
   listContent: { padding: 16, paddingBottom: 40 },
+  header: { marginBottom: 12 },
   // 各行连成一张卡片（ReminderCard 的样子：白底、大圆角、不留内边距）
   rowCard: { backgroundColor: colors.surface, overflow: 'hidden' },
   rowCardFirst: { borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg },

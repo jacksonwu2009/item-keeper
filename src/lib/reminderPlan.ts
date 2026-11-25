@@ -14,6 +14,7 @@
  */
 
 import { addDays, dateStrToLocalDate, describeDaysLeft, epochDay, todayStr } from './dates';
+import type { StockSearchFields } from './listSearch';
 import { SCENE_REMINDER_PREFIX, SCENES, type Scene } from './terms';
 import { WARRANTY_SOON_DAYS } from './warranty';
 
@@ -43,6 +44,8 @@ export type PlanProduct = {
   lowStockThreshold: number | null;
   expiryLeadDays: number | null;
   batches: PlanBatch[];
+  /** 提醒明细页搜索用的字段（名称是原名，不带办公点前缀），规则同物品列表（lib/listSearch）；排通知时不需要 */
+  searchFields?: StockSearchFields;
 };
 
 /** 要提醒保修的设备：名字（多个地点时带地点前缀）和保修到期日 */

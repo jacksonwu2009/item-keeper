@@ -3,6 +3,7 @@
  * 鸿蒙版提醒页用同一套规则。
  */
 import { describeDaysLeft } from './dates';
+import { searchKeyword } from './listSearch';
 import type { ExpiryEntry, LowStockEntry } from './reminderPlan';
 import { formatQty, isStockKind, KIND_LABEL } from './stock';
 import { warrantyStatus } from './warranty';
@@ -95,4 +96,24 @@ export function warrantySoonDevices<T extends { warrantyUntil: string | null }>(
 /** 保修快到期那一行的标签：「剩 12 天」/「今天到期」 */
 export function warrantyChipText(daysLeft: number): string {
   return daysLeft > 0 ? `剩 ${daysLeft} 天` : '今天到期';
+}
+
+/**
+ * 明细页按搜索框过滤：每行的 searchText 由物品列表（或设备列表）的同一个函数算好（lib/listSearch），包含关键词就留下。
+ * 没在搜时原样返回同一个数组；searchText 为 null 的行（没有搜索用的字段）搜的时候不留。
+ */
+export function filterReminderItems<T extends { searchText: string | null }>(items: T[], query: string): T[] {
+  const keyword = searchKeyword(query);
+  if (!keyword) return items;
+  return items.filter((item) => item.searchText !== null && item.searchText.includes(keyword));
+}
+
+/** 明细页标题：没在搜时「已过期（208）」，搜的时候「已过期（3/208）」（搜到几条/一共几条）；matched 为 null 是没在搜 */
+export function reminderGroupTitle(title: string, total: number, matched: number | null): string {
+  return matched === null ? `${title}（${total}）` : `${title}（${matched}/${total}）`;
+}
+
+/** 搜不到时的提示：「没有找到「可乐」」 */
+export function noMatchTitle(query: string): string {
+  return `没有找到「${query.trim()}」`;
 }

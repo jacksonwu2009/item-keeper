@@ -4,12 +4,16 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { deviceSearchText, stockSearchText } from '../src/lib/listSearch';
 import {
   expiryRowText,
+  filterReminderItems,
   isReminderGroup,
   lowStockRowText,
   moreText,
+  noMatchTitle,
   previewOf,
+  reminderGroupTitle,
   shortDateIn,
   showKindFor,
   sortLowStock,
@@ -80,5 +84,58 @@ describe('提醒页列表', () => {
   it('只认这几组', () => {
     assert.equal(isReminderGroup('lowStock'), true);
     assert.equal(isReminderGroup('devices'), false);
+  });
+
+  it('明细页搜索：和物品列表一样搜名称、分类、规格、位置、条码，去掉首尾空白、不分大小写', () => {
+    const fields = (name: string, extra: Partial<Parameters<typeof stockSearchText>[0]> = {}) => ({
+      name,
+      category: null,
+      spec: null,
+      location: null,
+      barcode: null,
+      ...extra,
+    });
+    const items = [
+      { key: 'a', searchText: stockSearchText(fields('可口可乐', { category: '饮料', spec: '500ML' })) },
+      { key: 'b', searchText: stockSearchText(fields('Apple 苹果', { location: '茶水间', barcode: '6901234567890' })) },
+      { key: 'c', searchText: stockSearchText(fields('纸巾', { category: '纸品' })) },
+      { key: 'd', searchText: null },
+    ];
+    const keys = (query: string) => filterReminderItems(items, query).map((item) => item.key);
+    assert.equal(filterReminderItems(items, '  '), items, '没在搜时原样返回');
+    assert.deepEqual(keys('可乐'), ['a']);
+    assert.deepEqual(keys(' ml '), ['a'], '规格，不分大小写');
+    assert.deepEqual(keys('APPLE'), ['b']);
+    assert.deepEqual(keys('茶水间'), ['b'], '位置');
+    assert.deepEqual(keys('690123'), ['b'], '条码');
+    assert.deepEqual(keys('纸品'), ['c'], '分类');
+    assert.deepEqual(keys('乐 饮'), ['a'], '几项用空格连起来');
+    assert.deepEqual(keys('没有的'), []);
+  });
+
+  it('明细页搜索：保修那一组和设备列表一样搜名称、型号、配置、序列号、发票号、分类、使用人', () => {
+    const device = {
+      name: '办公电脑',
+      model: 'MacBook Pro',
+      chip: 'M3',
+      memory: '16G',
+      storage: '512G',
+      serialNo: 'C02XYZ',
+      invoiceNo: 'FP-001',
+      category: '电脑',
+      holders: '张三、李四',
+    };
+    const items = [{ searchText: deviceSearchText(device) }];
+    for (const query of ['macbook', 'm3 16g/512g', 'c02xyz', 'fp-001', '电脑', '李四']) {
+      assert.equal(filterReminderItems(items, query).length, 1, query);
+    }
+    assert.equal(filterReminderItems(items, '王五').length, 0);
+  });
+
+  it('明细页标题：搜的时候写「搜到几条/一共几条」；搜不到的提示', () => {
+    assert.equal(reminderGroupTitle('已过期', 208, null), '已过期（208）');
+    assert.equal(reminderGroupTitle('已过期', 208, 3), '已过期（3/208）');
+    assert.equal(reminderGroupTitle('快到期', 12, 0), '快到期（0/12）');
+    assert.equal(noMatchTitle(' 可乐 '), '没有找到「可乐」');
   });
 });
