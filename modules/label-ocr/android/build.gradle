@@ -6,7 +6,7 @@ plugins {
 group = 'expo.modules.labelocr'
 version = '1.0.0'
 
-// 模型不进 git：由 scripts/fetch-ocr-models.sh 下载到 modules/label-ocr/models/（iOS 也从这里打包），
+// 模型不进 git：由 scripts/fetch-ocr-models.sh 下载、压缩权重后放到 modules/label-ocr/models/（iOS 也从这里打包），
 // 这里把那个目录当作 assets 打进安装包，App 里的路径是 PP-OCRv6_small/det/inference.onnx 这样
 def modelsDir = file("${projectDir}/../models")
 def requiredModelFiles = [

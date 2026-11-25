@@ -95,7 +95,7 @@
 
 ## 打成安装包
 
-**安卓（本机打，不需要账号）**：装好 JDK 和 Android SDK 后运行 `scripts/build-android.sh`（脚本开头写了要装哪些），产物在 `dist/item-keeper-<版本>.apk`。用的是调试签名，只适合自己装，不能上架。拍照识别的模型（约 30 MB）不在仓库里，脚本会先跑 `scripts/fetch-ocr-models.sh` 下载并校验 sha256（放在 `modules/label-ocr/models/`，下过的不再下）。安装包里的 .so 压缩存放（安装包小约 30 MB，装到手机上时系统解压，多占约 47 MB），见 `modules/label-ocr/app.plugin.js`。
+**安卓（本机打，不需要账号）**：装好 JDK 和 Android SDK 后运行 `scripts/build-android.sh`（脚本开头写了要装哪些），产物在 `dist/item-keeper-<版本>.apk`。用的是调试签名，只适合自己装，不能上架。拍照识别的模型不在仓库里，脚本会先跑 `scripts/fetch-ocr-models.sh`：下载官方原版（约 31 MB，放在工程外的 `~/.cache/item-keeper/`）并校验 sha256，再把权重压成 fp16 / int8（约 14 MB，推理时还原成 float，识别结果和原版对照过）放到 `modules/label-ocr/models/`，下过、压过的不再重复。安装包里的 .so 压缩存放（安装包小约 30 MB，装到手机上时系统解压，多占约 47 MB），见 `modules/label-ocr/app.plugin.js`。
 
 **iOS** 给同事日常用走 **TestFlight**：苹果官方的测试渠道，开发者账号上传后，同事用 TestFlight 这个 App 安装，自己人（内部测试员）测试不用审核；每个版本 90 天后过期，要重新上传。临时试用也可以用 Expo Go（见上一节）。
 

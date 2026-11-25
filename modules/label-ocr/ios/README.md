@@ -22,7 +22,7 @@
 ```bash
 npm ci
 
-# 1. 下载模型（和安卓共用，放 modules/label-ocr/models/，不进 git）
+# 1. 下载模型并压缩权重（和安卓共用，放 modules/label-ocr/models/，不进 git；压缩用 Node，见脚本开头）
 scripts/fetch-ocr-models.sh
 
 # 2. 下载 iOS 用的 ONNX Runtime（静态库，放 modules/label-ocr/ios/Frameworks/，不进 git）
