@@ -15,7 +15,18 @@
  *   日期认 2026.10.12、2026-10-12、2026/10/12、20261012、2026年10月12日。
  *   旁边写「生产 / MFG / PD」的是生产日期，写「保质期至 / 有效期至 / EXP / BB」的是到期日：
  *   先看同一行日期前面的字，再按位置找离它最近的那一行字（同一排左边、或正上方）。
- * - 合理性：生产日期不晚于今天、不早于 5 年前；两个日期正好差一个保质期时互相印证；对不上就列出来让人选，不猜。
+ *   旁边没写字、同一行日期后面跟着时间（「20260930EA1 14:09」，中间可以夹批号）的，当生产日期。
+ * - 合理性：生产日期不晚于今天、不早于 5 年前；两个日期正好差一个保质期时互相印证。
+ * - 日期怎么填（decideDates）：
+ *   - 写着「生产」「保质期至」、能分清的直接填。知道保质期（商品资料里的或标签上认出的）时，生产日期和到期日
+ *     正好差一个保质期就互相印证；对不上就列出来让人选。
+ *   - 不知道保质期、两个日期旁边都没写字：前一个不晚于今天、后一个在今天以后、比前一个晚 7 天到 5 年时，
+ *     前面的填生产日期、后面的填到期日，标「按先后填的」让人核对。
+ *   - 不知道保质期、认出了生产日期（写着「生产」或后面跟着时间），另外只有一个没写字的日期，在今天以后、
+ *     比生产日期晚 7 天到 5 年：当到期日，也标「按先后填的」。
+ *   - 只有一个日期：填进点了「拍日期」的那一格；在今天以后的一定是到期日，后面跟着时间的是生产日期。
+ *   - 别的情况列出来让人选，不猜：三个及以上、两个都在今天以后、两个都不晚于今天、隔得太近或太远、前面的反而晚。
+ *     其中写着「生产」的生产日期照填、另外的日期不填；生产日期只是看时间认的，就和都没写字时一样列出来。
  * - 容错：识别时偶尔漏字、认错一个字（「质期」「生产口期」「品名称」），关键词按容错写；
  *   「见包装检验合格」这类连写在下一个字段名处截断。
  */
@@ -39,10 +50,12 @@ export type DateRole = 'production' | 'expiry';
 export type LabelDate = {
   /** YYYY-MM-DD */
   date: string;
-  /** 旁边的字说明了是生产日期还是到期日；分不清是 null */
+  /** 旁边的字（或后面跟着的时间）说明了是生产日期还是到期日；分不清是 null */
   role: DateRole | null;
   /** 在第几行（输入 lines 的下标） */
   line: number;
+  /** 旁边没写字，是看同一行日期后面跟着时间（14:09）才当生产日期的 */
+  byTime: boolean;
 };
 
 export type LabelQuality = {
@@ -131,6 +144,11 @@ const EXPIRY_KEY_RE =
 const DATE_SEP_RE = /(^|\D)(20\d{2})\s*[.\-/年]\s*(\d{1,2})\s*[.\-/月]\s*(\d{1,2})(?!\d)/g;
 /** 20261012，后面可以紧跟 0–4 位（时间、班次，例如 2026092411）；一串数字超过 12 位的多半是条码、许可证号，不认 */
 const DATE_COMPACT_RE = /(^|\D)(20\d{2})(\d{2})(\d{2})(\d{0,4})(?!\d)/g;
+/**
+ * 日期后面紧跟着的时间：14:09、14:09:33；中间可以夹批号（字母、数字、空格、横杠，最多 12 个，最后一个不是数字），
+ * 例如「20260930EA1 14:09」「2026093014:09」。印着时间的一般是生产时刻。
+ */
+const TIME_AFTER_DATE_RE = /^(?:[\sA-Za-z0-9-]{0,12}?[\sA-Za-z-])?(?:[01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?(?!\d)/;
 
 // ───────────────────────────── 小工具 ─────────────────────────────
 
@@ -317,7 +335,8 @@ function keywordsIn(text: string): Keyword[] {
     .sort((a, b) => a.index - b.index);
 }
 
-type FoundDate = { date: string; index: number };
+/** index 是日期在行里从哪开始，end 是日期到哪结束（20261012 后面紧跟的时间、班次数字不算在里面） */
+type FoundDate = { date: string; index: number; end: number };
 
 function toDateStr(year: string, month: string, day: string): string | null {
   const value = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
@@ -334,8 +353,9 @@ export function datesInText(text: string): FoundDate[] {
     const start = match.index + match[1].length;
     const date = toDateStr(match[2], match[3], match[4]);
     if (date) {
-      found.push({ date, index: start });
-      taken.push([start, match.index + match[0].length]);
+      const end = match.index + match[0].length;
+      found.push({ date, index: start, end });
+      taken.push([start, end]);
     }
   }
   DATE_COMPACT_RE.lastIndex = 0;
@@ -343,7 +363,7 @@ export function datesInText(text: string): FoundDate[] {
     const start = match.index + match[1].length;
     if (taken.some(([from, to]) => start >= from && start < to)) continue;
     const date = toDateStr(match[2], match[3], match[4]);
-    if (date) found.push({ date, index: start });
+    if (date) found.push({ date, index: start, end: start + 8 });
     // 「(^|\D)」吃掉了前一个字符，下一轮从数字串后面接着找
     DATE_COMPACT_RE.lastIndex = match.index + match[0].length;
   }
@@ -379,6 +399,12 @@ function roleFromNeighbours(lineIndex: number, texts: string[], rects: (Rect | n
   return best?.role ?? null;
 }
 
+/** 同一行里这个日期后面（到下一个日期为止）紧跟着时间 */
+function followedByTime(text: string, item: FoundDate, found: FoundDate[]): boolean {
+  const next = found.find((other) => other.index >= item.end);
+  return TIME_AFTER_DATE_RE.test(text.slice(item.end, next ? next.index : text.length));
+}
+
 function findDates(texts: string[], rects: (Rect | null)[], today: string): LabelDate[] {
   const earliest = addYears(today, -5);
   const latest = addYears(today, 10);
@@ -398,14 +424,26 @@ function findDates(texts: string[], rects: (Rect | null)[], today: string): Labe
       const before = keywords.filter((keyword) => keyword.end <= item.index);
       let role: DateRole | null = before.length ? before[before.length - 1].role : null;
       if (!role && !keywords.length) role = roleFromNeighbours(lineIndex, texts, rects, labelOnly);
+      // 旁边没写字、后面跟着时间的：当生产日期
+      let byTime = false;
+      if (!role && followedByTime(texts[lineIndex], item, found)) {
+        role = 'production';
+        byTime = true;
+      }
       // 生产日期不晚于今天、不早于 5 年前；不合理的不按生产日期算，交给人看
-      if (role === 'production' && item.date > today) role = null;
+      if (role === 'production' && item.date > today) {
+        role = null;
+        byTime = false;
+      }
       const existing = result.find((other) => other.date === item.date);
       if (existing) {
-        if (!existing.role && role) existing.role = role;
+        if (!existing.role && role) {
+          existing.role = role;
+          existing.byTime = byTime;
+        }
         continue;
       }
-      result.push({ date: item.date, role, line: lineIndex });
+      result.push({ date: item.date, role, line: lineIndex, byTime });
     }
   });
   return result;
@@ -484,6 +522,8 @@ export type DateDecision = {
   expiry: string | null;
   /** 生产日期 + 保质期 和印着的到期日对上了（互相印证） */
   confirmed: boolean;
+  /** 到期日旁边没写字，是按先后填的（前面的当生产日期、后面的当到期日）：界面提示「按先后填的，请核对」 */
+  byOrder: boolean;
   /** 要人选的时候列出来的日期（按先后）；能直接填时是空的 */
   options: DateOption[];
   /** options 里建议先选哪个（下标），没有建议是 -1 */
@@ -503,8 +543,23 @@ function describeGap(days: number): string {
   return `${days} 天`;
 }
 
+/** 按先后填时，到期日最少比生产日期晚几天、最多晚几年 */
+const ORDER_MIN_DAYS = 7;
+const ORDER_MAX_YEARS = 5;
+
+/** 两个旁边没写字（或只有生产日期写了字）的日期能不能按先后当生产日期、到期日：前一个不晚于今天，后一个在今天以后、晚 7 天到 5 年 */
+function fitsByOrder(production: string, expiry: string, today: string): boolean {
+  return (
+    production <= today &&
+    expiry > today &&
+    diffDays(expiry, production) >= ORDER_MIN_DAYS &&
+    expiry <= addYears(production, ORDER_MAX_YEARS)
+  );
+}
+
 /**
- * 认出的日期怎么填：能分清的直接给生产日期 / 到期日，分不清的列出来让人选。
+ * 认出的日期怎么填：能分清的直接给生产日期 / 到期日，分不清的列出来让人选（规则见文件头）。
+ * - dates：parseLabel 认出的日期，按在标签上出现的先后
  * - shelfLife：商品资料里或标签上认出的保质期，用来互相印证；没有就是 null
  * - target：用户点的是哪一格旁边的「拍日期」。只认出一个分不清用途的日期时填进这一格（在今天以后的一定是到期日）
  */
@@ -513,7 +568,7 @@ export function decideDates(
   { shelfLife, today, target }: { shelfLife: ShelfLife | null; today: string; target: DateRole },
 ): DateDecision {
   const sorted = [...dates].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-  const none: DateDecision = { production: null, expiry: null, confirmed: false, options: [], suggested: -1 };
+  const none: DateDecision = { production: null, expiry: null, confirmed: false, byOrder: false, options: [], suggested: -1 };
   if (!sorted.length) return none;
 
   const productions = sorted.filter((item) => item.role === 'production');
@@ -524,7 +579,7 @@ export function decideDates(
   const choose = (): DateDecision => {
     const options = sorted.map((item, index): DateOption => {
       let note = '';
-      if (item.role === 'production') note = '旁边写着「生产」';
+      if (item.role === 'production') note = item.byTime ? '后面跟着时间，像是生产日期' : '旁边写着「生产」';
       else if (item.role === 'expiry') note = '旁边写着「保质期至 / 有效期至 / EXP」';
       else if (index > 0) note = `比前一个晚${describeGap(diffDays(item.date, sorted[index - 1].date))}，像是保质期至`;
       else if (item.date > today) note = '在今天以后，像是到期日';
@@ -557,7 +612,14 @@ export function decideDates(
     if (production) {
       // 另外还有一个没写字、正好差一个保质期的：当到期日
       const later = unknown.find((item) => item.date > production && agree(production, item.date));
-      return { ...none, production, expiry: later?.date ?? null, confirmed: !!later };
+      if (later) return { ...none, production, expiry: later.date, confirmed: true };
+      // 不知道保质期，另外只有一个没写字的日期、按先后像到期日：当到期日
+      if (!shelfLife && unknown.length === 1 && fitsByOrder(production, unknown[0].date, today)) {
+        return { ...none, production, expiry: unknown[0].date, byOrder: true };
+      }
+      // 生产日期只是看后面跟着时间认的，又分不出另外的日期：和都没写字时一样列出来让人选
+      if (productions[0].byTime && unknown.length) return choose();
+      return { ...none, production };
     }
     if (expiry) {
       const earlier = unknown.find((item) => item.date < expiry && item.date <= today && agree(item.date, expiry));
@@ -574,6 +636,13 @@ export function decideDates(
   }
   if (unknown.length === 2 && agree(unknown[0].date, unknown[1].date) && unknown[0].date <= today) {
     return { ...none, production: unknown[0].date, expiry: unknown[1].date, confirmed: true };
+  }
+  // 不知道保质期：按在标签上的先后，前面的当生产日期、后面的当到期日（前面的反而晚就不填）
+  if (unknown.length === 2 && !shelfLife) {
+    const [first, second] = dates;
+    if (first.date < second.date && fitsByOrder(first.date, second.date, today)) {
+      return { ...none, production: first.date, expiry: second.date, byOrder: true };
+    }
   }
   return choose();
 }

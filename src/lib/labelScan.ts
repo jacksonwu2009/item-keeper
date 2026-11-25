@@ -8,8 +8,11 @@
 import { addDays, expiryFromShelfLife, formatDate, formatShelfLife, type ShelfLife } from './dates';
 import type { LabelParseResult } from './labelParse';
 
-/** 拍日期的结果：能分清的生产日期 / 到期日（认不出的是 null） */
-export type DateScanResult = { production: string | null; expiry: string | null; confirmed: boolean };
+/**
+ * 拍日期的结果：能分清的生产日期 / 到期日（认不出的是 null）。
+ * byOrder：到期日旁边没写字，是按先后填的（decideDates 的 byOrder），日期下面提示人核对；没有就是 false。
+ */
+export type DateScanResult = { production: string | null; expiry: string | null; confirmed: boolean; byOrder?: boolean };
 
 /** 拍包装的结果：背面标签认出的字段，加上日期（喷码或标签上的，已经分好或人选好；跳过了喷码就是 null） */
 export type LabelScanResult = { label: LabelParseResult; dates: DateScanResult | null };
@@ -84,10 +87,13 @@ export type ExpiryFill = {
   note: string | null;
 };
 
+/** 到期日是按先后填的（喷码上两个日期旁边都没写字）时，日期下面的提示 */
+export const BY_ORDER_NOTE = '按先后填的，请核对';
+
 /**
  * 认出来的日期、保质期怎么填进过期日期那几格：
  * - 生产日期 + 保质期正好等于印着的到期日：按「生产日期+保质期」填，提示对上了；
- * - 有到期日（生产日期对不上或没有）：直接填到期日；
+ * - 有到期日（生产日期对不上或没有）：直接填到期日；到期日是按先后填的（旁边没写字）时提示「按先后填的，请核对」；
  * - 只有生产日期：按「生产日期+保质期」填，保质期不知道时空着让人填；
  * - 日期都没认出来、但认出了保质期或标签写了「见瓶盖」：按「生产日期+保质期」，生产日期标「没认出来」，提示单独拍喷码；
  * - 和日期有关的什么都没认出来：返回 null，过期日期那几格不动。
@@ -117,7 +123,14 @@ export function planExpiryFill({
     };
   }
   if (dates.expiry) {
-    return { mode: 'date', expiry: dates.expiry, productionDate: null, shelfLife, tags: { expiry: 'recognized' }, note: null };
+    return {
+      mode: 'date',
+      expiry: dates.expiry,
+      productionDate: null,
+      shelfLife,
+      tags: { expiry: 'recognized' },
+      note: dates.byOrder ? BY_ORDER_NOTE : null,
+    };
   }
   if (dates.production) {
     return {

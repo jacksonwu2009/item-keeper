@@ -69,6 +69,20 @@ describe('拍照识别：认出的日期、保质期怎么填', () => {
       dateElsewhere: null,
     });
     assert.deepEqual([fill?.mode, fill?.expiry, fill?.tags], ['date', '2027-03-01', { expiry: 'recognized' }]);
+    assert.equal(fill?.note, null);
+  });
+
+  it('两个日期按先后填的：填到期日，日期下面提示「按先后填的，请核对」', () => {
+    const fill = planExpiryFill({
+      dates: { production: '2026-09-30', expiry: '2026-12-28', confirmed: false, byOrder: true },
+      shelfLife: null,
+      shelfLifeRecognized: false,
+      dateElsewhere: null,
+    });
+    assert.deepEqual(
+      [fill?.mode, fill?.expiry, fill?.tags, fill?.note],
+      ['date', '2026-12-28', { expiry: 'recognized' }, '按先后填的，请核对'],
+    );
   });
 
   it('只有生产日期、不知道保质期：保质期标「没认出来」让人填', () => {

@@ -134,16 +134,146 @@
   },
   {
    "id": "inkjet-two-dates-no-shelf",
-   "description": "不知道保质期：分不清，列出来让人选，建议前一个当生产日期",
+   "description": "不知道保质期、两个日期都没写字：前一个不晚于今天、后一个在今天以后、差一年，按先后填，标「按先后填的」",
    "lines": [{"text": "20261012 A13 20271011"}],
    "target": "production",
-   "expect": {"production": null, "expiry": null, "options": 2, "suggested": 0}
+   "expect": {"production": "2026-10-12", "expiry": "2027-10-11", "confirmed": false, "byOrder": true, "options": 0}
   },
   {
    "id": "inkjet-two-dates-no-shelf-want-expiry",
+   "description": "按先后填和点的是哪一格无关",
    "lines": [{"text": "20261012 A13 20271011"}],
    "target": "expiry",
-   "expect": {"production": null, "expiry": null, "options": 2, "suggested": 1}
+   "expect": {"production": "2026-10-12", "expiry": "2027-10-11", "byOrder": true, "options": 0}
+  },
+  {
+   "id": "inkjet-two-dates-shelf-agrees-not-by-order",
+   "description": "知道保质期又对上了：互相印证，不算按先后填的",
+   "lines": [{"text": "20261012 A13 20271011"}],
+   "shelfLife": {"amount": 12, "unit": "month"},
+   "expect": {"production": "2026-10-12", "expiry": "2027-10-11", "confirmed": true, "byOrder": false}
+  },
+  {
+   "id": "inkjet-two-dates-shelf-disagrees",
+   "description": "知道保质期却对不上：列出来让人选，不按先后填",
+   "lines": [{"text": "20261012 A13 20271011"}],
+   "shelfLife": {"amount": 6, "unit": "month"},
+   "target": "production",
+   "expect": {"production": null, "expiry": null, "byOrder": false, "options": 2, "suggested": 0}
+  },
+  {
+   "id": "by-order-both-future",
+   "description": "反例：两个都在今天以后，列出来让人选",
+   "lines": [{"text": "20261201"}, {"text": "20270601"}],
+   "expect": {"production": null, "expiry": null, "byOrder": false, "options": 2}
+  },
+  {
+   "id": "by-order-both-past",
+   "description": "反例：两个都不晚于今天，列出来让人选",
+   "lines": [{"text": "20260901"}, {"text": "20261101"}],
+   "expect": {"production": null, "expiry": null, "byOrder": false, "options": 2}
+  },
+  {
+   "id": "by-order-gap-too-short",
+   "description": "反例：只差 4 天（不到 7 天），列出来让人选",
+   "lines": [{"text": "20261120"}, {"text": "20261124"}],
+   "expect": {"production": null, "expiry": null, "byOrder": false, "options": 2}
+  },
+  {
+   "id": "by-order-gap-too-long",
+   "description": "反例：差 5 年多，列出来让人选",
+   "lines": [{"text": "20261001"}, {"text": "20311002"}],
+   "expect": {"production": null, "expiry": null, "byOrder": false, "options": 2}
+  },
+  {
+   "id": "by-order-later-printed-first",
+   "description": "反例：印在前面的反而晚，列出来让人选",
+   "lines": [{"text": "20271011"}, {"text": "20261012"}],
+   "target": "production",
+   "expect": {"production": null, "expiry": null, "byOrder": false, "options": 2, "suggested": 0}
+  },
+  {
+   "id": "by-order-three-dates",
+   "description": "反例：三个日期，列出来让人选",
+   "lines": [{"text": "20261001 20261101 20270101"}],
+   "expect": {"production": null, "expiry": null, "byOrder": false, "options": 3}
+  },
+  {
+   "id": "photo-two-dates-time-bread",
+   "description": "面包袋上的喷码（2026-11-25 用户照片）：第一行日期后面夹批号跟着时间，当生产日期；第二行没写字、在今天以后、晚近三个月，当到期日",
+   "today": "2026-11-25",
+   "lines": [{"text": "20260930EA1 14:09"}, {"text": "20261228"}],
+   "expect": {"dates": ["2026-09-30", "2026-12-28"], "production": "2026-09-30", "expiry": "2026-12-28", "confirmed": false, "byOrder": true, "options": 0}
+  },
+  {
+   "id": "photo-two-dates-time-bread-shelf-agrees",
+   "description": "同一张照片，商品资料里保质期 90 天：正好对上，互相印证",
+   "today": "2026-11-25",
+   "lines": [{"text": "20260930EA1 14:09"}, {"text": "20261228"}],
+   "shelfLife": {"amount": 90, "unit": "day"},
+   "expect": {"production": "2026-09-30", "expiry": "2026-12-28", "confirmed": true, "byOrder": false}
+  },
+  {
+   "id": "photo-two-dates-time-bread-shelf-disagrees",
+   "description": "同一张照片，商品资料里保质期 6 个月：对不上，列出来让人选，建议后面跟着时间的那个当生产日期",
+   "today": "2026-11-25",
+   "lines": [{"text": "20260930EA1 14:09"}, {"text": "20261228"}],
+   "shelfLife": {"amount": 6, "unit": "month"},
+   "target": "production",
+   "expect": {"production": null, "expiry": null, "byOrder": false, "options": 2, "suggested": 0}
+  },
+  {
+   "id": "time-after-date-seconds",
+   "description": "日期后面跟着带秒的时间：当生产日期，点的是到期日那一格也一样",
+   "lines": [{"text": "2026.09.30 14:09:33"}],
+   "target": "expiry",
+   "expect": {"production": "2026-09-30", "expiry": null, "byOrder": false}
+  },
+  {
+   "id": "time-right-after-compact-date",
+   "description": "时间紧挨着八位日期",
+   "lines": [{"text": "2026093014:09"}],
+   "target": "expiry",
+   "expect": {"production": "2026-09-30", "expiry": null}
+  },
+  {
+   "id": "time-after-expiry-keyword",
+   "description": "旁边写着到期类的字，后面跟着时间也还是到期日",
+   "lines": [{"text": "EXP 2027.03.30 10:00"}],
+   "target": "production",
+   "expect": {"production": null, "expiry": "2027-03-30"}
+  },
+  {
+   "id": "time-after-future-date",
+   "description": "后面跟着时间但在今天以后：不当生产日期，只有这一个日期时是到期日",
+   "lines": [{"text": "20261228 14:09"}],
+   "target": "production",
+   "expect": {"production": null, "expiry": "2026-12-28"}
+  },
+  {
+   "id": "time-production-other-date-past",
+   "description": "反例：后面跟着时间的日期和另一个日期都不晚于今天，列出来让人选",
+   "lines": [{"text": "20260930 14:09"}, {"text": "20261115"}],
+   "target": "production",
+   "expect": {"production": null, "expiry": null, "byOrder": false, "options": 2, "suggested": 0}
+  },
+  {
+   "id": "labelled-production-plus-plain-date",
+   "description": "写着生产日期，另外一个没写字的日期在今天以后、晚半年：当到期日，标「按先后填的」",
+   "lines": [{"text": "生产日期：2026.10.12"}, {"text": "2027.04.11"}],
+   "expect": {"production": "2026-10-12", "expiry": "2027-04-11", "confirmed": false, "byOrder": true}
+  },
+  {
+   "id": "labelled-production-plus-past-date",
+   "description": "写着生产日期，另外一个没写字的日期不晚于今天：生产日期照填，另一个不填",
+   "lines": [{"text": "生产日期：2026.09.01"}, {"text": "2026.11.01"}],
+   "expect": {"production": "2026-09-01", "expiry": null, "byOrder": false, "options": 0}
+  },
+  {
+   "id": "labelled-production-plus-plain-date-shelf-disagrees",
+   "description": "写着生产日期，另一个日期和保质期对不上：生产日期照填，另一个不填",
+   "lines": [{"text": "保质期：12个月"}, {"text": "生产日期：2026.10.12"}, {"text": "2027.04.11"}],
+   "expect": {"production": "2026-10-12", "expiry": null, "byOrder": false, "options": 0}
   },
   {
    "id": "labelled-same-line",

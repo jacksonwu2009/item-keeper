@@ -49,6 +49,11 @@ type Phase =
   | { kind: 'problem'; problem: ScanProblem }
   | { kind: 'choose'; decision: DateDecision; shot: Shot; shelfLife: ShelfLife | null; target: DateRole };
 
+/** 分好了的日期（不用人选）交回去时带上：对上了保质期、按先后填的 */
+function decisionResult(decision: DateDecision): DateScanResult {
+  return { production: decision.production, expiry: decision.expiry, confirmed: decision.confirmed, byOrder: decision.byOrder };
+}
+
 /** 模型加载过一次以后就不用再提示「第一次要等一会儿」 */
 let modelLoaded = false;
 
@@ -146,7 +151,7 @@ export function LabelCamera(props: Props) {
         return;
       }
       if (decision.production || decision.expiry) {
-        finishLabel(parsed, { production: decision.production, expiry: decision.expiry, confirmed: decision.confirmed });
+        finishLabel(parsed, decisionResult(decision));
         return;
       }
       // 标签上没有日期（常写「见瓶盖」「见包装喷码处」）：接着拍喷码
@@ -170,7 +175,7 @@ export function LabelCamera(props: Props) {
       setPhase({ kind: 'choose', decision, shot, shelfLife, target });
       return;
     }
-    finishDate({ production: decision.production, expiry: decision.expiry, confirmed: decision.confirmed });
+    finishDate(decisionResult(decision));
   }
 
   async function shoot() {

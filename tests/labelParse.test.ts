@@ -19,7 +19,7 @@ import {
  * 测试数据在 tests/fixtures/label-ocr/*.json（格式见那里的 README.md），鸿蒙版的 LabelParse.ets 跑同一批。
  * expect 里写了的键才比：
  * - name / spec / shelfLife / dateElsewhere / nameCandidates：parseLabel 的结果
- * - production / expiry / confirmed：decideDates 的结果；options 是要人选的个数，suggested 是建议选第几个
+ * - production / expiry / confirmed / byOrder：decideDates 的结果；options 是要人选的个数，suggested 是建议选第几个
  * - dates：认出的日期（按出现顺序）；poor：是不是提示重拍
  */
 type FixtureItem = {
@@ -58,6 +58,7 @@ function runItem(fixture: Fixture, item: FixtureItem) {
     production: decision.production,
     expiry: decision.expiry,
     confirmed: decision.confirmed,
+    byOrder: decision.byOrder,
     options: decision.options.length,
     suggested: decision.suggested,
   };
@@ -127,6 +128,28 @@ describe('拍照识别：小工具', () => {
       ['2026-10-12', '2027-01-05', '2028-02-03', '2029-03-04'],
     );
     assert.deepEqual(datesInText('2026.13.01 20260231').map((item) => item.date), []);
+  });
+
+  it('日期后面跟着时间：夹批号、带秒、紧挨着都算；没有冒号的、隔着下一个日期的不算', () => {
+    const roles = (text: string) => parseLabel([{ text }], '2026-11-25').dates.map((item) => `${item.date}:${item.role}`);
+    assert.deepEqual(roles('20260930EA1 14:09'), ['2026-09-30:production']);
+    assert.deepEqual(roles('20260930EA1  14:09'), ['2026-09-30:production']);
+    assert.deepEqual(roles('2026-09-30 14:09:33'), ['2026-09-30:production']);
+    assert.deepEqual(roles('2026093014:09'), ['2026-09-30:production']);
+    assert.deepEqual(roles('2026092411'), ['2026-09-24:null']);
+    assert.deepEqual(roles('20260930 L2 1409'), ['2026-09-30:null']);
+    assert.deepEqual(roles('20260930 A13 20261228 10:20'), ['2026-09-30:null', '2026-12-28:null']);
+    assert.deepEqual(roles('20260930 25:09'), ['2026-09-30:null']);
+  });
+
+  it('列出来让人选时，看时间认的生产日期写明是看时间认的', () => {
+    const today = '2026-11-25';
+    const result = parseLabel([{ text: '20260930EA1 14:09' }, { text: '20261228' }], today);
+    const decision = decideDates(result.dates, { shelfLife: { amount: 6, unit: 'month' }, today, target: 'production' });
+    assert.deepEqual(
+      decision.options.map((option) => option.note),
+      ['后面跟着时间，像是生产日期', '比前一个晚差不多 3 个月，像是保质期至'],
+    );
   });
 
   it('生产日期 + 保质期 和到期日差一天也算对上（有的算到前一天，有的算到同一天）', () => {

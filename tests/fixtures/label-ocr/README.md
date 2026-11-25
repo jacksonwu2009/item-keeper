@@ -47,6 +47,7 @@
         "production": null,            // decideDates() 直接能填的生产日期
         "expiry": null,                // decideDates() 直接能填的到期日
         "confirmed": false,            // 生产日期 + 保质期 和到期日对上了
+        "byOrder": false,              // 到期日旁边没写字，是按先后填的（界面提示「按先后填的，请核对」）
         "options": 0,                  // 分不清时列给人选的个数
         "suggested": -1                // 建议选第几个（下标），没有是 -1
       }
@@ -56,3 +57,4 @@
 ```
 
 decideDates 的参数：`shelfLife` 用 item 里的，没有就用 parseLabel 认出的；`today` 用 item 或文件的；`target` 默认 production。
+日期怎么分、什么时候按先后填，规则写在 `src/lib/labelParse.ts` 文件头。
