@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { router } from 'expo-router';
+import { router, useScrollToTop } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { FlatList, ScrollView, View, type ListRenderItem } from 'react-native';
 import { Text } from './Text';
 
@@ -32,6 +32,9 @@ export function StockList({ kind }: { kind: StockKind }) {
   const listStyles = useListStyles();
   const db = useSQLiteContext();
   const office = useOffice();
+  // 已经在这个标签时再点一下底部标签，列表回到顶部（搜索框、筛选在最上面）
+  const listRef = useRef<FlatList<StockRowData>>(null);
+  useScrollToTop(listRef);
   const officeFilter = office.filterId;
   const showOffice = office.multiple && officeFilter === null;
   const loader = useCallback(async () => {
@@ -154,6 +157,7 @@ export function StockList({ kind }: { kind: StockKind }) {
   return (
     <View style={listStyles.screen}>
       <FlatList
+        ref={listRef}
         style={listStyles.list}
         contentContainerStyle={listStyles.content}
         data={rows}

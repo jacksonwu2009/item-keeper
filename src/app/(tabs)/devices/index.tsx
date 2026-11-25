@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, useScrollToTop } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, SectionList, View, type SectionListRenderItem } from 'react-native';
 import { Text } from '../../../components/Text';
 
@@ -39,6 +39,16 @@ export default function DevicesScreen() {
   const deviceStyles = useDeviceStyles();
   const db = useSQLiteContext();
   const office = useOffice();
+  // 已经在这个标签时再点一下底部标签，列表回到顶部。按设备看、按人看是两个列表，同一时间只显示一个，滚正在显示的那个
+  const deviceListRef = useRef<SectionList<DeviceSummary, DeviceSection>>(null);
+  const personListRef = useRef<SectionList<ActiveAssignment, PersonSection>>(null);
+  const scrollTarget = useRef({
+    scrollToTop: () => {
+      const list = deviceListRef.current ?? personListRef.current;
+      list?.getScrollResponder()?.scrollTo({ y: 0, animated: true });
+    },
+  });
+  useScrollToTop(scrollTarget);
   const { scene } = useScene();
   // 家庭场景：没有领用、按使用人和借出 / 在库，改成看保修
   const home = scene === 'home';
@@ -222,6 +232,7 @@ export default function DevicesScreen() {
     return (
       <View style={deviceStyles.screen}>
         <SectionList
+          ref={personListRef}
           style={deviceStyles.list}
           contentContainerStyle={deviceStyles.content}
           sections={personSections}
@@ -245,6 +256,7 @@ export default function DevicesScreen() {
   return (
     <View style={deviceStyles.screen}>
       <SectionList
+        ref={deviceListRef}
         style={deviceStyles.list}
         contentContainerStyle={deviceStyles.content}
         sections={deviceSections}
