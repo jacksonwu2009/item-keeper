@@ -2,7 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback } from 'react';
-import { Linking, Pressable, useWindowDimensions, View } from 'react-native';
+import { Linking, Platform, Pressable, useWindowDimensions, View } from 'react-native';
 import { Text } from '../../../components/Text';
 
 import { ReminderCard, ReminderMoreRow, ReminderRow } from '../../../components/ReminderRows';
@@ -185,7 +185,7 @@ export default function RemindersScreen() {
           <View style={dash.permissionRow}>
             <Ionicons name="cloud-upload-outline" size={22} color={colors.warn} />
             <Text style={dash.permissionText}>
-              {backupMessage(backup)}。数据只存在这台手机上，导出一份存到 iCloud 云盘或发给自己，手机丢了、换了也能找回来。
+              {backupMessage(backup)}。数据只存在这台手机上，导出一份存到{Platform.OS === 'ios' ? ' iCloud 云盘' : '网盘'}或发给自己，手机丢了、换了也能找回来。
             </Text>
           </View>
           {/* 导入导出现在是设置里点进去的单独页面，直接打开它 */}
