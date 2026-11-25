@@ -8,7 +8,7 @@ import { formatQty } from './stock';
 
 export type ExpiryFillMode = 'date' | 'shelf' | 'none';
 
-/** 上一次入库：用到过期日期，和当时填的生产日期（按「生产日期+保质期」填才有；老记录、别的填法是 null） */
+/** 上一次入库：用到过期日期，和当时记的生产日期（按「生产日期+保质期」填的，或选到期日时拍照认出的；没记、老记录是 null） */
 export type LastStockIn = { expiryDate: string | null; productionDate?: string | null };
 
 /** 带出的到期日下面那句提示：上次那批的到期日只能当参考，新买的一般更晚，所以宁可偏早 */

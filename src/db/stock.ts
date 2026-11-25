@@ -51,7 +51,7 @@ export type StockMovement = {
   /** 入库为正、出库为负 */
   delta: number;
   expiryDate: string | null;
-  /** 入库时填的生产日期：按「生产日期+保质期」填才有，别的填法、出库、调整、老记录是 null */
+  /** 入库时填的生产日期：按「生产日期+保质期」填的，或选到期日时拍照认出的；没有的、出库、调整、老记录是 null */
   productionDate: string | null;
   happenedAt: string;
   note: string | null;
@@ -95,7 +95,7 @@ export type BatchInput = {
   price?: EntryPrice | null;
   /** 入库：按「生产日期+保质期」填时的保质期。商品资料里还没记保质期就记进去，下次入库默认用这种填法 */
   shelfLife?: ShelfLife | null;
-  /** 入库：按「生产日期+保质期」填时的生产日期，记在入库记录上，下次入库能点「同上次」 */
+  /** 入库：生产日期（按「生产日期+保质期」填的，或选到期日时拍照认出的），记在入库记录上，下次入库能点「同上次」 */
   productionDate?: string | null;
 };
 

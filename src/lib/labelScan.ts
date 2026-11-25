@@ -79,6 +79,7 @@ export type ExpiryFill = {
   /** 过期日期的填法：直接填到期日，还是生产日期 + 保质期 */
   mode: 'date' | 'shelf';
   expiry: string | null;
+  /** 认出的生产日期；mode 是 date 时也可能有（和到期日一起认出来的），记在入库记录上 */
   productionDate: string | null;
   /** 保质期；mode 是 shelf 又不知道时是 null，要人填 */
   shelfLife: ShelfLife | null;
@@ -93,7 +94,9 @@ export const BY_ORDER_NOTE = '按先后填的，请核对';
 /**
  * 认出来的日期、保质期怎么填进过期日期那几格：
  * - 生产日期 + 保质期正好等于印着的到期日：按「生产日期+保质期」填，提示对上了；
- * - 有到期日（生产日期对不上或没有）：直接填到期日；到期日是按先后填的（旁边没写字）时提示「按先后填的，请核对」；
+ * - 有到期日（生产日期对不上或没有）：直接填到期日；同时认出了生产日期就一起带上（标「识别」，
+ *   「选到期日」填法下记在入库记录上，界面在到期日下面列出来、可以点「不记」）；到期日是按先后填的（旁边没写字）时
+ *   提示「按先后填的，请核对」；保质期不拿两个日期相减去猜；
  * - 只有生产日期：按「生产日期+保质期」填，保质期不知道时空着让人填；
  * - 日期都没认出来、但认出了保质期或标签写了「见瓶盖」：按「生产日期+保质期」，生产日期标「没认出来」，提示单独拍喷码；
  * - 和日期有关的什么都没认出来：返回 null，过期日期那几格不动。
@@ -126,9 +129,9 @@ export function planExpiryFill({
     return {
       mode: 'date',
       expiry: dates.expiry,
-      productionDate: null,
+      productionDate: dates.production,
       shelfLife,
-      tags: { expiry: 'recognized' },
+      tags: { expiry: 'recognized', ...(dates.production ? { productionDate: 'recognized' as const } : {}) },
       note: dates.byOrder ? BY_ORDER_NOTE : null,
     };
   }

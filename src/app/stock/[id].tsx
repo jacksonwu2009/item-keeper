@@ -526,7 +526,7 @@ function StockInSheet({
   /** 面板最上面的一句（新增页扫到本机已有的条码跳过来时说明一下），没有是 null */
   notice: string | null;
   onClose: () => void;
-  /** shelfLife：按「生产日期+保质期」填时的保质期，商品资料里还没有就记进去 */
+  /** shelfLife：按「生产日期+保质期」填时的保质期，商品资料里还没有就记进去；productionDate：记在入库记录上的生产日期（见 ExpiryValue） */
   onSubmit: (
     quantity: number,
     expiryDate: string | null,

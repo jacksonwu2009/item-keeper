@@ -24,7 +24,8 @@ const DATABASE_VERSION = 14;
  * - stock_product.shelf_life_amount / shelf_life_unit：商品的保质期（如 12 个月，unit 是 day / month / year），可不填；
  *   入库时按生产日期算到期日用，拍包装识别也会填（v12 起）
  * - stock_product.category：物品分类（存分类名，固定选项见 lib/categories.ts），可不填；品牌不用了，brand 列连数据一起删掉（v13 起）
- * - stock_movement.production_date：入库时填的生产日期（按「生产日期+保质期」填才有），下次入库点「同上次」用；
+ * - stock_movement.production_date：入库时填的生产日期（按「生产日期+保质期」填的，或选到期日时拍照认出、没点「不记」的），
+ *   下次入库点「同上次」用；
  *   升级前的记录没有，不拿到期日和保质期倒推（v14 起）
  * - setting：键值设置（usage.scene 记这个库是哪个场景的）
  */

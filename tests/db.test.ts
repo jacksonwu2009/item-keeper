@@ -36,6 +36,7 @@ import {
   stockOut,
   type StockProductInput,
 } from '../src/db/stock';
+import { expiryValueOf } from '../src/lib/expiryValue';
 import { openDb, openRawDb, plain } from './helpers/memoryDb';
 
 
@@ -297,7 +298,7 @@ describe('数据层（真实 SQLite）', () => {
     assert.equal(productShelfLife((await getProduct(db, other))!), null);
   });
 
-  it('入库按「生产日期+保质期」填的生产日期记在入库记录上，最近一次入库带得出来；别的填法、出库不记', async () => {
+  it('入库按「生产日期+保质期」填的生产日期记在入库记录上，最近一次入库带得出来；没有生产日期的、出库不记', async () => {
     const db = await openDb();
     // 新建物品时的第一批也记
     const id = await createProduct(db, product({ shelfLife: { amount: 12, unit: 'month' } }), {
@@ -321,6 +322,40 @@ describe('数据层（真实 SQLite）', () => {
     // 不记过期日期时生产日期也不记
     await stockIn(db, id, { quantity: 1, expiryDate: null, productionDate: '2026-10-12' });
     assert.equal((await getLastStockIn(db, id))?.productionDate, null);
+  });
+
+  it('选到期日时拍照认出的生产日期也记在入库记录上（新建物品第一批、入库都一样），点了「不记」就不记；保质期不记进商品资料', async () => {
+    const db = await openDb();
+    const scanned = expiryValueOf({
+      mode: 'date',
+      expiry: '2026-12-28',
+      productionDate: '2026-09-30',
+      keepProductionDate: true,
+      shelfAmountText: '',
+      shelfUnit: 'month',
+    });
+    const id = await createProduct(db, product({}), {
+      quantity: 2,
+      expiryDate: scanned.expiry,
+      entry: { qty: 2, unit: '袋' },
+      shelfLife: scanned.shelfLife,
+      productionDate: scanned.productionDate,
+    });
+    assert.equal((await getLastStockIn(db, id))?.productionDate, '2026-09-30');
+    assert.equal(productShelfLife((await getProduct(db, id))!), null);
+    await stockIn(db, id, { quantity: 1, expiryDate: '2027-01-05', shelfLife: scanned.shelfLife, productionDate: '2026-10-08' });
+    assert.equal((await getLastStockIn(db, id))?.productionDate, '2026-10-08');
+    const skipped = expiryValueOf({
+      mode: 'date',
+      expiry: '2027-02-01',
+      productionDate: '2026-11-01',
+      keepProductionDate: false,
+      shelfAmountText: '',
+      shelfUnit: 'month',
+    });
+    await stockIn(db, id, { quantity: 1, expiryDate: skipped.expiry, productionDate: skipped.productionDate });
+    assert.equal((await getLastStockIn(db, id))?.productionDate, null);
+    assert.equal(productShelfLife((await getProduct(db, id))!), null);
   });
 
   it('升级到 v14：出入库记录加上生产日期列，老记录是空的、别的数据都在；重复升级不出错', async () => {

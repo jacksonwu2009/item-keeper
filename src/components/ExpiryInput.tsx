@@ -3,7 +3,8 @@ import { View } from 'react-native';
 import { Text } from './Text';
 
 import { isLabelOcrAvailable } from '../../modules/label-ocr';
-import { expiryFromShelfLife, formatDate, todayStr, type ShelfLife, type ShelfLifeUnit } from '../lib/dates';
+import { formatDate, todayStr, type ShelfLife, type ShelfLifeUnit } from '../lib/dates';
+import { expiryValueOf, keptProductionDate, keptProductionLabel, type ExpiryMode, type ExpiryValue } from '../lib/expiryValue';
 import type { DateRole } from '../lib/labelParse';
 import { planExpiryFill, type ExpiryFill } from '../lib/labelScan';
 import { sameAsLastLabel } from '../lib/stockInDefaults';
@@ -12,15 +13,10 @@ import { font, radius } from '../theme';
 import { DateField } from './DateField';
 import { LabelCamera, type DateScanResult } from './LabelCamera';
 import { NumberField } from './NumberField';
-import { Button, ChoiceChips, Segmented } from './ui';
+import { Button, ChoiceChips, ScanTagChip, Segmented } from './ui';
 
-export type ExpiryMode = 'date' | 'shelf' | 'none';
-
-/**
- * expiry 是算出来的到期日；shelfLife 是「生产日期+保质期」填法下填的保质期（别的填法是 null），新建物品时记进商品资料；
- * productionDate 是这种填法下算出到期日用的生产日期（别的填法、没算出来是 null），记在入库记录上
- */
-export type ExpiryValue = { expiry: string | null; error: string | null; shelfLife: ShelfLife | null; productionDate: string | null };
+// 要保存的值怎么算在 lib/expiryValue.ts（ExpiryValue 的说明也在那里）
+export type { ExpiryMode, ExpiryValue };
 
 type Tags = ExpiryFill['tags'];
 
@@ -31,6 +27,9 @@ type Tags = ExpiryFill['tags'];
  * 拍照识别（手机上能用时）：日期格子右边有「拍日期」，拍喷码认出日期直接填；能分清生产日期、到期日的分好，
  * 和保质期对上了提示一下。认出来的格子浅蓝底、标「识别」，改过就不再标。
  * 拍包装识别出的结果由上层通过 fill 传进来（换 key 重新挂载时用作初始值）。
+ * 按「选到期日」填、照片里又认出了生产日期时，到期日下面多一行「生产日期 9月30日」（标「识别」，右边「不记」）：
+ * 这个生产日期记在入库记录上，点「不记」就不记、这一行消失；改到期日不影响它，切到「生产日期+保质期」时生产日期那格就是这天。
+ * 手动选的日期不出这一行。保质期不拿两个日期相减去猜。
  *
  * 「同上次」：这个物品上次入库记了生产日期（lastProductionDate）时，生产日期下面有个小按钮「同上次：某年某月某日」，
  * 点一下填成那天、标「按上次」，到期日照常按保质期算；人再改日期标记就没了。生产日期已经是那天时不出按钮。
@@ -70,6 +69,8 @@ export function ExpiryInput({
   const startShelf = fill ? fill.shelfLife : initialShelfLife;
   const [shelfAmount, setShelfAmount] = useState(fill && !fill.shelfLife ? '' : String(startShelf?.amount ?? 12));
   const [shelfUnit, setShelfUnit] = useState<ShelfLifeUnit>(startShelf?.unit ?? 'month');
+  // 「选到期日」填法下也记生产日期（拍照认出了生产日期时打开，点「不记」关掉）
+  const [keepProductionDate, setKeepProductionDate] = useState(!!fill?.productionDate);
   const [tags, setTags] = useState<Tags>(fill?.tags ?? {});
   const [note, setNote] = useState<string | null>(fill?.note ?? null);
   const [shelfEdited, setShelfEdited] = useState(false);
@@ -81,25 +82,9 @@ export function ExpiryInput({
   // 保质期是真知道的（商品资料里的、照片认出的、人填过的），不是默认的 12 个月：拍日期时拿它和喷码上的日期互相印证
   const shelfKnown = !!initialShelfLife || !!fill?.shelfLife || shelfEdited;
   const knownShelfLife: ShelfLife | null = shelfKnown && shelfValid ? { amount, unit: shelfUnit } : null;
-  let result: ExpiryValue;
-  if (mode === 'none') {
-    result = { expiry: null, error: null, shelfLife: null, productionDate: null };
-  } else if (mode === 'date') {
-    result = expiry
-      ? { expiry, error: null, shelfLife: null, productionDate: null }
-      : { expiry: null, error: '请选择过期日期', shelfLife: null, productionDate: null };
-  } else if (!productionDate) {
-    result = { expiry: null, error: '请选择生产日期', shelfLife: shelfValid ? { amount, unit: shelfUnit } : null, productionDate: null };
-  } else if (!shelfValid) {
-    result = { expiry: null, error: '保质期请填正整数', shelfLife: null, productionDate: null };
-  } else {
-    result = {
-      expiry: expiryFromShelfLife(productionDate, amount, shelfUnit),
-      error: null,
-      shelfLife: { amount, unit: shelfUnit },
-      productionDate,
-    };
-  }
+  const draft = { mode, expiry, productionDate, keepProductionDate, shelfAmountText: shelfAmount, shelfUnit };
+  const result: ExpiryValue = expiryValueOf(draft);
+  const kept = keptProductionDate(draft);
   const sameAsLast = sameAsLastLabel(lastProductionDate, productionDate);
 
   useEffect(() => {
@@ -132,13 +117,12 @@ export function ExpiryInput({
     const plan = planExpiryFill({ dates: scan, shelfLife: knownShelfLife, shelfLifeRecognized: false, dateElsewhere: null });
     if (!plan) return;
     setMode(plan.mode);
-    if (plan.mode === 'date') {
-      setExpiry(plan.expiry);
-    } else {
-      setProductionDate(plan.productionDate);
-      // 不知道保质期（只是默认的 12 个月）：清空让人照包装填，免得算错到期日
-      if (!knownShelfLife) setShelfAmount('');
-    }
+    if (plan.mode === 'date') setExpiry(plan.expiry);
+    // 认出了生产日期：两种填法共用这一格；「选到期日」时也记下（到期日下面那一行），没认出来时这一行去掉
+    if (plan.mode === 'shelf' || plan.productionDate) setProductionDate(plan.productionDate);
+    setKeepProductionDate(!!plan.productionDate);
+    // 不知道保质期（只是默认的 12 个月）：清空让人照包装填，免得按生产日期算错到期日
+    if (!knownShelfLife && (plan.mode === 'shelf' || plan.productionDate)) setShelfAmount('');
     const nextTags: Tags = { ...tags };
     // 保质期还是商品资料里的（标「按资料」）就留着标；别的标记按这次拍的重来
     if (nextTags.shelfLife !== 'saved') delete nextTags.shelfLife;
@@ -182,6 +166,14 @@ export function ExpiryInput({
           tag={tags.expiry}
           right={scanButton('expiry')}
         />
+      ) : null}
+      {kept ? (
+        <View style={expiryStyles.keptRow}>
+          <Text style={expiryStyles.keptText}>{keptProductionLabel(kept)}</Text>
+          {tags.productionDate ? <ScanTagChip tag={tags.productionDate} /> : null}
+          <View style={expiryStyles.keptSpacer} />
+          <Button title="不记" variant="ghost" compact onPress={() => setKeepProductionDate(false)} />
+        </View>
       ) : null}
       {mode === 'shelf' ? (
         <View style={expiryStyles.wrap}>
@@ -262,6 +254,10 @@ const useExpiryStyles = makeStyles((colors) => ({
   wrap: { gap: 12 },
   // 「同上次」：贴着生产日期那一格的小按钮，靠左、不占满一行
   sameAsLast: { alignSelf: 'flex-start', marginTop: -4 },
+  // 「选到期日」时拍照认出的生产日期：贴着到期日那一格的一行小字，右边「不记」
+  keptRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: -4 },
+  keptText: { fontSize: font.small, color: colors.muted },
+  keptSpacer: { flex: 1 },
   computed: { fontSize: font.small, color: colors.muted },
   computedDate: { color: colors.accent, fontWeight: '700' },
   note: { fontSize: font.small, color: colors.faint },

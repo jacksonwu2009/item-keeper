@@ -68,11 +68,11 @@ describe('拍照识别：认出的日期、保质期怎么填', () => {
       shelfLifeRecognized: false,
       dateElsewhere: null,
     });
-    assert.deepEqual([fill?.mode, fill?.expiry, fill?.tags], ['date', '2027-03-01', { expiry: 'recognized' }]);
+    assert.deepEqual([fill?.mode, fill?.expiry, fill?.productionDate, fill?.tags], ['date', '2027-03-01', null, { expiry: 'recognized' }]);
     assert.equal(fill?.note, null);
   });
 
-  it('两个日期按先后填的：填到期日，日期下面提示「按先后填的，请核对」', () => {
+  it('两个日期按先后填的：填到期日，生产日期一起带上，日期下面提示「按先后填的，请核对」；保质期不猜', () => {
     const fill = planExpiryFill({
       dates: { production: '2026-09-30', expiry: '2026-12-28', confirmed: false, byOrder: true },
       shelfLife: null,
@@ -80,8 +80,21 @@ describe('拍照识别：认出的日期、保质期怎么填', () => {
       dateElsewhere: null,
     });
     assert.deepEqual(
-      [fill?.mode, fill?.expiry, fill?.tags, fill?.note],
-      ['date', '2026-12-28', { expiry: 'recognized' }, '按先后填的，请核对'],
+      [fill?.mode, fill?.expiry, fill?.productionDate, fill?.shelfLife, fill?.tags, fill?.note],
+      ['date', '2026-12-28', '2026-09-30', null, { expiry: 'recognized', productionDate: 'recognized' }, '按先后填的，请核对'],
+    );
+  });
+
+  it('写着生产、写着到期但没有保质期可核对：填到期日，生产日期一起带上，不提示', () => {
+    const fill = planExpiryFill({
+      dates: { production: '2026-10-12', expiry: '2027-10-11', confirmed: false },
+      shelfLife: null,
+      shelfLifeRecognized: false,
+      dateElsewhere: null,
+    });
+    assert.deepEqual(
+      [fill?.mode, fill?.expiry, fill?.productionDate, fill?.shelfLife, fill?.tags, fill?.note],
+      ['date', '2027-10-11', '2026-10-12', null, { expiry: 'recognized', productionDate: 'recognized' }, null],
     );
   });
 

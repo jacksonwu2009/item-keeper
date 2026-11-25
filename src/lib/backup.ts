@@ -62,7 +62,7 @@ export type BackupMovement = {
   /** 入库单价（按 inputUnit 计）和总价，没填为 null */
   unitPrice: number | null;
   totalPrice: number | null;
-  /** 入库时填的生产日期（按「生产日期+保质期」填才有）；没记的记录不写这个字段，老备份里也没有 */
+  /** 入库时填的生产日期（按「生产日期+保质期」填的，或选到期日时拍照认出的）；没记的记录不写这个字段，老备份里也没有 */
   productionDate?: string | null;
 };
 
