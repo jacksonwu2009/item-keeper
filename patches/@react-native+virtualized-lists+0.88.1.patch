@@ -1,0 +1,88 @@
+diff --git a/node_modules/@react-native/virtualized-lists/Lists/ListMetricsAggregator.js b/node_modules/@react-native/virtualized-lists/Lists/ListMetricsAggregator.js
+index b0516e6..768a6b0 100644
+--- a/node_modules/@react-native/virtualized-lists/Lists/ListMetricsAggregator.js
++++ b/node_modules/@react-native/virtualized-lists/Lists/ListMetricsAggregator.js
+@@ -61,6 +61,7 @@ export default class ListMetricsAggregator {
+   _cellMetrics: Map<string, CellMetrics> = new Map();
+   _contentLength: ?number;
+   _highestMeasuredCellIndex = 0;
++  _listHeaderEnd = 0;
+   _measuredCellsLength = 0;
+   _measuredCellsCount = 0;
+   _orientation: ListOrientation = {
+@@ -150,6 +151,25 @@ export default class ListMetricsAggregator {
+     this._contentLength = this._selectLength(layout);
+   }
+ 
++  /**
++   * Notify ListMetricsAggregator that the ListHeaderComponent has been laid out,
++   * so that estimated offsets of unmeasured cells start after the header.
++   */
++  notifyListHeaderLayout({
++    orientation,
++    layout,
++  }: {
++    orientation: ListOrientation,
++    layout: LayoutRectangle,
++  }): void {
++    this._invalidateIfOrientationChanged(orientation);
++    const {horizontal, rtl} = this._orientation;
++    this._listHeaderEnd =
++      horizontal && rtl
++        ? 0
++        : this._selectOffset(layout) + this._selectLength(layout);
++  }
++
+   /**
+    * Return the average length of the cells which have been measured
+    */
+@@ -197,7 +217,7 @@ export default class ListMetricsAggregator {
+       }
+ 
+       if (offset == null) {
+-        offset = this._averageCellLength * index;
++        offset = this._getLeadingLength(props) + this._averageCellLength * index;
+       }
+ 
+       const {data, getItemCount} = props;
+@@ -214,6 +234,17 @@ export default class ListMetricsAggregator {
+     }
+   }
+ 
++  /**
++   * Length before the first cell (ListHeaderComponent plus the leading padding
++   * of the content container). Estimates of unmeasured cells must include it,
++   * otherwise they disagree with measured cells by exactly this length and the
++   * render window can oscillate between two ranges.
++   */
++  _getLeadingLength(props: CellMetricProps): number {
++    const firstCell = this.getCellMetrics(0, props);
++    return firstCell != null ? firstCell.offset : this._listHeaderEnd;
++  }
++
+   /**
+    * Returns the exact metrics of a cell if it has already been laid out
+    */
+@@ -321,6 +352,7 @@ export default class ListMetricsAggregator {
+       this._averageCellLength = 0;
+       this._contentLength = null;
+       this._highestMeasuredCellIndex = 0;
++      this._listHeaderEnd = 0;
+       this._measuredCellsLength = 0;
+       this._measuredCellsCount = 0;
+     }
+diff --git a/node_modules/@react-native/virtualized-lists/Lists/VirtualizedList.js b/node_modules/@react-native/virtualized-lists/Lists/VirtualizedList.js
+index 413d14d..a060252 100644
+--- a/node_modules/@react-native/virtualized-lists/Lists/VirtualizedList.js
++++ b/node_modules/@react-native/virtualized-lists/Lists/VirtualizedList.js
+@@ -1457,6 +1457,10 @@ class VirtualizedList extends StateSafePureComponent<
+ 
+   _onLayoutHeader = (e: LayoutChangeEvent) => {
+     this._headerLength = this._selectLength(e.nativeEvent.layout);
++    this._listMetrics.notifyListHeaderLayout({
++      layout: e.nativeEvent.layout,
++      orientation: this._orientation(),
++    });
+   };
+ 
+   // $FlowFixMe[missing-local-annot]
