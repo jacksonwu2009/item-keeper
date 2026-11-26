@@ -432,6 +432,129 @@
    "description": "拍日期的小框里只有一行喷码也不算糊",
    "lines": [{"text": "20261012", "score": 0.93}],
    "expect": {"poor": false}
+  },
+  {
+   "id": "trad-name",
+   "description": "繁体「產品名稱」也认；名称保留标签上的繁体原字",
+   "lines": [{"text": "產品名稱：曲奇餅乾"}],
+   "expect": {"name": "曲奇餅乾"}
+  },
+  {
+   "id": "trad-name-keeps-original",
+   "description": "名称里的「淨」不转成「净」：只有找字段名时才把繁体字换成简体",
+   "lines": [{"text": "產品名稱：淨水濾芯"}, {"text": "規格：3支"}],
+   "expect": {"name": "淨水濾芯", "spec": "3支"}
+  },
+  {
+   "id": "trad-name-cut-at-field",
+   "description": "名称后面连着写繁体字段名「淨含量」：在那里截断",
+   "lines": [{"text": "商品名稱：鳳梨酥淨含量：200g"}],
+   "expect": {"name": "鳳梨酥", "spec": "200g"}
+  },
+  {
+   "id": "trad-name-next-line",
+   "description": "「產品名稱：」后面空着，名称在下一行",
+   "lines": [{"text": "產品名稱："}, {"text": "烏龍茶飲料"}, {"text": "配料：水、烏龍茶"}],
+   "expect": {"name": "烏龍茶飲料"}
+  },
+  {
+   "id": "trad-producer-not-name",
+   "description": "反例：「生產商」「配料」不是名称",
+   "lines": [{"text": "生產商：某某食品有限公司"}, {"text": "配料：小麥粉、白砂糖"}],
+   "expect": {"name": null, "spec": null}
+  },
+  {
+   "id": "trad-spec",
+   "lines": [{"text": "淨含量：120g"}],
+   "expect": {"spec": "120g"}
+  },
+  {
+   "id": "trad-spec-weight",
+   "lines": [{"text": "淨重：500克"}],
+   "expect": {"spec": "500克"}
+  },
+  {
+   "id": "trad-spec-traditional-unit",
+   "description": "单位是繁体「張」：认出来，规格里还是「張」",
+   "lines": [{"text": "規格：10張×5包"}],
+   "expect": {"spec": "10張×5包"}
+  },
+  {
+   "id": "trad-shelf-months",
+   "description": "「12個月」的「個」也认",
+   "lines": [{"text": "保質期：12個月"}],
+   "expect": {"shelfLife": {"amount": 12, "unit": "month"}}
+  },
+  {
+   "id": "trad-shelf-chinese-number",
+   "lines": [{"text": "保質期為兩年"}],
+   "expect": {"shelfLife": {"amount": 2, "unit": "year"}}
+  },
+  {
+   "id": "trad-shelf-limit",
+   "lines": [{"text": "保存期限：18個月"}],
+   "expect": {"shelfLife": {"amount": 18, "unit": "month"}}
+  },
+  {
+   "id": "trad-shelf-until-is-expiry",
+   "description": "「保質期至」后面是到期日，不是保质期",
+   "lines": [{"text": "保質期至：2027.10.11"}],
+   "target": "production",
+   "expect": {"shelfLife": null, "production": null, "expiry": "2027-10-11"}
+  },
+  {
+   "id": "trad-labelled-dates",
+   "description": "繁体「生產日期」「有效期至」：直接分好，不是按先后填的",
+   "lines": [{"text": "生產日期：2026年09月30日"}, {"text": "有效期至：2027年03月29日"}],
+   "expect": {"production": "2026-09-30", "expiry": "2027-03-29", "byOrder": false}
+  },
+  {
+   "id": "trad-manufacture-valid-date",
+   "description": "「製造日期」是生产日期，「有效日期」是到期日",
+   "lines": [{"text": "製造日期：2026.09.30"}, {"text": "有效日期：2027.09.29"}],
+   "expect": {"production": "2026-09-30", "expiry": "2027-09-29", "byOrder": false}
+  },
+  {
+   "id": "trad-valid-period-same-line",
+   "lines": [{"text": "製造日期：2026.09.30 有效期限：2026.12.30"}],
+   "expect": {"production": "2026-09-30", "expiry": "2026-12-30", "byOrder": false}
+  },
+  {
+   "id": "trad-batch",
+   "description": "「生產批號」后面的日期是生产日期（点的是到期日那格也不填进到期日）",
+   "lines": [{"text": "生產批號：20260930"}],
+   "target": "expiry",
+   "expect": {"production": "2026-09-30", "expiry": null}
+  },
+  {
+   "id": "trad-elsewhere-cap",
+   "description": "「見瓶蓋」认出来，记下的还是繁体原字",
+   "lines": [{"text": "生產日期：見瓶蓋"}],
+   "expect": {"dateElsewhere": "見瓶蓋"}
+  },
+  {
+   "id": "trad-elsewhere-with-batch",
+   "lines": [{"text": "生產日期及批號：見包裝噴碼處"}],
+   "expect": {"dateElsewhere": "見包裝噴碼處"}
+  },
+  {
+   "id": "trad-elsewhere-joined-text",
+   "description": "「見封口處檢驗合格」在繁体字段名「檢驗合格」处截断",
+   "lines": [{"text": "生產日期：見封口處檢驗合格"}],
+   "expect": {"dateElsewhere": "見封口處"}
+  },
+  {
+   "id": "trad-producer-not-production-label",
+   "description": "反例：「生產商」「生產許可證」不是生产日期的字段名（点的是到期日那格，日期就填到期日）",
+   "lines": [{"text": "生產商：某某食品有限公司", "box": [[100, 100], [400, 100], [400, 130], [100, 130]]}, {"text": "生產許可證編號：SC11144030500123", "box": [[100, 140], [460, 140], [460, 170], [100, 170]]}, {"text": "2026.09.30", "box": [[100, 180], [230, 180], [230, 210], [100, 210]]}],
+   "target": "expiry",
+   "expect": {"production": null, "expiry": "2026-09-30"}
+  },
+  {
+   "id": "trad-position-same-row",
+   "description": "日期没和繁体字段名在同一行文字里：按位置找同一排左边最近的字段名",
+   "lines": [{"text": "生產日期：", "box": [[100, 100], [200, 100], [200, 130], [100, 130]]}, {"text": "保質期至：", "box": [[100, 140], [200, 140], [200, 170], [100, 170]]}, {"text": "2027.10.11", "box": [[210, 141], [330, 141], [330, 169], [210, 169]]}, {"text": "2026.10.12", "box": [[210, 99], [330, 99], [330, 131], [210, 131]]}],
+   "expect": {"production": "2026-10-12", "expiry": "2027-10-11", "byOrder": false}
   }
  ]
 }

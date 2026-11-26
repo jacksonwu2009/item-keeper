@@ -8,12 +8,12 @@
  * 规则（方案第四节、第九节「规则要补」）：
  * - 名称：「产品名称 / 食品名称 / 品名 / 名称：」后面的字，遇到下一个字段名就截断；没有时不猜，
  *   把标签上字最大的几行列成候选让人点。
- * - 规格：「净含量 / 规格：」后面带单位的数（g、kg、mL、L、克、千克、毫升、升、片、抽、张、袋、支……，可带「×12」），
- *   没有单位的不采用。
+ * - 规格：「净含量 / 规格：」后面带单位的数（g、kg、mL、L、克、千克、毫升、升、片、抽、张、袋、支……，可带「×12」，
+ *   单位也认繁体「張 / 條 / 節 / 隻 / 個」），没有单位的不采用。
  * - 保质期：「保质期：12个月 / 180天 / 2年 / 三年」，中文数字也认；「保质期至」后面是到期日，不是保质期。
  * - 生产日期：写「见瓶盖 / 见封口 / 见喷码 / 见包装」时记下来，界面提示单独拍喷码；
  *   日期认 2026.10.12、2026-10-12、2026/10/12、20261012、2026年10月12日。
- *   旁边写「生产 / MFG / PD」的是生产日期，写「保质期至 / 有效期至 / EXP / BB」的是到期日：
+ *   旁边写「生产 / MFG / PD」的是生产日期，写「保质期至 / 有效期至 / 有效日期 / EXP / BB」的是到期日：
  *   先看同一行日期前面的字，再按位置找离它最近的那一行字（同一排左边、或正上方）。
  *   旁边没写字、同一行日期后面跟着时间（「20260930EA1 14:09」，中间可以夹批号）的，当生产日期。
  * - 合理性：生产日期不晚于今天、不早于 5 年前；两个日期正好差一个保质期时互相印证。
@@ -27,8 +27,11 @@
  *   - 只有一个日期：填进点了「拍日期」的那一格；在今天以后的一定是到期日，后面跟着时间的是生产日期。
  *   - 别的情况列出来让人选，不猜：三个及以上、两个都在今天以后、两个都不晚于今天、隔得太近或太远、前面的反而晚。
  *     其中写着「生产」的生产日期照填、另外的日期不填；生产日期只是看时间认的，就和都没写字时一样列出来。
+ * - 繁体：字段名也认繁体写法（產品名稱、淨含量、規格、保質期、生產日期、製造日期、批號、見瓶蓋、生產商……）。
+ *   找字段名时用 keyText：把字段名里会出现的繁体字逐字换成简体（一个字换一个字，位置不变），
+ *   认出的值（名称、规格、「见…」）按位置从原文里取，标签上是繁体就还是繁体，不转简体。
  * - 容错：识别时偶尔漏字、认错一个字（「质期」「生产口期」「品名称」），关键词按容错写；
- *   「净」常被认成字形几乎一样的异体字「凈」（U+51C8），先统一成「净」再找字段；
+ *   「净」常被认成字形几乎一样的异体字「凈」（U+51C8），在 normalizeText 里统一成「净」（值里也换）；
  *   「见包装检验合格」这类连写在下一个字段名处截断。
  */
 
@@ -116,8 +119,9 @@ const NAME_KEY_RE = /(?:[产食商]品名称|品名称|品\s*名)\s*:?|(?:^|[\s�
 
 /** 规格的字段名 */
 const SPEC_KEY_RE = /净\s*含\s*量|净\s*重|规\s*格|容\s*量/g;
+/** 规格的值：数 + 单位，可带「×12」；单位从原文里取，所以繁体的「張 / 節 / 條 / 隻 / 個」写在这里 */
 const SPEC_VALUE_RE =
-  /^\s*:?\s*(\d+(?:\.\d+)?)\s*(千克|公斤|毫升|kg|mg|ml|g|l|克|升|片|抽|张|包|袋|支|粒|枚|卷|节|瓶|盒|罐|条|只)(?:\s*[x×*]\s*(\d+)\s*(片|抽|张|包|袋|支|粒|枚|卷|节|瓶|盒|罐|条|只|个)?)?/i;
+  /^\s*:?\s*(\d+(?:\.\d+)?)\s*(千克|公斤|毫升|kg|mg|ml|g|l|克|升|片|抽|[张張]|包|袋|支|粒|枚|卷|[节節]|瓶|盒|罐|[条條]|[只隻])(?:\s*[x×*]\s*(\d+)\s*(片|抽|[张張]|包|袋|支|粒|枚|卷|[节節]|瓶|盒|罐|[条條]|[只隻]|[个個])?)?/i;
 
 /**
  * 保质期：保质期 / 质期（漏了「保」或认错成别的字）/ 保存期 / 保质期限，后面跟数字和单位；后面是「至」的是到期日，不算。
@@ -139,7 +143,7 @@ const PRODUCTION_KEY_RE =
   /生\s*产\s*[日口曰目]\s*期|生\s*产\s*批\s*号|生\s*产\s*时\s*间|生\s*产(?=[\s:]*\d)|产\s*日\s*期|制\s*造\s*日\s*期|包\s*装\s*日\s*期|MFG|MFD|PROD|(?:^|[^A-Z])P\.?D(?![A-Z])/gi;
 /** 表示「到期日」的字；光写「保质期」的只在后面紧跟 20xx 年的日期时算（「保质期：12个月」是保质期） */
 const EXPIRY_KEY_RE =
-  /保\s*质\s*期\s*至|有\s*效\s*期\s*至|保\s*质\s*至|有\s*效\s*期|到\s*期|失\s*效|限\s*用|保\s*质\s*期(?=[\s:]*20\d{2})|EXP|BEST\s*BEFORE|USE\s*BY|(?:^|[^A-Z])BBE?(?![A-Z])/gi;
+  /保\s*质\s*期\s*至|有\s*效\s*期\s*至|保\s*质\s*至|有\s*效\s*日\s*期|有\s*效\s*期|到\s*期|失\s*效|限\s*用|保\s*质\s*期(?=[\s:]*20\d{2})|EXP|BEST\s*BEFORE|USE\s*BY|(?:^|[^A-Z])BBE?(?![A-Z])/gi;
 
 /** 2026.10.12 / 2026-10-12 / 2026/10/12 / 2026年10月12日（分隔符前后可以有空格） */
 const DATE_SEP_RE = /(^|\D)(20\d{2})\s*[.\-/年]\s*(\d{1,2})\s*[.\-/月]\s*(\d{1,2})(?!\d)/g;
@@ -165,6 +169,28 @@ export function normalizeText(text: string): string {
     .replace(/[：︰]/g, ':')
     .replace(/凈/g, '净')
     .trim();
+}
+
+/**
+ * 字段名（上面各个关键词、FIELD_WORDS）里会出现的繁体字 → 简体字。逐字对照，每个都是一个字换一个字。
+ * 只用在 keyText 里找字段名；「凈」不在这里，它在 normalizeText 里就换掉了。
+ */
+const TRADITIONAL_KEY_CHARS: Record<string, string> = {
+  產: '产', 稱: '称', 編: '编', 類: '类', 標: '标', 準: '准', 執: '执', 衛: '卫', 質: '质', 級: '级',
+  規: '规', 淨: '净', 號: '号', 貯: '贮', 儲: '储', 條: '条', 項: '项', 溫: '温', 過: '过', 營: '营',
+  養: '养', 製: '制', 經: '经', 銷: '销', 責: '责', 單: '单', 電: '电', 話: '话', 務: '务', 熱: '热',
+  線: '线', 費: '费', 詢: '询', 郵: '邮', 碼: '码', 網: '网', 許: '许', 證: '证', 檢: '检', 驗: '验',
+  見: '见', 蓋: '盖', 噴: '喷', 裝: '装', 側: '侧', 頂: '顶', 邊: '边', 時: '时', 間: '间', 為: '为',
+  個: '个', 兩: '两', 張: '张', 節: '节', 隻: '只', 託: '托', 諮: '咨',
+};
+const TRADITIONAL_KEY_RE = new RegExp(`[${Object.keys(TRADITIONAL_KEY_CHARS).join('')}]`, 'g');
+
+/**
+ * 找字段名用的文字：把 normalizeText 之后的一行里的繁体字（只限字段名里会出现的）换成简体，长度、位置都不变。
+ * 只拿来匹配字段名、日期、保质期；名称、规格这些值按匹配到的位置从原文里取，保留标签上的原字。
+ */
+export function keyText(text: string): string {
+  return text.replace(TRADITIONAL_KEY_RE, (char) => TRADITIONAL_KEY_CHARS[char] ?? char);
 }
 
 const CHINESE_DIGITS: Record<string, number> = {
@@ -203,12 +229,12 @@ function cleanValue(value: string): string {
     .trim();
 }
 
-/** 值在下一个字段名、分隔符处截断 */
-function cutAtNextField(value: string): string {
+/** 值在下一个字段名、分隔符处截断。value 是原文，valueKey 是它的 keyText（找字段名用），两个一样长 */
+function cutAtNextField(value: string, valueKey: string): string {
   let end = value.length;
   const separator = SEPARATOR_RE.exec(value);
   if (separator) end = Math.min(end, separator.index);
-  const field = FIELD_CUT_RE.exec(value);
+  const field = FIELD_CUT_RE.exec(valueKey);
   // 开头就是字段名的不截（那是值本身被认成了字段名的样子，很少见），从第 1 个字以后找
   if (field && field.index > 0) end = Math.min(end, field.index);
   return cleanValue(value.slice(0, end));
@@ -247,14 +273,16 @@ function median(values: number[]): number {
 
 // ───────────────────────────── 各字段 ─────────────────────────────
 
-function findName(texts: string[]): string | null {
+/** texts 是原文，keys 是对应的 keyText：在 keys 里找字段名，按同样的位置从 texts 里取值 */
+function findName(texts: string[], keys: string[]): string | null {
   for (let index = 0; index < texts.length; index++) {
-    const match = NAME_KEY_RE.exec(texts[index]);
+    const match = NAME_KEY_RE.exec(keys[index]);
     if (!match) continue;
-    let value = cutAtNextField(texts[index].slice(match.index + match[0].length));
+    const start = match.index + match[0].length;
+    let value = cutAtNextField(texts[index].slice(start), keys[index].slice(start));
     // 「产品名称：」后面空着，名称在下一行
-    if (!value && index + 1 < texts.length && !FIELD_CUT_RE.test(texts[index + 1])) {
-      value = cutAtNextField(texts[index + 1]);
+    if (!value && index + 1 < texts.length && !FIELD_CUT_RE.test(keys[index + 1])) {
+      value = cutAtNextField(texts[index + 1], keys[index + 1]);
     }
     if (value.length >= 2 && value.length <= 30) return value;
   }
@@ -268,12 +296,12 @@ function formatSpec(match: RegExpExecArray): string {
   return `${amount}${unit}${count ? `×${count}${countUnit ?? ''}` : ''}`;
 }
 
-function findSpec(texts: string[]): string | null {
-  for (const text of texts) {
+function findSpec(texts: string[], keys: string[]): string | null {
+  for (let index = 0; index < texts.length; index++) {
     SPEC_KEY_RE.lastIndex = 0;
     let key: RegExpExecArray | null;
-    while ((key = SPEC_KEY_RE.exec(text))) {
-      const value = SPEC_VALUE_RE.exec(text.slice(key.index + key[0].length));
+    while ((key = SPEC_KEY_RE.exec(keys[index]))) {
+      const value = SPEC_VALUE_RE.exec(texts[index].slice(key.index + key[0].length));
       if (value) return formatSpec(value);
     }
   }
@@ -297,8 +325,9 @@ function toShelfLife(amountText: string, unitText: string): ShelfLife | null {
   return { amount, unit };
 }
 
-function findShelfLife(texts: string[]): ShelfLife | null {
-  for (const text of texts) {
+/** keys 是 keyText 之后的文字：结果只是数和单位，「12個月」「兩年」换成简体也一样 */
+function findShelfLife(keys: string[]): ShelfLife | null {
+  for (const text of keys) {
     const match = SHELF_RE.exec(text) ?? SHELF_EN_RE.exec(text);
     if (!match) continue;
     const shelfLife = toShelfLife(match[1], match[2]);
@@ -307,12 +336,15 @@ function findShelfLife(texts: string[]): ShelfLife | null {
   return null;
 }
 
-function findDateElsewhere(texts: string[]): string | null {
-  for (const text of texts) {
-    const match = ELSEWHERE_RE.exec(text);
+function findDateElsewhere(texts: string[], keys: string[]): string | null {
+  for (let index = 0; index < texts.length; index++) {
+    const match = ELSEWHERE_RE.exec(keys[index]);
     if (!match) continue;
-    const value = cutAtNextField(match[1]);
-    if (value.length >= 2 && ELSEWHERE_PLACE_RE.test(value)) return value;
+    // 「见…」在匹配的最后，按位置从原文里取（「見瓶蓋」还是繁体）
+    const start = match.index + match[0].length - match[1].length;
+    const end = match.index + match[0].length;
+    const value = cutAtNextField(texts[index].slice(start, end), match[1]);
+    if (value.length >= 2 && ELSEWHERE_PLACE_RE.test(keyText(value))) return value;
   }
   return null;
 }
@@ -410,6 +442,7 @@ function followedByTime(text: string, item: FoundDate, found: FoundDate[]): bool
   return TIME_AFTER_DATE_RE.test(text.slice(item.end, next ? next.index : text.length));
 }
 
+/** texts 传 keyText 之后的文字（只认日期和「生产 / 保质期至」这些字，不取原文） */
 function findDates(texts: string[], rects: (Rect | null)[], today: string): LabelDate[] {
   const earliest = addYears(today, -5);
   const latest = addYears(today, 10);
@@ -498,15 +531,17 @@ function findNameCandidates(lines: LabelLine[], texts: string[], rects: (Rect | 
  */
 export function parseLabel(lines: LabelLine[], today: string): LabelParseResult {
   const texts = lines.map((line) => normalizeText(line.text));
+  // 找字段名用的文字（繁体字换成简体，位置不变）；值从 texts 里取
+  const keys = texts.map(keyText);
   const rects = lines.map(rectOf);
-  const name = findName(texts);
+  const name = findName(texts, keys);
   return {
     name,
     nameCandidates: findNameCandidates(lines, texts, rects, name),
-    spec: findSpec(texts),
-    shelfLife: findShelfLife(texts),
-    dateElsewhere: findDateElsewhere(texts),
-    dates: findDates(texts, rects, today),
+    spec: findSpec(texts, keys),
+    shelfLife: findShelfLife(keys),
+    dateElsewhere: findDateElsewhere(texts, keys),
+    dates: findDates(keys, rects, today),
     quality: assessQuality(lines),
   };
 }

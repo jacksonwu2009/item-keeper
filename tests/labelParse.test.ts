@@ -6,6 +6,7 @@ import { describe, it } from 'node:test';
 import {
   datesInText,
   decideDates,
+  keyText,
   matchesShelfLife,
   normalizeText,
   parseChineseNumber,
@@ -124,6 +125,14 @@ describe('拍照识别：小工具', () => {
 
   it('「净」的异体字「凈」统一成「净」', () => {
     assert.equal(normalizeText('凈含量：120g'), '净含量:120g');
+  });
+
+  it('找字段名用的文字：繁体字逐字换成简体、长度不变；normalizeText 不动繁体', () => {
+    assert.equal(keyText('產品名稱:淨水濾芯'), '产品名称:净水濾芯');
+    assert.equal(normalizeText('產品名稱：淨水濾芯'), '產品名稱:淨水濾芯');
+    const traditional = '生產日期及批號:見包裝噴碼處 保質期:12個月 規格:10張 製造商 委託方 諮詢電話 營養成分';
+    assert.equal(keyText(traditional), '生产日期及批号:见包装喷码處 保质期:12个月 规格:10张 制造商 委托方 咨询电话 营养成分');
+    assert.equal(keyText(traditional).length, traditional.length);
   });
 
   it('一行里的几种日期写法', () => {
