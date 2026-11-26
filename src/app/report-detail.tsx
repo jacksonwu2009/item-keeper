@@ -9,7 +9,7 @@ import { ChoiceChips, Empty, LIST_PRESS_DELAY, SearchField, Segmented } from '..
 import { loadDetailPage } from '../db/reportOverview';
 import { getSettings } from '../db/settings';
 import { useOffice } from '../hooks/useOffice';
-import { useOpenAnimationDone } from '../hooks/useOpenAnimationDone';
+import { useOpenTransition } from '../hooks/useOpenTransition';
 import { useScene } from '../hooks/useScene';
 import { makeStyles, useColors } from '../hooks/useTheme';
 import { todayStr } from '../lib/dates';
@@ -74,7 +74,7 @@ const renderRow: ListRenderItem<DetailRowView> = ({ item }) => <DetailRow row={i
 /**
  * 报表明细：从首页各块的「更多」（或点大数字）进来，kind 决定列什么；办公点、时间段照首页带过来的。
  * 一页 40 条，滑到底再取下一页（列表只画看得见的几行）；上面固定一排筛选：大类、分类（设备是类别和借出、保修状态），
- * 搜索框停止输入 300 毫秒后才查。读库放在打开动画结束之后，先显示筛选和加载状态。
+ * 搜索框停止输入 300 毫秒后才查。一打开就读库，打开动画结束后才把第一页画出来，先显示筛选和加载状态。
  */
 export default function ReportDetailScreen() {
   const colors = useColors();
@@ -90,7 +90,7 @@ export default function ReportDetailScreen() {
   const officeNumber = params.office ? Number(params.office) : NaN;
   const officeId = Number.isFinite(officeNumber) && officeNumber > 0 ? officeNumber : null;
   const products = detailListsProducts(kind);
-  const waitForOpen = useOpenAnimationDone();
+  const { afterOpen } = useOpenTransition();
 
   // 时间段、今天在打开时定下来，翻页时不变
   const [base] = useState(() => {
@@ -137,11 +137,10 @@ export default function ReportDetailScreen() {
   const generation = useRef(0);
   const pendingOffset = useRef<number | null>(null);
 
-  // 设置里的到期前几天（快到期名单要用）：打开动画结束后和第一页一起读
+  // 设置里的到期前几天（快到期名单要用）：一打开就读，读到了才能查第一页
   useEffect(() => {
     let alive = true;
-    waitForOpen()
-      .then(() => getSettings(db))
+    getSettings(db)
       .then((settings) => {
         if (alive) setLeadDays(settings.expiryLeadDays);
       })
@@ -151,19 +150,19 @@ export default function ReportDetailScreen() {
     return () => {
       alive = false;
     };
-  }, [db, waitForOpen]);
+  }, [db]);
 
   const toRows = useCallback(
     (items: readonly ReportDetailItem[]) => items.map((item) => detailRowView(kind, item, base.today, leadDays ?? 7, lending)),
     [kind, base.today, leadDays, lending],
   );
 
-  // 条件变了：从第一页重取（取到之前列表照旧显示上一次的）
+  // 条件变了：从第一页重取（取到之前列表照旧显示上一次的）。刚打开时马上开始读，打开动画结束后才交给列表去画
   useEffect(() => {
     if (!query) return;
     const current = ++generation.current;
     pendingOffset.current = null;
-    loadDetailPage(db, query, 0, DETAIL_PAGE_SIZE).then(
+    afterOpen(loadDetailPage(db, query, 0, DETAIL_PAGE_SIZE)).then(
       (page) => {
         if (current !== generation.current) return;
         setError(null);
@@ -174,7 +173,7 @@ export default function ReportDetailScreen() {
         if (current === generation.current) setError(reason instanceof Error ? reason.message : '没能读到数据，请重试');
       },
     );
-  }, [db, query, key, toRows]);
+  }, [db, query, key, toRows, afterOpen]);
 
   const loadMore = useCallback(() => {
     if (!query || data.key !== key || data.nextOffset === null || pendingOffset.current === data.nextOffset) return;

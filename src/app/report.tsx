@@ -13,7 +13,7 @@ import { loadOverviewRows } from '../db/reportOverview';
 import { getSettings } from '../db/settings';
 import { useFocusData } from '../hooks/useFocusData';
 import { useOffice } from '../hooks/useOffice';
-import { useOpenAnimationDone } from '../hooks/useOpenAnimationDone';
+import { useOpenTransition } from '../hooks/useOpenTransition';
 import { useScene } from '../hooks/useScene';
 import { makeStyles, useColors } from '../hooks/useTheme';
 import { toCsv } from '../lib/csv';
@@ -57,7 +57,7 @@ function openProductByKey(key: string) {
 
 /**
  * 报表首页：图表为主，只放汇总（读本机库时用 GROUP BY 直接算出数字），明细点每块右上角的「更多」另开一页（report-detail）。
- * 打开时先显示页面框架和占位，打开动画结束后才读库；换办公点、时间段时照旧显示上一次的，读完换上。
+ * 打开时先显示页面框架和占位，同时开始读库，打开动画结束后才把读到的画出来；换办公点、时间段时照旧显示上一次的，读完换上。
  */
 export default function ReportScreen() {
   const colors = useColors();
@@ -74,11 +74,11 @@ export default function ReportScreen() {
   const officeFilter =
     officeChoice !== ALL_OFFICES && office.offices.some((item) => item.id === officeChoice) ? officeChoice : null;
   const key = `${officeFilter ?? 'all'}:${periodKey}`;
-  const waitForOpen = useOpenAnimationDone();
+  const { afterOpen } = useOpenTransition();
   const previous = useRef<OverviewData>(EMPTY_DATA);
 
-  const loader = useCallback(async (): Promise<OverviewData> => {
-    await waitForOpen();
+  // 一打开就读库（在原生线程跑），等打开动画结束才把结果交出去画（useOpenTransition 的 afterOpen）
+  const read = useCallback(async (): Promise<OverviewData> => {
     const now = new Date();
     const settings = await getSettings(db);
     const period = periodRange(periodKey, now);
@@ -97,7 +97,8 @@ export default function ReportScreen() {
     };
     previous.current = next;
     return next;
-  }, [db, officeFilter, periodKey, key, waitForOpen]);
+  }, [db, officeFilter, periodKey, key]);
+  const loader = useCallback(() => afterOpen(read()), [afterOpen, read]);
   const [data, , loaded] = useFocusData(loader, EMPTY_DATA);
   const switching = loaded && data.key !== key;
   const { overview } = data;
