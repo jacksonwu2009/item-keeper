@@ -542,7 +542,7 @@ export function detailRowView(
   if (kind === 'lowStock') {
     return {
       ...base,
-      subtitle: `${label} · 低于 ${roundQty(item.lowStockThreshold ?? 0)} ${item.unit} 提醒`,
+      subtitle: `${label} · 库存下限 ${roundQty(item.lowStockThreshold ?? 0)} ${item.unit}`,
       value: `剩 ${roundQty(item.totalQty)} ${item.unit}`,
       tone: 'warn',
     };
