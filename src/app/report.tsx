@@ -1,85 +1,67 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, Stack } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { memo, useCallback, useMemo, useState, type ReactNode } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, View, type ListRenderItem } from 'react-native';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ActivityIndicator, Alert, Pressable, ScrollView, View } from 'react-native';
 import { Text } from '../components/Text';
 
-import { Button, Card, Chip, ChoiceChips, Label, LIST_PRESS_DELAY, SectionTitle, type Tone } from '../components/ui';
+import { BarList, ChartPlaceholder, ColumnChart, SegmentBar, StatRow, type StatItem } from '../components/ReportCharts';
+import { Button, Card, ChoiceChips, Label, SectionTitle } from '../components/ui';
 import { ALL_OFFICES } from '../db/offices';
-import { EMPTY_REPORT_SOURCE, loadReportSource, type ReportSource } from '../db/report';
+import { loadReportSource } from '../db/report';
+import { loadOverviewRows } from '../db/reportOverview';
+import { getSettings } from '../db/settings';
 import { useFocusData } from '../hooks/useFocusData';
 import { useOffice } from '../hooks/useOffice';
+import { useOpenAnimationDone } from '../hooks/useOpenAnimationDone';
 import { useScene } from '../hooks/useScene';
+import { makeStyles, useColors } from '../hooks/useTheme';
 import { toCsv } from '../lib/csv';
-import { formatShortDate, toDateStr, todayStr } from '../lib/dates';
+import { todayStr } from '../lib/dates';
 import { shareCsv } from '../lib/exportCsv';
 import { formatPrice } from '../lib/price';
+import { deviceTable, movementTable, PERIOD_OPTIONS, periodRange, reportFileName, stockTable, type CsvTable, type ReportPeriodKey } from '../lib/report';
 import {
-  deviceTable,
-  movementTable,
-  PERIOD_OPTIONS,
-  periodRange,
-  productDetails,
-  reportFileName,
-  stockTable,
-  summarizeConsumption,
-  summarizeDevices,
-  summarizeInventory,
-  summarizePurchases,
-  type CsvTable,
-  type ProductDetailRow,
-  type ProductRef,
-  type ReportPeriodKey,
-} from '../lib/report';
-import { formatQty, KIND_LABEL } from '../lib/stock';
-import { makeStyles, useColors } from '../hooks/useTheme';
-import { font, radius } from '../theme';
-
-/** 物品明细先显示这么多行，多了点「查看全部」 */
-const DETAIL_PREVIEW_ROWS = 30;
-/** 过期丢弃和坏了先显示这么多条，多了点「查看全部」 */
-const LOSS_PREVIEW_ROWS = 10;
-/** 领用排行先显示这么多人 */
-const HOLDER_PREVIEW_ROWS = 10;
+  buildOverview,
+  EMPTY_OVERVIEW_ROWS,
+  isLossNote,
+  periodBuckets,
+  type BarDatum,
+  type DeviceStatusFilter,
+  type ReportDetailKind,
+  type ReportOverview,
+} from '../lib/reportOverview';
+import { KIND_LABEL } from '../lib/stock';
+import { font } from '../theme';
 
 type ExportKind = 'movements' | 'stock' | 'devices';
+
+/** 首页的数据：key 是读的时候的办公点和时间段（换了条件、新的还没读完时，页面照旧显示上一次的，标出「正在统计」） */
+type OverviewData = { key: string; periodLabel: string; columnsTitle: string; overview: ReportOverview; rowsJson: string };
+
+const EMPTY_DATA: OverviewData = {
+  key: '',
+  periodLabel: '',
+  columnsTitle: '',
+  overview: buildOverview(EMPTY_OVERVIEW_ROWS, []),
+  rowsJson: '',
+};
 
 function openProduct(productId: number) {
   router.push({ pathname: '/stock/[id]', params: { id: String(productId) } });
 }
 
-function openDevice(deviceId: number) {
-  router.push({ pathname: '/device/[id]', params: { id: String(deviceId) } });
+function openProductByKey(key: string) {
+  openProduct(Number(key));
 }
 
 /**
- * 报表上的各项汇总：在读完数据时算一次（不是每次渲染都把几万条出入库记录算一遍），回到前台、换时间段重读时再算。
- * 库存概况、设备按「今天」算。
+ * 报表首页：图表为主，只放汇总（读本机库时用 GROUP BY 直接算出数字），明细点每块右上角的「更多」另开一页（report-detail）。
+ * 打开时先显示页面框架和占位，打开动画结束后才读库；换办公点、时间段时照旧显示上一次的，读完换上。
  */
-function summarizeSource(source: ReportSource, today: string) {
-  return {
-    inventory: summarizeInventory(source.products, today, source.settings.expiryLeadDays),
-    purchases: summarizePurchases(source.movements),
-    consumption: summarizeConsumption(source.movements, source.priceHistory),
-    details: productDetails(source.products, source.movements),
-    devices: summarizeDevices(source.devices, source.assignments, today),
-  };
-}
-
-const EMPTY_SUMMARY = summarizeSource(EMPTY_REPORT_SOURCE, todayStr());
-
-/** 物品明细的一行，以及要不要在它上面写分类（食品、日用品各组的第一行） */
-type DetailItem = { row: ProductDetailRow; kindTitle: boolean };
-
-/** ISO 时间按手机本地日期显示成「11月18日」 */
-function localDay(iso: string): string {
-  return formatShortDate(toDateStr(new Date(iso)));
-}
-
 export default function ReportScreen() {
   const colors = useColors();
-  const reportStyles = useReportStyles();
+  const styles = useReportStyles();
   const db = useSQLiteContext();
   const office = useOffice();
   const { scene, terms } = useScene();
@@ -87,53 +69,144 @@ export default function ReportScreen() {
   const home = scene === 'home';
   const [officeChoice, setOfficeChoice] = useState<number>(office.filterId ?? ALL_OFFICES);
   const [periodKey, setPeriodKey] = useState<ReportPeriodKey>('thisMonth');
-  const [showAllDetails, setShowAllDetails] = useState(false);
-  const [showAllHolders, setShowAllHolders] = useState(false);
-  const [showAllLosses, setShowAllLosses] = useState(false);
   const [exporting, setExporting] = useState<ExportKind | null>(null);
   // 选中的办公点被删了就按全部算
   const officeFilter =
     officeChoice !== ALL_OFFICES && office.offices.some((item) => item.id === officeChoice) ? officeChoice : null;
+  const key = `${officeFilter ?? 'all'}:${periodKey}`;
+  const waitForOpen = useOpenAnimationDone();
+  const previous = useRef<OverviewData>(EMPTY_DATA);
 
-  const loader = useCallback(async () => {
-    const period = periodRange(periodKey);
-    const source = await loadReportSource(db, officeFilter, period);
-    return { period, source, summary: summarizeSource(source, todayStr()) };
-  }, [db, officeFilter, periodKey]);
-  const [data, , loaded] = useFocusData(loader, { period: periodRange('thisMonth'), source: EMPTY_REPORT_SOURCE, summary: EMPTY_SUMMARY });
-  const { period, source } = data;
-  const { inventory, purchases, consumption, details, devices } = data.summary;
+  const loader = useCallback(async (): Promise<OverviewData> => {
+    await waitForOpen();
+    const now = new Date();
+    const settings = await getSettings(db);
+    const period = periodRange(periodKey, now);
+    const buckets = periodBuckets(periodKey, now);
+    const rows = await loadOverviewRows(db, officeFilter, period, buckets, todayStr(now), settings.expiryLeadDays);
+    // 回到这一页时会重读一次：数都没变就沿用上一次的对象，图不重画
+    const rowsJson = JSON.stringify([rows, buckets.map((bucket) => bucket.label)]);
+    const last = previous.current;
+    if (last.key === key && last.rowsJson === rowsJson) return last;
+    const next: OverviewData = {
+      key,
+      periodLabel: period.label,
+      columnsTitle: periodKey === 'thisMonth' || periodKey === 'lastMonth' ? '按周' : '按月',
+      overview: buildOverview(rows, buckets.map((bucket) => bucket.label)),
+      rowsJson,
+    };
+    previous.current = next;
+    return next;
+  }, [db, officeFilter, periodKey, key, waitForOpen]);
+  const [data, , loaded] = useFocusData(loader, EMPTY_DATA);
+  const switching = loaded && data.key !== key;
+  const { overview } = data;
 
-  // 物品明细是下面那个列表的数据：先显示前 30 行，「查看全部」后几千行也只画看得见的
-  const detailItems = useMemo<DetailItem[]>(() => {
-    const visible = showAllDetails ? details : details.slice(0, DETAIL_PREVIEW_ROWS);
-    return visible.map((row, index) => ({ row, kindTitle: index === 0 || visible[index - 1].kind !== row.kind }));
-  }, [details, showAllDetails]);
-  // 文件名里的办公点：选了某个办公点用它的名字；只有一个办公点时也用它的名字
-  const officeLabel =
-    officeFilter !== null ? office.officeName(officeFilter) : office.multiple ? null : (office.offices[0]?.name ?? null);
-  const officeNameOf = (officeId: number) => source.officeNames.get(officeId) ?? '';
+  const openDetail = useCallback(
+    (kind: ReportDetailKind, deviceStatus?: DeviceStatusFilter) => {
+      router.push({
+        pathname: '/report-detail',
+        params: { kind, office: officeFilter === null ? '' : String(officeFilter), period: periodKey, ...(deviceStatus ? { status: deviceStatus } : {}) },
+      });
+    },
+    [officeFilter, periodKey],
+  );
+
+  const inventoryStats = useMemo<StatItem[]>(
+    () => [
+      { key: 'low', label: '库存不足', value: String(overview.inventory.lowStock), tone: 'warn', onPress: () => openDetail('lowStock') },
+      { key: 'soon', label: '快到期', value: String(overview.inventory.expiring), tone: 'warn', onPress: () => openDetail('expiring') },
+      { key: 'expired', label: '已过期', value: String(overview.inventory.expired), tone: 'danger', onPress: () => openDetail('expired') },
+    ],
+    [overview.inventory, openDetail],
+  );
+  const kindSegments = useMemo(
+    () => [
+      { key: 'food', label: KIND_LABEL.food, value: overview.inventory.byKind.food, text: `${overview.inventory.byKind.food} 种`, tone: 'accent' as const },
+      { key: 'daily', label: KIND_LABEL.daily, value: overview.inventory.byKind.daily, text: `${overview.inventory.byKind.daily} 种`, tone: 'info' as const },
+    ],
+    [overview.inventory],
+  );
+  const purchaseStats = useMemo<StatItem[]>(
+    () => [
+      { key: 'amount', label: '进货金额', value: formatPrice(overview.purchases.amount) },
+      { key: 'count', label: '入库次数', value: String(overview.purchases.count) },
+    ],
+    [overview.purchases],
+  );
+  const consumptionStats = useMemo<StatItem[]>(
+    () => [
+      { key: 'count', label: '出库次数', value: String(overview.consumption.count) },
+      {
+        key: 'losses',
+        label: '过期丢弃和坏了',
+        value: String(overview.consumption.losses.count),
+        tone: overview.consumption.losses.count > 0 ? 'warn' : undefined,
+        onPress: overview.consumption.losses.count > 0 ? () => openDetail('losses') : undefined,
+      },
+      { key: 'estimate', label: '估算损失', value: formatPrice(overview.consumption.losses.estimatedTotal) },
+    ],
+    [overview.consumption, openDetail],
+  );
+  const topConsumers = useMemo<BarDatum[]>(
+    () => overview.consumption.top.map((row) => ({ key: String(row.productId), label: row.name, value: row.count, text: `${row.count} 次` })),
+    [overview.consumption.top],
+  );
+  const deviceStats = useMemo<StatItem[]>(
+    () => [
+      { key: 'total', label: '设备', value: `${overview.devices.total} 件` },
+      {
+        key: 'soon',
+        label: '保修快到期',
+        value: String(overview.devices.warrantySoon),
+        tone: overview.devices.warrantySoon > 0 ? 'warn' : undefined,
+        onPress: () => openDetail('devices', 'warrantySoon'),
+      },
+      {
+        key: 'expired',
+        label: '已过保',
+        value: String(overview.devices.warrantyExpired),
+        tone: overview.devices.warrantyExpired > 0 ? 'danger' : undefined,
+        onPress: () => openDetail('devices', 'warrantyExpired'),
+      },
+    ],
+    [overview.devices, openDetail],
+  );
+  const deviceSegments = useMemo(
+    () => [
+      { key: 'out', label: '借出', value: overview.devices.out, text: `${overview.devices.out} 件`, tone: 'info' as const },
+      { key: 'in', label: '在库', value: overview.devices.inStock, text: `${overview.devices.inStock} 件`, tone: 'ok' as const },
+    ],
+    [overview.devices],
+  );
 
   async function exportTable(kind: ExportKind) {
-    const today = todayStr();
-    let table: CsvTable;
-    let fileName: string;
-    if (kind === 'movements') {
-      if (!source.movements.length) {
-        Alert.alert('没有可导出的记录', `${period.label}没有出入库记录。`);
-        return;
-      }
-      table = movementTable(source.movements, officeNameOf);
-      fileName = reportFileName('出入库明细', officeLabel, period.label);
-    } else if (kind === 'stock') {
-      table = stockTable(source.products, source.batches, officeNameOf);
-      fileName = reportFileName('当前库存', officeLabel, today);
-    } else {
-      table = deviceTable(source.devices, source.accessoriesByDevice, officeNameOf);
-      fileName = reportFileName('设备清单', officeLabel, today);
-    }
+    // 导出要逐条的数据：点了才读
     setExporting(kind);
     try {
+      const today = todayStr();
+      const period = periodRange(periodKey);
+      const source = await loadReportSource(db, officeFilter, period);
+      const officeNameOf = (officeId: number) => source.officeNames.get(officeId) ?? '';
+      // 文件名里的办公点：选了某个办公点用它的名字；只有一个办公点时也用它的名字
+      const officeLabel =
+        officeFilter !== null ? office.officeName(officeFilter) : office.multiple ? null : (office.offices[0]?.name ?? null);
+      let table: CsvTable;
+      let fileName: string;
+      if (kind === 'movements') {
+        if (!source.movements.length) {
+          Alert.alert('没有可导出的记录', `${period.label}没有出入库记录。`);
+          return;
+        }
+        table = movementTable(source.movements, officeNameOf);
+        fileName = reportFileName('出入库明细', officeLabel, period.label);
+      } else if (kind === 'stock') {
+        table = stockTable(source.products, source.batches, officeNameOf);
+        fileName = reportFileName('当前库存', officeLabel, today);
+      } else {
+        table = deviceTable(source.devices, source.accessoriesByDevice, officeNameOf);
+        fileName = reportFileName('设备清单', officeLabel, today);
+      }
       await shareCsv(fileName, toCsv(table.header, table.rows));
     } catch (error) {
       Alert.alert('导出失败', error instanceof Error ? error.message : '请重试');
@@ -142,480 +215,195 @@ export default function ReportScreen() {
     }
   }
 
-  if (!loaded) return <Stack.Screen options={{ title: '报表' }} />;
+  const periodLabel = loaded ? data.periodLabel : periodRange(periodKey).label;
+  const periodSuffix = `（${periodLabel}）`;
+  const { purchases, consumption, devices, inventory } = overview;
 
-  const visibleLosses = showAllLosses ? consumption.losses : consumption.losses.slice(0, LOSS_PREVIEW_ROWS);
-  const visibleHolders = showAllHolders ? devices.holders : devices.holders.slice(0, HOLDER_PREVIEW_ROWS);
-  const periodSuffix = `（${period.label}）`;
-
-  const header = (
-    <View style={reportStyles.section}>
-      <Card>
-        {office.multiple ? (
-          <View style={reportStyles.group}>
-            <Label>{terms.place}</Label>
-            <ChoiceChips
-              options={[
-                { value: ALL_OFFICES, label: '全部' },
-                ...office.offices.map((item) => ({ value: item.id, label: item.name })),
-              ]}
-              value={officeFilter ?? ALL_OFFICES}
-              onChange={setOfficeChoice}
-            />
-          </View>
-        ) : null}
-        <View style={reportStyles.group}>
-          <Label>时间段</Label>
-          <ChoiceChips options={PERIOD_OPTIONS} value={periodKey} onChange={setPeriodKey} />
-        </View>
-        <Text style={reportStyles.hint}>
-          进货、消耗、物品明细按 {period.label} 统计；库存概况和设备是现在的情况。
-        </Text>
-      </Card>
-
-      <SectionTitle title="库存概况" />
-      <Card style={reportStyles.tightCard}>
-        <Text style={reportStyles.lead}>
-          食品 {inventory.productCount.food} 种 · 日用品 {inventory.productCount.daily} 种
-        </Text>
-        <ExpandableList title="库存不足" items={inventory.lowStock} tone="warn" />
-        <ExpandableList title="快到期" items={inventory.expiringSoon} tone="warn" />
-        <ExpandableList title="已过期" items={inventory.expired} tone="danger" />
-      </Card>
-
-      <SectionTitle title={`进货${periodSuffix}`} />
-      <Card style={reportStyles.tightCard}>
-        {purchases.stockInCount === 0 ? (
-          <Text style={reportStyles.muted}>这段时间没有入库。</Text>
-        ) : (
-          <>
-            <View style={reportStyles.statRow}>
-              <BigNumber label="进货金额" value={formatPrice(purchases.pricedAmount)} />
-              <BigNumber label="入库次数" value={String(purchases.stockInCount)} />
-            </View>
-            {purchases.unpricedCount > 0 ? (
-              <Text style={[reportStyles.hint, reportStyles.hintAboveRows]}>{purchases.unpricedCount} 次入库没填价格，没算进去。</Text>
-            ) : null}
-            <ValueRow name="食品" value={formatPrice(purchases.amountByKind.food)} />
-            <ValueRow name="日用品" value={formatPrice(purchases.amountByKind.daily)} />
-            {purchases.topProducts.length ? (
-              <>
-                <Text style={reportStyles.subTitle}>金额最高</Text>
-                {purchases.topProducts.map((rank) => (
-                  <ValueRow
-                    key={rank.productId}
-                    name={rank.name}
-                    detail={`${KIND_LABEL[rank.kind]} · 入库 ${rank.count} 次`}
-                    value={formatPrice(rank.amount)}
-                    onPress={() => openProduct(rank.productId)}
-                  />
-                ))}
-              </>
-            ) : null}
-          </>
-        )}
-      </Card>
-
-      <SectionTitle title={`消耗${periodSuffix}`} />
-      <Card style={reportStyles.tightCard}>
-        {consumption.stockOutCount === 0 ? (
-          <Text style={reportStyles.muted}>这段时间没有出库。</Text>
-        ) : (
-          <>
-            <Text style={reportStyles.lead}>出库 {consumption.stockOutCount} 次</Text>
-            <View style={reportStyles.chips}>
-              {consumption.reasons.map((item) => (
-                <Chip
-                  key={item.reason}
-                  text={`${item.reason} ${item.count} 次`}
-                  tone={item.reason === '过期丢弃' || item.reason === '坏了' ? 'warn' : 'neutral'}
-                />
-              ))}
-            </View>
-            <Text style={reportStyles.subTitle}>出库次数最多</Text>
-            {consumption.topProducts.map((rank) => (
-              <ValueRow
-                key={rank.productId}
-                name={rank.name}
-                detail={`${KIND_LABEL[rank.kind]} · 共 ${formatQty(rank.quantity)} ${rank.unit}`}
-                value={`${rank.count} 次`}
-                onPress={() => openProduct(rank.productId)}
-              />
-            ))}
-            {consumption.losses.length ? (
-              <>
-                <Text style={reportStyles.subTitle}>过期丢弃和坏了</Text>
-                {visibleLosses.map((loss) => (
-                  <ValueRow
-                    key={loss.movementId}
-                    name={loss.name}
-                    detail={`${localDay(loss.happenedAt)} · ${loss.reason} ${formatQty(loss.quantity)} ${loss.unit}`}
-                    value={loss.estimatedLoss === null ? '—' : formatPrice(loss.estimatedLoss)}
-                    onPress={() => openProduct(loss.productId)}
-                  />
-                ))}
-                {consumption.losses.length > LOSS_PREVIEW_ROWS ? (
-                  <Button
-                    title={showAllLosses ? '收起' : `查看全部 ${consumption.losses.length} 条`}
-                    variant="ghost"
-                    compact
-                    onPress={() => setShowAllLosses((value) => !value)}
-                  />
-                ) : null}
-                <Text style={reportStyles.hint}>
-                  估算损失 {formatPrice(consumption.estimatedLossTotal)}（按出库前最近一次的进价算）
-                  {consumption.unestimatedLossCount > 0
-                    ? `；${consumption.unestimatedLossCount} 条没有进价，没算进去`
-                    : ''}
-                  。
-                </Text>
-              </>
-            ) : null}
-          </>
-        )}
-      </Card>
-
-      <SectionTitle title={`物品明细${periodSuffix}`} />
-      {details.length === 0 ? (
-        <Card style={reportStyles.tightCard}>
-          <Text style={reportStyles.muted}>还没有食品和日用品。</Text>
-        </Card>
-      ) : (
-        // 明细卡片的上沿；明细一行一行是下面列表的数据，卡片下沿（说明、查看全部）在列表的页脚里
-        <View style={reportStyles.detailCardTop} />
-      )}
-    </View>
-  );
-
-  const footer = (
-    <View style={reportStyles.section}>
-      {details.length > 0 ? (
-        <View style={reportStyles.detailCardBottom}>
-          <Text style={reportStyles.hint}>右边是这段时间的进货金额，没填价格的显示「—」。</Text>
-          {details.length > DETAIL_PREVIEW_ROWS ? (
-            <Button
-              title={showAllDetails ? '收起' : `查看全部 ${details.length} 个`}
-              variant="ghost"
-              compact
-              onPress={() => setShowAllDetails((value) => !value)}
-            />
-          ) : null}
-        </View>
-      ) : (
-        // 没有明细时页头最后是那张「还没有」的卡片：放一个空的占位，下面的「设备」和它照样隔 16
-        <View />
-      )}
-
-      <SectionTitle title="设备" />
-      <Card style={reportStyles.tightCard}>
-        {source.devices.length === 0 ? (
-          <Text style={reportStyles.muted}>还没有设备。</Text>
-        ) : (
-          <>
-            <View style={reportStyles.statRow}>
-              <BigNumber label="共" value={`${devices.total} 件`} />
-              {home ? null : (
-                <>
-                  <BigNumber label="借出" value={String(devices.out)} color={devices.out > 0 ? colors.info : colors.ink} />
-                  <BigNumber label="在库" value={String(devices.inStock)} color={colors.ok} />
-                </>
-              )}
-            </View>
-            {devices.byCategory.map((row) => (
-              <ValueRow
-                key={row.category}
-                name={row.category}
-                detail={home ? undefined : `借出 ${row.out} · 在库 ${row.inStock}`}
-                value={`${row.total} 件`}
-              />
-            ))}
-            {devices.byConfig.length ? (
-              <>
-                <Text style={reportStyles.subTitle}>电脑配置</Text>
-                {devices.byConfig.map((row) => (
-                  <ValueRow
-                    key={row.config}
-                    name={row.config}
-                    detail={home ? undefined : `借出 ${row.out} · 在库 ${row.inStock}`}
-                    value={`${row.total} 台`}
-                  />
-                ))}
-              </>
-            ) : null}
-            {devices.warrantySoonQty || devices.warrantyExpiredQty ? (
-              <>
-                <Text style={reportStyles.subTitle}>保修</Text>
-                {devices.warrantySoon.map((item) => (
-                  <ValueRow
-                    key={item.deviceId}
-                    name={item.name}
-                    detail={item.text}
-                    value={`${item.quantity} 件`}
-                    tone="warn"
-                    onPress={() => openDevice(item.deviceId)}
-                  />
-                ))}
-                {devices.warrantyExpired.map((item) => (
-                  <ValueRow
-                    key={item.deviceId}
-                    name={item.name}
-                    detail={item.text}
-                    value={`${item.quantity} 件`}
-                    tone="danger"
-                    onPress={() => openDevice(item.deviceId)}
-                  />
-                ))}
-                <Text style={reportStyles.hint}>
-                  30 天内到期 {devices.warrantySoonQty} 件，已过保 {devices.warrantyExpiredQty} 件。
-                </Text>
-              </>
-            ) : (
-              <Text style={reportStyles.hint}>没有 30 天内到期或已过保的设备。</Text>
-            )}
-            {!home && devices.holders.length ? (
-              <>
-                <Text style={reportStyles.subTitle}>领用排行</Text>
-                {visibleHolders.map((holder) => (
-                  <ValueRow key={holder.person} name={holder.person} value={`${holder.quantity} 件`} />
-                ))}
-                {devices.holders.length > HOLDER_PREVIEW_ROWS ? (
-                  <Button
-                    title={showAllHolders ? '收起' : `查看全部 ${devices.holders.length} 人`}
-                    variant="ghost"
-                    compact
-                    onPress={() => setShowAllHolders((value) => !value)}
-                  />
-                ) : null}
-              </>
-            ) : null}
-          </>
-        )}
-      </Card>
-
-      <SectionTitle title="导出表格" />
-      <Card style={reportStyles.exportCard}>
-        <Text style={reportStyles.hint}>导出成 CSV 文件，可以用 Excel、WPS、Numbers 打开，或者直接发给同事。</Text>
-        <Button
-          title={`导出出入库明细（${period.label}）`}
-          icon="list-outline"
-          variant="secondary"
-          loading={exporting === 'movements'}
-          onPress={() => exportTable('movements')}
-        />
-        <Button
-          title="导出当前库存"
-          icon="cube-outline"
-          variant="secondary"
-          loading={exporting === 'stock'}
-          onPress={() => exportTable('stock')}
-        />
-        <Button
-          title="导出设备清单"
-          icon="laptop-outline"
-          variant="secondary"
-          loading={exporting === 'devices'}
-          onPress={() => exportTable('devices')}
-        />
-      </Card>
-    </View>
-  );
-
-  // 整页是一个列表：上面的汇总卡片是页头，物品明细一行一行是列表的数据，设备和导出是页脚。
-  // 明细「查看全部」后有几千行时，只画屏幕上看得见的几行
   return (
-    <View style={reportStyles.screen}>
+    <View style={styles.screen}>
       <Stack.Screen options={{ title: '报表' }} />
-      <FlatList
-        style={reportStyles.screen}
-        contentContainerStyle={reportStyles.listContent}
-        data={detailItems}
-        keyExtractor={detailKey}
-        renderItem={renderDetail}
-        ListHeaderComponent={header}
-        ListFooterComponent={footer}
-        initialNumToRender={DETAIL_PREVIEW_ROWS}
-        windowSize={11}
-      />
+      <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+        <Card>
+          {office.multiple ? (
+            <View style={styles.group}>
+              <Label>{terms.place}</Label>
+              <ChoiceChips
+                options={[{ value: ALL_OFFICES, label: '全部' }, ...office.offices.map((item) => ({ value: item.id, label: item.name }))]}
+                value={officeFilter ?? ALL_OFFICES}
+                onChange={setOfficeChoice}
+              />
+            </View>
+          ) : null}
+          <View style={styles.group}>
+            <Label>时间段</Label>
+            <ChoiceChips options={PERIOD_OPTIONS} value={periodKey} onChange={setPeriodKey} />
+          </View>
+          <View style={styles.hintRow}>
+            <Text style={[styles.hint, styles.hintText]}>进货、消耗按 {periodRange(periodKey).label} 统计；库存概况和设备是现在的情况。</Text>
+            {!loaded || switching ? <ActivityIndicator size="small" color={colors.accent} /> : null}
+          </View>
+        </Card>
+
+        <Section title="库存概况" onMore={() => openDetail('products')} moreLabel="物品明细">
+          {!loaded ? (
+            <ChartPlaceholder lines={1} />
+          ) : (
+            <>
+              <StatRow items={inventoryStats} />
+              <SegmentBar segments={kindSegments} />
+              <Text style={styles.hint}>共 {inventory.total} 种；点上面的数看名单。</Text>
+            </>
+          )}
+        </Section>
+
+        <Section title={`进货${periodSuffix}`} onMore={() => openDetail('purchases')} moreLabel="进货明细">
+          {!loaded ? (
+            <ChartPlaceholder lines={4} />
+          ) : purchases.count === 0 ? (
+            <Text style={styles.muted}>这段时间没有入库。</Text>
+          ) : (
+            <>
+              <StatRow items={purchaseStats} />
+              {purchases.unpricedCount > 0 ? (
+                <Text style={styles.hint}>{purchases.unpricedCount} 次入库没填价格，没算进金额。</Text>
+              ) : null}
+              <Text style={styles.subTitle}>进货金额{data.columnsTitle}</Text>
+              <ColumnChart columns={purchases.columns} />
+              {purchases.categories.length ? (
+                <>
+                  <Text style={styles.subTitle}>按分类</Text>
+                  <BarList items={purchases.categories} tone="accent" />
+                </>
+              ) : null}
+            </>
+          )}
+        </Section>
+
+        <Section title={`消耗${periodSuffix}`} onMore={() => openDetail('consumption')} moreLabel="消耗明细">
+          {!loaded ? (
+            <ChartPlaceholder lines={4} />
+          ) : consumption.count === 0 ? (
+            <Text style={styles.muted}>这段时间没有出库。</Text>
+          ) : (
+            <>
+              <StatRow items={consumptionStats} />
+              {consumption.losses.unestimatedCount > 0 ? (
+                <Text style={styles.hint}>
+                  估算损失按出库前最近一次的进价算；{consumption.losses.unestimatedCount} 条没有进价，没算进去。
+                </Text>
+              ) : (
+                <Text style={styles.hint}>估算损失按出库前最近一次的进价算。</Text>
+              )}
+              <Text style={styles.subTitle}>按原因</Text>
+              <BarList items={consumption.reasons} toneOf={reasonTone} />
+              <Text style={styles.subTitle}>出库次数最多</Text>
+              <BarList items={topConsumers} tone="info" onPressItem={openProductByKey} />
+            </>
+          )}
+        </Section>
+
+        <Section title="设备" onMore={() => openDetail('devices')} moreLabel="设备明细">
+          {!loaded ? (
+            <ChartPlaceholder lines={3} />
+          ) : devices.total === 0 ? (
+            <Text style={styles.muted}>还没有设备。</Text>
+          ) : (
+            <>
+              <StatRow items={deviceStats} />
+              {home ? null : <SegmentBar segments={deviceSegments} />}
+              <Text style={styles.subTitle}>按类别</Text>
+              <BarList items={devices.categories} tone="accent" />
+              {!home && devices.holders.length ? (
+                <>
+                  <Text style={styles.subTitle}>领用最多</Text>
+                  <BarList items={devices.holders} tone="info" />
+                </>
+              ) : null}
+            </>
+          )}
+        </Section>
+
+        <SectionTitle title="导出表格" />
+        <Card style={styles.exportCard}>
+          <Text style={styles.hint}>导出成 CSV 文件，可以用 Excel、WPS、Numbers 打开，或者直接发给同事。</Text>
+          <Button
+            title={`导出出入库明细（${periodRange(periodKey).label}）`}
+            icon="list-outline"
+            variant="secondary"
+            loading={exporting === 'movements'}
+            onPress={() => exportTable('movements')}
+          />
+          <Button title="导出当前库存" icon="cube-outline" variant="secondary" loading={exporting === 'stock'} onPress={() => exportTable('stock')} />
+          <Button
+            title="导出设备清单"
+            icon="laptop-outline"
+            variant="secondary"
+            loading={exporting === 'devices'}
+            onPress={() => exportTable('devices')}
+          />
+        </Card>
+      </ScrollView>
     </View>
   );
 }
 
-function detailKey(item: DetailItem): string {
-  return String(item.row.productId);
+/** 损耗的原因用提示色 */
+function reasonTone(item: BarDatum) {
+  return isLossNote(item.key) ? ('warn' as const) : ('accent' as const);
 }
 
-const renderDetail: ListRenderItem<DetailItem> = ({ item }) => <DetailRow row={item.row} kindTitle={item.kindTitle} />;
-
-/** 物品明细的一行（白底，左右留 16，连起来是一张卡片）；memo：展开、收起时已经画好的行不重画 */
-const DetailRow = memo(function DetailRow({ row, kindTitle }: { row: ProductDetailRow; kindTitle: boolean }) {
-  const reportStyles = useReportStyles();
-  return (
-    <View style={reportStyles.detailRow}>
-      {kindTitle ? <Text style={reportStyles.subTitle}>{KIND_LABEL[row.kind]}</Text> : null}
-      <ValueRow
-        name={row.name}
-        detail={`入 ${formatQty(row.inQty)} · 出 ${formatQty(row.outQty)} · 现有 ${formatQty(row.currentQty)} ${row.unit}`}
-        value={row.purchaseAmount === null ? '—' : formatPrice(row.purchaseAmount)}
-        onPress={() => openProduct(row.productId)}
-      />
-    </View>
-  );
-});
-
-/** 一个大数字 + 下面的说明，居中（照鸿蒙版 IkBigNumber）；color 不给就是黑字 */
-function BigNumber({ label, value, color }: { label: string; value: string; color?: string }) {
-  const colors = useColors();
-  const reportStyles = useReportStyles();
-  return (
-    <View style={reportStyles.bigNumber}>
-      <Text style={[reportStyles.bigValue, { color: color ?? colors.ink }]} numberOfLines={1} adjustsFontSizeToFit>
-        {value}
-      </Text>
-      <Text style={reportStyles.bigLabel}>{label}</Text>
-    </View>
-  );
-}
-
-/** 一行：左边名称（下面一行小字），右边数值；能点的带箭头。 */
-function ValueRow({
-  name,
-  detail,
-  value,
-  tone,
-  onPress,
+/** 一块：标题（右边「更多」进明细）+ 卡片 */
+function Section({
+  title,
+  onMore,
+  moreLabel,
+  children,
 }: {
-  name: string;
-  detail?: string;
-  value: string;
-  tone?: Tone;
-  onPress?: () => void;
+  title: string;
+  onMore?: () => void;
+  moreLabel?: string;
+  children: ReactNode;
 }) {
   const colors = useColors();
-  const reportStyles = useReportStyles();
-  const valueColor = tone === 'danger' ? colors.danger : tone === 'warn' ? colors.warn : colors.ink;
-  const content: ReactNode = (
-    <>
-      <View style={reportStyles.rowText}>
-        <Text style={reportStyles.rowName} numberOfLines={1}>
-          {name}
-        </Text>
-        {detail ? (
-          <Text style={reportStyles.rowDetail} numberOfLines={2}>
-            {detail}
-          </Text>
-        ) : null}
-      </View>
-      <Text style={[reportStyles.rowValue, { color: valueColor }]}>{value}</Text>
-      {onPress ? <Ionicons name="chevron-forward" size={16} color={colors.faint} /> : null}
-    </>
-  );
-  if (!onPress) return <View style={reportStyles.row}>{content}</View>;
+  const styles = useReportStyles();
   return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      unstable_pressDelay={LIST_PRESS_DELAY}
-      style={({ pressed }) => [reportStyles.row, pressed && reportStyles.rowPressed]}
-    >
-      {content}
-    </Pressable>
-  );
-}
-
-/** 「库存不足 3 种」这样一行，点开列出名单，名单里点一个进物品详情。 */
-function ExpandableList({ title, items, tone }: { title: string; items: ProductRef[]; tone: Tone }) {
-  const colors = useColors();
-  const reportStyles = useReportStyles();
-  const [open, setOpen] = useState(false);
-  const empty = items.length === 0;
-  return (
-    <View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ expanded: open, disabled: empty }}
-        disabled={empty}
-        onPress={() => setOpen((value) => !value)}
-        unstable_pressDelay={LIST_PRESS_DELAY}
-        style={({ pressed }) => [reportStyles.row, pressed && reportStyles.rowPressed]}
-      >
-        <Text style={[reportStyles.rowName, reportStyles.rowText]}>{title}</Text>
-        {empty ? <Text style={reportStyles.rowDetail}>没有</Text> : <Chip text={`${items.length} 种`} tone={tone} />}
-        {empty ? null : <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={colors.faint} />}
-      </Pressable>
-      {open
-        ? items.map((item) => (
+    <View style={styles.section}>
+      <SectionTitle
+        title={title}
+        right={
+          onMore ? (
             <Pressable
-              key={item.productId}
               accessibilityRole="button"
-              onPress={() => openProduct(item.productId)}
-              unstable_pressDelay={LIST_PRESS_DELAY}
-              style={({ pressed }) => [reportStyles.row, reportStyles.nestedRow, pressed && reportStyles.rowPressed]}
+              accessibilityLabel={moreLabel ? `更多：${moreLabel}` : '更多'}
+              hitSlop={8}
+              onPress={onMore}
+              style={({ pressed }) => [styles.more, pressed && styles.morePressed]}
             >
-              <Text style={[reportStyles.rowName, reportStyles.rowText]} numberOfLines={1}>
-                {item.name}（{KIND_LABEL[item.kind]}）
-              </Text>
-              <Text style={[reportStyles.rowValue, { color: tone === 'danger' ? colors.danger : colors.warn }]}>
-                {item.detail}
-              </Text>
-              <Ionicons name="chevron-forward" size={16} color={colors.faint} />
+              <Text style={[styles.moreText, { color: colors.accent }]}>更多</Text>
+              <Ionicons name="chevron-forward" size={14} color={colors.accent} />
             </Pressable>
-          ))
-        : null}
+          ) : null
+        }
+      />
+      <Card style={styles.card}>{children}</Card>
     </View>
   );
 }
 
-// 照鸿蒙版 ReportPage：报表卡片上下留 12、左右 16，里面一行最矮 48、行上面一条分隔线；大数字居中
 const useReportStyles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.bg },
   // 和原来的 Screen 一样：四周留 16、底下留 40，卡片之间隔 16
-  listContent: { padding: 16, paddingBottom: 40 },
-  section: { gap: 16 },
-  // 物品明细卡片拆成三段：上沿（圆角、上边距 12）、一行一行（左右 16）、下沿（说明、按钮，圆角、下边距 12）
-  detailCardTop: {
-    height: 12,
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
-  },
-  // 列表里每行各自排版，高度不是整像素时两行之间会漏出一条 1 像素的底色：每行（和卡片下沿）往上叠一像素盖住
-  detailRow: { backgroundColor: colors.surface, paddingHorizontal: 16, marginTop: -StyleSheet.hairlineWidth },
-  detailCardBottom: {
-    marginTop: -StyleSheet.hairlineWidth,
-    backgroundColor: colors.surface,
-    borderBottomLeftRadius: radius.lg,
-    borderBottomRightRadius: radius.lg,
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-  },
+  content: { padding: 16, paddingBottom: 40, gap: 16 },
+  section: { gap: 0 },
+  card: { gap: 4, paddingVertical: 12 },
   group: { gap: 8 },
-  // 报表卡片里行与行紧挨着（靠分隔线隔开），说明文字上面自己留一点
-  hint: { fontSize: font.small, color: colors.faint, lineHeight: 18, paddingTop: 4 },
-  // 说明下面紧跟着带分隔线的行时，下面也留 8，文字不贴着线
-  hintAboveRows: { paddingBottom: 8 },
-  muted: { fontSize: font.body, color: colors.muted },
-  lead: { fontSize: font.body, fontWeight: '500', color: colors.ink, paddingBottom: 8 },
-  tightCard: { gap: 0, paddingVertical: 12 },
+  hintRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  hintText: { flex: 1 },
+  hint: { fontSize: font.small, color: colors.faint, lineHeight: 18 },
+  muted: { fontSize: font.body, color: colors.muted, paddingVertical: 4 },
+  subTitle: { fontSize: font.small, fontWeight: '700', color: colors.muted, marginTop: 12, marginBottom: 2 },
   exportCard: { gap: 8 },
-  subTitle: { fontSize: font.small, fontWeight: '700', color: colors.muted, marginTop: 12, marginBottom: 4 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, paddingTop: 8, paddingBottom: 4 },
-  statRow: { flexDirection: 'row' },
-  bigNumber: { flex: 1, minWidth: 0, alignItems: 'center', gap: 2, paddingVertical: 8 },
-  bigValue: { fontSize: font.title, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  bigLabel: { fontSize: font.small, color: colors.muted },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    minHeight: 48,
-    paddingVertical: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.line,
-  },
-  nestedRow: { paddingLeft: 16 },
-  rowPressed: { backgroundColor: colors.surfaceSunken },
-  rowText: { flex: 1, minWidth: 0 },
-  rowName: { fontSize: font.body, color: colors.ink },
-  rowDetail: { fontSize: font.small, color: colors.muted, marginTop: 1 },
-  rowValue: { fontSize: font.body, fontWeight: '700', fontVariant: ['tabular-nums'], textAlign: 'right' },
+  more: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 4, paddingVertical: 2, borderRadius: 8 },
+  morePressed: { backgroundColor: colors.surfaceSunken },
+  moreText: { fontSize: font.small, fontWeight: '700' },
 }));
