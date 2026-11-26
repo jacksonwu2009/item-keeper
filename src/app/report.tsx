@@ -394,7 +394,8 @@ const useReportStyles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.bg },
   // 和原来的 Screen 一样：四周留 16、底下留 40，卡片之间隔 16
   content: { padding: 16, paddingBottom: 40, gap: 16 },
-  section: { gap: 0 },
+  // 标题和卡片之间：SectionTitle 自带 marginBottom -8，和外面的 16 合起来是 8
+  section: { gap: 16 },
   card: { gap: 4, paddingVertical: 12 },
   group: { gap: 8 },
   hintRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
