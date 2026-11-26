@@ -1,0 +1,63 @@
+{
+ "format": "label-ocr-fixture/1",
+ "source": "肉松面包标签图 3 张（1080×1440，照片不进仓库：label-rousong.jpg、label-rousong-2.jpg、label-rousong-3.jpg），在安卓模拟器（ik-e2e，Android 16，arm64）上从相册选，App 1.10.5 里的原生模块 modules/label-ocr 识别（PP-OCRv6_small，权重压成 fp16 / int8 的版本；ONNX Runtime 1.21.1），logcat 里打出的结果。前两张把「净含量」的「净」认成了异体字「凈」（U+51C8），第三张认对了；三张「净含量：120g」都是一整行，没有拆开。macOS 上的 iOS 引擎吃同样的像素（libjpeg 解码）结果逐字、逐框一样",
+ "engine": "PP-OCRv6_small",
+ "runtime": "android-label-ocr 1.10.5（压缩后的模型）",
+ "today": "2026-11-26",
+ "items": [
+  {
+   "id": "label-rousong",
+   "description": "肉松面包标签（中文冒号，净含量 120g）",
+   "width": 1080,
+   "height": 1440,
+   "rotation": 0,
+   "timing": {"loadMs": 0, "decodeMs": 16, "detMs": 7149, "recMs": 3755, "totalMs": 10921},
+   "lines": [
+    {"text": "产品名称：肉松面包", "score": 1, "box": [[90, 298], [501, 298], [501, 349], [90, 349]]},
+    {"text": "配料：小麦粉肉松白砂糖鸡蛋酵母", "score": 0.999, "box": [[88, 406], [850, 407], [850, 455], [88, 454]]},
+    {"text": "凈含量：120g", "score": 0.998, "box": [[87, 516], [380, 516], [380, 571], [87, 571]]},
+    {"text": "贮存条件：常温阴凉干燥处", "score": 0.989, "box": [[91, 627], [608, 627], [608, 674], [91, 674]]},
+    {"text": "生产日期：2026年09月30日", "score": 1, "box": [[90, 736], [651, 736], [651, 790], [90, 790]]},
+    {"text": "保质期至：2026年12月28日", "score": 0.996, "box": [[89, 846], [652, 846], [652, 900], [89, 900]]},
+    {"text": "生产商：某某食品有限公司", "score": 1, "box": [[90, 958], [569, 958], [569, 1005], [90, 1005]]}
+   ],
+   "expect": {"name": "肉松面包", "nameCandidates": [], "spec": "120g", "shelfLife": null, "dateElsewhere": null, "dates": ["2026-09-30", "2026-12-28"], "poor": false, "production": "2026-09-30", "expiry": "2026-12-28", "confirmed": false, "byOrder": false, "options": 0, "suggested": -1}
+  },
+  {
+   "id": "label-rousong-2",
+   "description": "同一张标签，净含量写成 120克（中文冒号）",
+   "width": 1080,
+   "height": 1440,
+   "rotation": 0,
+   "timing": {"loadMs": 0, "decodeMs": 73, "detMs": 3984, "recMs": 1630, "totalMs": 5687},
+   "lines": [
+    {"text": "产品名称：肉松面包", "score": 1, "box": [[90, 298], [501, 298], [501, 349], [90, 349]]},
+    {"text": "配料：小麦粉肉松白砂糖鸡蛋酵母", "score": 0.999, "box": [[88, 406], [850, 407], [850, 455], [88, 454]]},
+    {"text": "凈含量：120克", "score": 0.998, "box": [[87, 516], [395, 516], [395, 571], [87, 571]]},
+    {"text": "贮存条件：常温阴凉干燥处", "score": 0.992, "box": [[91, 627], [607, 627], [607, 674], [91, 674]]},
+    {"text": "生产日期：2026年09月30日", "score": 1, "box": [[90, 736], [651, 736], [651, 790], [90, 790]]},
+    {"text": "保质期至：2026年12月28日", "score": 0.996, "box": [[89, 846], [652, 846], [652, 900], [89, 900]]},
+    {"text": "生产商：某某食品有限公司", "score": 1, "box": [[90, 958], [569, 958], [569, 1005], [90, 1005]]}
+   ],
+   "expect": {"name": "肉松面包", "nameCandidates": [], "spec": "120克", "shelfLife": null, "dateElsewhere": null, "dates": ["2026-09-30", "2026-12-28"], "poor": false, "production": "2026-09-30", "expiry": "2026-12-28", "confirmed": false, "byOrder": false, "options": 0, "suggested": -1}
+  },
+  {
+   "id": "label-rousong-3",
+   "description": "同一张标签，冒号换成英文冒号（净含量 120克）",
+   "width": 1080,
+   "height": 1440,
+   "rotation": 0,
+   "timing": {"loadMs": 0, "decodeMs": 147, "detMs": 5256, "recMs": 1974, "totalMs": 7378},
+   "lines": [
+    {"text": "产品名称:肉松面包", "score": 0.996, "box": [[90, 298], [468, 298], [468, 349], [90, 349]]},
+    {"text": "配料:小麦粉肉松白砂糖鸡蛋酵母", "score": 0.992, "box": [[89, 406], [821, 407], [821, 455], [89, 454]]},
+    {"text": "净含量:120克", "score": 0.924, "box": [[89, 517], [360, 517], [360, 569], [89, 569]]},
+    {"text": "贮存条件:常温阴凉干燥处", "score": 0.996, "box": [[90, 627], [578, 627], [578, 674], [90, 674]]},
+    {"text": "生产日期:2026年09月30日", "score": 0.996, "box": [[90, 737], [618, 735], [618, 789], [90, 790]]},
+    {"text": "保质期至:2026年12月28日", "score": 0.995, "box": [[90, 846], [619, 846], [619, 900], [90, 900]]},
+    {"text": "生产商:某某食品有限公司", "score": 0.996, "box": [[90, 958], [540, 958], [540, 1005], [90, 1005]]}
+   ],
+   "expect": {"name": "肉松面包", "nameCandidates": [], "spec": "120克", "shelfLife": null, "dateElsewhere": null, "dates": ["2026-09-30", "2026-12-28"], "poor": false, "production": "2026-09-30", "expiry": "2026-12-28", "confirmed": false, "byOrder": false, "options": 0, "suggested": -1}
+  }
+ ]
+}

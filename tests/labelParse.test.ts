@@ -122,6 +122,10 @@ describe('拍照识别：小工具', () => {
     assert.equal(normalizeText('ＥＸＰ：２０２７．１０．１１'), 'EXP:2027.10.11');
   });
 
+  it('「净」的异体字「凈」统一成「净」', () => {
+    assert.equal(normalizeText('凈含量：120g'), '净含量:120g');
+  });
+
   it('一行里的几种日期写法', () => {
     assert.deepEqual(
       datesInText('2026.10.12/2027-1-5 20280203 2029年3月4日').map((item) => item.date),

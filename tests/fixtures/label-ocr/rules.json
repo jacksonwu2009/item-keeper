@@ -80,6 +80,29 @@
    "expect": {"spec": null}
   },
   {
+   "id": "spec-variant-jing",
+   "description": "「净」被认成字形几乎一样的异体字「凈」（肉松面包标签实拍就是这样）：当成「净」",
+   "lines": [{"text": "凈含量：120g"}],
+   "expect": {"spec": "120g"}
+  },
+  {
+   "id": "spec-variant-jing-weight",
+   "lines": [{"text": "凈重：500克"}],
+   "expect": {"spec": "500克"}
+  },
+  {
+   "id": "spec-variant-jing-no-unit",
+   "description": "反例：「凈」当成「净」以后，没有单位的照样不采用",
+   "lines": [{"text": "凈含量：120"}],
+   "expect": {"spec": null}
+  },
+  {
+   "id": "name-cut-at-variant-field",
+   "description": "名称后面连着写「凈含量」：在「凈含量」处截断，规格也认出来",
+   "lines": [{"text": "产品名称：曲奇饼干凈含量：100g"}],
+   "expect": {"name": "曲奇饼干", "spec": "100g"}
+  },
+  {
    "id": "shelf-chinese-number",
    "lines": [{"text": "保质期：十八个月"}],
    "expect": {"shelfLife": {"amount": 18, "unit": "month"}}

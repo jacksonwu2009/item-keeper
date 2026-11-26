@@ -10,6 +10,7 @@
 | `round1-desktop-PP-OCRv6_small.json` 等 | 第一轮准确率试验：4 张照片在电脑上用 PaddleOCR 3.7 三种手机端模型识别的结果 |
 | `round1-desktop-apple-vision.json` | 同一批照片用 macOS Vision（和 iOS 系统识别同一套）识别：没有位置，置信度只有三档 |
 | `round1-android-PP-OCRv6_small.json` | 同一批照片在安卓模拟器上用 App 里的原生模块 modules/label-ocr 识别的结果（iOS 原生模块逐行对照用；timing 是那一次的耗时，测试不看） |
+| `rousong-android-PP-OCRv6_small.json` | 肉松面包标签图 3 张在安卓模拟器上用 App 的原生模块识别的结果（「净」认成异体字「凈」的实例） |
 | `rules.json` | 手写的规则用例，每条只测一两条规则 |
 
 ## 格式（`label-ocr-fixture/1`）
