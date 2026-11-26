@@ -199,7 +199,9 @@ function lossRowOf(row: LossQueryRow): LossRow & LossDetailItem {
 
 /**
  * 时间段内的损耗（过期丢弃、坏了），新的在前，各带出库前最近一次的进价（同一时刻有几条取后记的）：
- * 进价按 (product_id, happened_at) 索引从出库时刻往前倒着找，找到一条就停。extraWhere 是明细页的筛选，tail 是 LIMIT / OFFSET
+ * 进价按 (product_id, happened_at) 索引从出库时刻往前倒着找，找到一条就停。指定用这个索引（INDEXED BY）：库里没有统计信息时，
+ * SQLite 会改用 (type, happened_at) 索引，每条损耗都把出库时刻之前的全部入库扫一遍（模拟器上 4 万条、今年：2.6–4.4 秒，指定后 16 毫秒）。
+ * extraWhere 是明细页的筛选，tail 是 LIMIT / OFFSET
  */
 function lossRowsSql(officeId: number | null, period: { startIso: string; endIso: string }, params: Params, extraWhere: string, tail: string): string {
   return `
@@ -207,7 +209,7 @@ function lossRowsSql(officeId: number | null, period: { startIso: string; endIso
            l.note AS note, -l.delta AS quantity, l.happened_at AS happenedAt,
            pr.delta AS priceDelta, pr.input_qty AS priceInputQty, pr.unit_price AS priceUnit, pr.total_price AS priceTotal
       FROM (SELECT m.id, m.product_id, p.kind, p.category, p.name, p.unit, m.note, m.delta, m.happened_at,
-                   (SELECT b.id FROM stock_movement b
+                   (SELECT b.id FROM stock_movement b INDEXED BY ix_stock_movement_product
                      WHERE b.product_id = m.product_id AND b.happened_at <= m.happened_at AND ${pricedIn('b')}
                      ORDER BY b.happened_at DESC, b.id DESC LIMIT 1) AS price_id
               ${movementsIn(officeId, period, params)}
