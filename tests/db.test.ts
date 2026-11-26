@@ -381,9 +381,11 @@ describe('数据层（真实 SQLite）', () => {
 
     await migrateDbIfNeeded(db);
 
-    assert.deepEqual(await db.getFirstAsync('PRAGMA user_version'), { user_version: 14 });
+    assert.deepEqual(await db.getFirstAsync('PRAGMA user_version'), { user_version: 15 });
     const columns = (await db.getAllAsync<{ name: string }>('PRAGMA table_info(stock_movement)')).map((column) => column.name);
     assert.equal(columns.includes('production_date'), true);
+    // v15：报表聚合用的 (type, happened_at) 索引
+    assert.ok(await db.getFirstAsync("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'ix_stock_movement_type_time'"));
     const last = (await getLastStockIn(db, productId))!;
     // 老记录不倒推生产日期
     assert.deepEqual(
@@ -393,7 +395,7 @@ describe('数据层（真实 SQLite）', () => {
     // 列已经在了、版本号还是旧的：再升一次不重复加
     await db.execAsync('PRAGMA user_version = 13');
     await migrateDbIfNeeded(db);
-    assert.deepEqual(await db.getFirstAsync('PRAGMA user_version'), { user_version: 14 });
+    assert.deepEqual(await db.getFirstAsync('PRAGMA user_version'), { user_version: 15 });
     await stockIn(db, productId, { quantity: 1, expiryDate: '2027-11-01', productionDate: '2026-11-01' });
     assert.equal((await getLastStockIn(db, productId))?.productionDate, '2026-11-01');
   });
@@ -593,7 +595,7 @@ describe('手机之间按办公点传数据（真实 SQLite）', () => {
 
     await migrateDbIfNeeded(db);
 
-    assert.deepEqual(await db.getFirstAsync('PRAGMA user_version'), { user_version: 14 });
+    assert.deepEqual(await db.getFirstAsync('PRAGMA user_version'), { user_version: 15 });
     const columns = (await db.getAllAsync<{ name: string }>('PRAGMA table_info(stock_product)')).map((column) => column.name);
     assert.equal(columns.includes('brand'), false);
     assert.equal(columns.includes('category'), true);
