@@ -52,6 +52,8 @@ export default function EditStockScreen() {
       withFirstBatch={false}
       lastStockIn={state.lastIn}
       submitLabel="保存修改"
+      // 改过东西再返回先问「放弃修改？」
+      confirmDiscard
       onSubmit={async (input, _firstBatch, lastStockInPrice) => {
         // 条码（含包装条码）和别的物品冲突时 updateProduct 会抛出给用户看的错误
         await updateProduct(db, product.id, input);

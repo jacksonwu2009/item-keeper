@@ -44,6 +44,7 @@ export function ExpiryInput({
   lastProductionDate = null,
   allowNone,
   onChange,
+  onEdit,
 }: {
   initialMode: ExpiryMode;
   initialExpiry?: string | null;
@@ -59,6 +60,8 @@ export function ExpiryInput({
   lastProductionDate?: string | null;
   allowNone: boolean;
   onChange: (value: ExpiryValue) => void;
+  /** 人动过这几格时调（换填法、选日期、填保质期、拍日期、点「同上次」「不记」）；打开时的初始值、fill 填的不算 */
+  onEdit?: () => void;
 }) {
   const expiryStyles = useExpiryStyles();
   const [mode, setMode] = useState<ExpiryMode>(fill?.mode ?? initialMode);
@@ -94,6 +97,7 @@ export function ExpiryInput({
   }, [result.expiry, result.error, result.shelfLife?.amount, result.shelfLife?.unit, result.productionDate]);
 
   function untag(field: keyof Tags) {
+    onEdit?.();
     setTags((current) => {
       if (!current[field]) return current;
       const next = { ...current };
@@ -106,6 +110,7 @@ export function ExpiryInput({
   /** 点「同上次」：生产日期填成上次入库那天，标「按上次」；别的格子的标记不动 */
   function applyLastProductionDate() {
     if (!lastProductionDate) return;
+    onEdit?.();
     setProductionDate(lastProductionDate);
     setTags((current) => ({ ...current, productionDate: 'last' }));
     setNote(null);
@@ -116,6 +121,7 @@ export function ExpiryInput({
     setScanTarget(null);
     const plan = planExpiryFill({ dates: scan, shelfLife: knownShelfLife, shelfLifeRecognized: false, dateElsewhere: null });
     if (!plan) return;
+    onEdit?.();
     setMode(plan.mode);
     if (plan.mode === 'date') setExpiry(plan.expiry);
     // 认出了生产日期：两种填法共用这一格；「选到期日」时也记下（到期日下面那一行），没认出来时这一行去掉
@@ -153,7 +159,14 @@ export function ExpiryInput({
 
   return (
     <View style={expiryStyles.wrap}>
-      <Segmented options={modeOptions} value={mode} onChange={setMode} />
+      <Segmented
+        options={modeOptions}
+        value={mode}
+        onChange={(next) => {
+          onEdit?.();
+          setMode(next);
+        }}
+      />
       {mode === 'date' ? (
         <DateField
           label="过期日期"
@@ -172,7 +185,15 @@ export function ExpiryInput({
           <Text style={expiryStyles.keptText}>{keptProductionLabel(kept)}</Text>
           {tags.productionDate ? <ScanTagChip tag={tags.productionDate} /> : null}
           <View style={expiryStyles.keptSpacer} />
-          <Button title="不记" variant="ghost" compact onPress={() => setKeepProductionDate(false)} />
+          <Button
+            title="不记"
+            variant="ghost"
+            compact
+            onPress={() => {
+              onEdit?.();
+              setKeepProductionDate(false);
+            }}
+          />
         </View>
       ) : null}
       {mode === 'shelf' ? (
