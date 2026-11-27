@@ -4,20 +4,14 @@ import { describe, it } from 'node:test';
 import { DISCARD_EDIT_MESSAGE, DISCARD_EDIT_TITLE, leaveEditPage, type DiscardButton } from '../src/lib/discardEdit';
 import {
   draftShelfLife,
-  firstBatchExpiryFill,
-  newProductShelfLife,
   productFormChanged,
-  scannedShelfDraft,
   SHELF_LIFE_ERROR,
   shelfDraftOf,
   shelfLifeError,
-  shelfScanTag,
   type ProductFormValues,
 } from '../src/lib/productForm';
-import type { ExpiryFill } from '../src/lib/labelScan';
 
 const TWELVE_MONTHS = { amount: 12, unit: 'month' as const };
-const NINETY_DAYS = { amount: 90, unit: 'day' as const };
 
 describe('物品资料的「保质期」那一格', () => {
   it('空着是没填、不报错；1–9999 的整数才算填对', () => {
@@ -30,91 +24,9 @@ describe('物品资料的「保质期」那一格', () => {
   });
 
   it('打开表单时：资料里有就带出来，没有就空着、单位默认「个月」', () => {
-    assert.deepEqual(shelfDraftOf(NINETY_DAYS), { shelfText: '90', shelfUnit: 'day' });
+    assert.deepEqual(shelfDraftOf({ amount: 90, unit: 'day' }), { shelfText: '90', shelfUnit: 'day' });
     assert.deepEqual(shelfDraftOf(null), { shelfText: '', shelfUnit: 'month' });
     assert.deepEqual(shelfDraftOf(undefined), { shelfText: '', shelfUnit: 'month' });
-  });
-});
-
-describe('新建物品：填了保质期，「这次入库」按资料带出', () => {
-  it('保质期填好了：按「生产日期+保质期」填，保质期标「按资料」，生产日期空着等人选', () => {
-    const fill = firstBatchExpiryFill(null, { shelfText: '12', shelfUnit: 'month', kind: 'food' }, true);
-    assert.deepEqual(fill, {
-      mode: 'shelf',
-      expiry: null,
-      productionDate: null,
-      shelfLife: TWELVE_MONTHS,
-      tags: { shelfLife: 'saved' },
-      note: '生产日期请照包装选，或点「拍日期」拍喷码',
-    });
-  });
-
-  it('日用品也一样；不能拍照时提示只说照包装选', () => {
-    const fill = firstBatchExpiryFill(null, { shelfText: '90', shelfUnit: 'day', kind: 'daily' }, false);
-    assert.equal(fill?.mode, 'shelf');
-    assert.deepEqual(fill?.shelfLife, NINETY_DAYS);
-    assert.equal(fill?.note, '生产日期请照包装选');
-  });
-
-  it('保质期没填或填错：不带出（按大类的默认填法）', () => {
-    assert.equal(firstBatchExpiryFill(null, { shelfText: '', shelfUnit: 'month', kind: 'food' }, true), null);
-    assert.equal(firstBatchExpiryFill(null, { shelfText: 'abc', shelfUnit: 'month', kind: 'food' }, true), null);
-  });
-
-  it('拍包装认出了日期：按照片填，不按保质期那一格重新带出', () => {
-    const scanFill: ExpiryFill = {
-      mode: 'date',
-      expiry: '2027-03-01',
-      productionDate: null,
-      shelfLife: null,
-      tags: { expiry: 'recognized' },
-      note: null,
-    };
-    assert.equal(firstBatchExpiryFill(scanFill, { shelfText: '12', shelfUnit: 'month', kind: 'food' }, true), scanFill);
-  });
-});
-
-describe('新建物品：保存时记进资料的保质期', () => {
-  it('那一格填了用那一格的', () => {
-    assert.deepEqual(newProductShelfLife(TWELVE_MONTHS, NINETY_DAYS), TWELVE_MONTHS);
-  });
-
-  it('那一格没填、这一批按「生产日期+保质期」填了：记这一批的', () => {
-    assert.deepEqual(newProductShelfLife(null, NINETY_DAYS), NINETY_DAYS);
-  });
-
-  it('都没有就不记；这一批的保质期不对也不记', () => {
-    assert.equal(newProductShelfLife(null, null), null);
-    assert.equal(newProductShelfLife(null, { amount: 0, unit: 'day' }), null);
-  });
-});
-
-describe('拍包装认出的保质期填进那一格', () => {
-  it('认出了、格子空着：填上，标「识别」', () => {
-    const next = scannedShelfDraft({ shelfText: '', shelfUnit: 'month' }, null, NINETY_DAYS);
-    assert.deepEqual(next, { shelfText: '90', shelfUnit: 'day' });
-    assert.equal(shelfScanTag(true, NINETY_DAYS, next), 'recognized');
-  });
-
-  it('手动填过的不动，也不标「识别」', () => {
-    const next = scannedShelfDraft({ shelfText: '6', shelfUnit: 'month' }, null, NINETY_DAYS);
-    assert.deepEqual(next, { shelfText: '6', shelfUnit: 'month' });
-    assert.equal(shelfScanTag(true, NINETY_DAYS, next), null);
-  });
-
-  it('重拍：上一次照片填的、没改过的换成这次的；这次没认出就清空，标「没认出来」', () => {
-    assert.deepEqual(scannedShelfDraft({ shelfText: '90', shelfUnit: 'day' }, NINETY_DAYS, TWELVE_MONTHS), {
-      shelfText: '12',
-      shelfUnit: 'month',
-    });
-    const cleared = scannedShelfDraft({ shelfText: '90', shelfUnit: 'day' }, NINETY_DAYS, null);
-    assert.deepEqual(cleared, { shelfText: '', shelfUnit: 'day' });
-    assert.equal(shelfScanTag(true, null, cleared), 'missing');
-  });
-
-  it('人改了认出的值就不再标「识别」；没拍过不标', () => {
-    assert.equal(shelfScanTag(true, NINETY_DAYS, { shelfText: '91', shelfUnit: 'day' }), null);
-    assert.equal(shelfScanTag(false, null, { shelfText: '', shelfUnit: 'month' }), null);
   });
 });
 

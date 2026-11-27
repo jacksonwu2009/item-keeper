@@ -968,81 +968,13 @@ table.roles td.n { color: var(--faint); }
       <h3>其他几项</h3>
       <ul class="points">
         <li><b>数量</b>：所有数量框都可以直接输入，也可以点两边的 <b>−</b> / <b>+</b>；只能输数字，小数最多两位。</li>
-        <li><b>保质期</b>：商品资料里可以记保质期（如 12 个月），新增页、编辑页都在「规格」下面单独一格；新增时填了，「这次入库」就按「生产日期 + 保质期」带出（标「按资料」）；记了以后入库默认按「生产日期 + 保质期」算到期日。</li>
+        <li><b>保质期</b>：商品资料里可以记保质期（如 12 个月）。新增时在「这次入库」里用「生产日期 + 保质期」填，保存时记进商品资料；编辑页「规格」下面单独一格，能改；记了以后入库默认按「生产日期 + 保质期」算到期日。</li>
         <li><b>编辑物品</b>：改过东西没点「保存修改」就返回，会先问「放弃修改？」，点「继续编辑」接着改，点「放弃」不保存。</li>
         <li><b>最小单位</b>：库存按它来记，比如瓶、盒、包、卷。</li>
         <li><b>存放位置</b>：冰箱冷藏、储物柜之类，填过的位置下次可以直接点选。</li>
         <li><b>库存下限</b>：库存降到这个数或更少就提醒补货，留空表示不提醒。</li>
         <li><b>到期前几天提醒</b>：留空就用设置里的默认天数（7 天）。</li>
       </ul>
-<div class="demo-block" id="demo-shelf">
-        <p class="demo-title">操作演示：新增物品时填保质期，入库按资料带出</p>
-        <figure class="demo" data-demo aria-label="操作演示：新增物品时填保质期，入库按资料带出">
-          <div class="demo-device">
-            <div class="demo-screen" aria-hidden="true">
-            <div class="nav" data-s="1-4"><span class="back">‹</span>新增食品</div>
-            <div class="card" data-s="1-2">
-              <div class="field"><span class="lbl">名称 *</span><div class="input t">酸奶</div></div>
-              <span class="lbl">分类（可不选，再点一下取消）</span>
-              <div class="choice"><span>零食</span><span>饮料冲调</span><span class="on">乳品</span><span>生鲜</span></div>
-              <div class="field"><span class="lbl">规格</span><div class="input t">100g×8</div></div>
-              <div class="field"><span class="lbl">保质期</span><div class="input t"><span class="ph" data-s="1" data-tap="1" style="color:var(--app-faint)">可不填</span><span class="off new" data-s="2">21</span></div></div>
-              <div class="choice"><span data-s="1">天</span><span class="on off new" data-s="2">天</span><span class="on" data-s="1">个月</span><span class="off" data-s="2">个月</span><span>年</span></div>
-              <div class="hint">填了以后，入库时默认按「生产日期+保质期」算到期日，也能拍喷码上的生产日期</div>
-            </div>
-            <div class="sec off" data-s="3-4">这次入库</div>
-            <div class="card off" data-s="3-4">
-              <span class="lbl">数量（盒）</span>
-              <div class="stepper"><span class="pm">−</span><div class="input">8</div><span class="pm">+</span><span class="u">盒</span></div>
-              <div class="seg"><span>选到期日</span><span class="on">生产日期+保质期</span><span>不记录</span></div>
-              <span class="lbl">生产日期 *</span>
-              <div class="row2" style="grid-template-columns:minmax(0,1fr) auto"><div class="input t"><span class="ph" data-s="3" data-tap="3" style="color:var(--app-faint)">选择日期</span><span class="off new" data-s="4">2026年11月25日</span></div><span class="app-btn alt" style="padding:5px 10px">拍日期</span></div>
-              <span class="lbl">保质期 *<span class="tag">按资料</span></span>
-              <div class="row2"><div class="input">21</div><div class="choice" style="align-items:center"><span class="on">天</span><span>个月</span><span>年</span></div></div>
-              <div class="computed off" data-s="4">到期日：<b>2026年12月15日</b></div>
-            </div>
-            <div class="app-btn off" data-s="4" data-tap="4">保存</div>
-            <div class="nav off" data-s="5-"><span class="back">‹</span>酸奶</div>
-            <div class="card off" data-s="5-">
-              <div class="row2"><div><div class="kind">食品</div><div class="card-title">酸奶</div><div class="dn">乳品 · 100g×8</div></div><div class="big">8<div class="dn">盒</div></div></div>
-              <div class="app-btns"><div class="app-btn" data-tap="5">入库</div><div class="app-btn alt">出库 / 用掉</div></div>
-            </div>
-            <div class="sec off" data-s="5-">信息</div>
-            <div class="rows off" data-s="5-"><div><span>规格</span><span class="v plain">100g×8</span></div><div><span>保质期</span><span class="v plain">21 天</span></div><div><span>存放位置</span><span class="v plain">冰箱冷藏</span></div></div>
-            <div class="demo-dim off" data-s="6"></div>
-            <div class="demo-sheet off" data-s="6">
-              <div class="sheet-head"><span class="sheet-title">入库</span><span class="x">✕</span></div>
-              <span class="lbl">数量（盒）</span>
-              <div class="stepper"><span class="pm">−</span><div class="input">6</div><span class="pm">+</span><span class="u">盒</span></div>
-              <div class="seg"><span>选到期日</span><span class="on">生产日期+保质期</span><span>不记录</span></div>
-              <span class="lbl">生产日期 *</span>
-              <div class="row2" style="grid-template-columns:minmax(0,1fr) auto"><div class="input t ph">选择日期</div><span class="app-btn alt" style="padding:5px 10px">拍日期</span></div>
-              <span class="lbl">保质期 *<span class="tag">按资料</span></span>
-              <div class="row2"><div class="input">21</div><div class="choice" style="align-items:center"><span class="on">天</span><span>个月</span><span>年</span></div></div>
-              <div class="app-btn">确认入库</div>
-            </div>
-            </div>
-          </div>
-          <figcaption class="demo-panel">
-            <p class="demo-cap"><b>1/6</b>新增页「规格」下面有单独的 <b>保质期</b>，可以不填；点它</p>
-            <div class="demo-ctrl">
-              <div class="demo-dots" role="group" aria-label="步骤"></div>
-              <button type="button" class="demo-btn demo-play">播放</button>
-              <button type="button" class="demo-btn demo-replay">重新播放</button>
-            </div>
-            <p class="demo-note demo-still" hidden>已按系统设置关闭自动播放，点数字翻到每一步。</p>
-            <p class="demo-note">界面示意动画，数据为示例</p>
-            <ol class="demo-steps">
-          <li>新增页「规格」下面有单独的 <b>保质期</b>，可以不填；点它</li>
-          <li>照包装填，比如 21 天（单位选天、个月或年）</li>
-          <li>往下看「这次入库」：已经换成「生产日期+保质期」，保质期填好了、标「按资料」；点生产日期选一天（安卓上也能点「拍日期」拍喷码）</li>
-          <li>到期日按「生产日期+保质期」算好（生产当天算第 1 天）。点 <b>保存</b></li>
-          <li>详情页「信息」里写着保质期。下次买回来点 <b>入库</b></li>
-          <li>入库面板默认就是「生产日期+保质期」，保质期按资料带出，只要选生产日期或拍日期；这里改了保质期不改资料，要改去编辑页</li>
-            </ol>
-          </figcaption>
-        </figure>
-      </div>
     </section>
 
     <section id="ocr">
@@ -1054,7 +986,7 @@ table.roles td.n { color: var(--faint); }
         <li><div>新增页最上面常驻 <b>拍包装识别</b>：扫码进来的、点「手动添加」的都有，没有条码的东西也能用。扫码页下面也有「没有条码？拍包装识别」，点了直接拍，识别完进新增页（条码空着）。扫到商品库里没有的条码时，提示里也会指向这个入口。</div></li>
         <li><div>先拍包装背面印着「产品名称」「净含量」「保质期」的那块标签。光线暗可以开补光，也可以点 <b>相册</b> 选一张拍好的。</div></li>
         <li><div>标签上没有日期的（比如写着「见瓶盖」），接着拍瓶盖、封口、袋边上的日期喷码；没有就点 <b>跳过</b>。</div></li>
-        <li><div>回到新增页：认出的名称、规格填好了，保质期填进「规格」下面的保质期一格（保存时记进商品资料），生产日期和保质期也填进「这次入库」，按它们算出到期日，都标「识别」；没认出来的标「没认出来」，空着让你填；名称拿不准时下面列出「也可能是」，点一个换上。核对好点 <b>保存</b>。不满意就点横幅右边的 <b>重拍</b>。</div></li>
+        <li><div>回到新增页：认出的名称、规格填好了，生产日期和保质期填进「这次入库」（保质期保存时记进商品资料），按它们算出到期日，都标「识别」；没认出来的标「没认出来」，空着让你填；名称拿不准时下面列出「也可能是」，点一个换上。核对好点 <b>保存</b>。不满意就点横幅右边的 <b>重拍</b>。</div></li>
       </ol>
 <div class="demo-block" id="demo-ocr">
         <p class="demo-title">操作演示：拍包装识别</p>

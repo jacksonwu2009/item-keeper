@@ -18,13 +18,9 @@ import { toBaseQty, validatePacks, type PackUnit } from '../lib/packs';
 import { convertPriceUnit, derivePrice, EMPTY_PRICE, storedPriceDraft, type EntryPrice, type PriceDraft } from '../lib/price';
 import {
   draftShelfLife,
-  firstBatchExpiryFill,
-  newProductShelfLife,
   productFormChanged,
-  scannedShelfDraft,
   shelfDraftOf,
   shelfLifeError,
-  shelfScanTag,
   type ProductFormValues,
 } from '../lib/productForm';
 import { takeScanResult, takeScanResultWithPrefix } from '../lib/scanHandoff';
@@ -125,12 +121,10 @@ export function StockProductForm({
   const [priceDraft, setPriceDraft] = useState<PriceDraft>(EMPTY_PRICE);
   const [expiry, setExpiry] = useState<ExpiryValue>({ expiry: null, error: null, shelfLife: null, productionDate: null });
   const [locations, setLocations] = useState<string[]>([]);
-  // 保质期：新增、改资料都是单独一格（规格下面），没填时空着、单位默认「个月」；拍包装认出的也填在这一格
+  // 保质期：改资料时单独一格（规格下面）；新建时不单独放这一格（和「这次入库」的「生产日期+保质期」重复），
+  // 在「这次入库」里填，拍包装认出的也填在那里，保存时记进资料
   const [shelfText, setShelfText] = useState(() => shelfDraftOf(initial.shelfLife).shelfText);
   const [shelfUnit, setShelfUnit] = useState<ShelfLifeUnit>(() => shelfDraftOf(initial.shelfLife).shelfUnit);
-  // 新建时「这次入库」的过期日期人动过没有：没动过时改了保质期那一格，就按新的保质期重新带出来（shelfKey 加 1 换 key）
-  const [expiryTouched, setExpiryTouched] = useState(false);
-  const [shelfKey, setShelfKey] = useState(0);
   // 拍包装识别（新建、手机上能用时）
   const canScanLabel = withFirstBatch && isLabelOcrAvailable();
   const [labelCameraOpen, setLabelCameraOpen] = useState(scanLabelOnOpen && canScanLabel);
@@ -259,7 +253,7 @@ export function StockProductForm({
     }, [confirmBarcode]),
   );
 
-  /** 拍包装识别回来：认出来的填上（名称、规格、保质期直接填，日期、保质期也填进「这次入库」），不保存，等人核对 */
+  /** 拍包装识别回来：认出来的填上（名称、规格直接填，日期、保质期填进「这次入库」），不保存，等人核对 */
   function applyLabelScan({ label, dates }: LabelScanResult) {
     setLabelCameraOpen(false);
     // 重拍时：上一次照片填的、没改过的换成这一次的（这次没认出就清空）；手动填的不动
@@ -268,39 +262,19 @@ export function StockProductForm({
     setName((current) => replace(current, labelScan?.name, label.name));
     setSpec((current) => replace(current, labelScan?.spec, label.spec));
     setNameCandidates(label.nameCandidates);
-    // 保质期那一格：认出了就填（规则同名称、规格），保存时记进物品资料
-    const recognizedShelfLife = validShelfLife(label.shelfLife);
-    const shelf = scannedShelfDraft({ shelfText, shelfUnit }, labelScan?.shelfLife ?? null, recognizedShelfLife);
-    setShelfText(shelf.shelfText);
-    setShelfUnit(shelf.shelfUnit);
     const fill = planExpiryFill({
       dates: dates ?? { production: null, expiry: null, confirmed: false },
       shelfLife: label.shelfLife,
       shelfLifeRecognized: !!label.shelfLife,
       dateElsewhere: label.dateElsewhere,
     });
-    if (fill) {
-      setExpiryFill((current) => ({ key: (current?.key ?? 0) + 1, fill }));
-      // 照片认出的日期填进了过期日期：之后改保质期那一格不再重新带出
-      setExpiryTouched(true);
-    }
+    if (fill) setExpiryFill((current) => ({ key: (current?.key ?? 0) + 1, fill }));
     setLabelScan({
       count: (label.name ? 1 : 0) + (label.spec ? 1 : 0) + (label.shelfLife ? 1 : 0) + (dates?.production || dates?.expiry ? 1 : 0),
       name: label.name,
       spec: label.spec,
-      shelfLife: recognizedShelfLife,
+      shelfLife: validShelfLife(label.shelfLife),
     });
-  }
-
-  /** 人改保质期那一格（拍包装填的不算）：新建时这一批的过期日期还没动过，就按新的保质期重新带出 */
-  function editShelfText(value: string) {
-    setShelfText(value);
-    if (!expiryTouched) setShelfKey((key) => key + 1);
-  }
-
-  function editShelfUnit(value: ShelfLifeUnit) {
-    setShelfUnit(value);
-    if (!expiryTouched) setShelfKey((key) => key + 1);
   }
 
   function updatePackRow(key: number, patch: Partial<PackRow>) {
@@ -344,7 +318,7 @@ export function StockProductForm({
     barcode: productBarcodeError(barcode),
     packBarcodes: packRows.some((row) => productBarcodeError(row.barcode)) ? PRODUCT_BARCODE_ERROR : null,
     name: name.trim() ? null : '请填写名称',
-    shelfLife: shelfLifeError(shelfDraft),
+    shelfLife: withFirstBatch ? null : shelfLifeError(shelfDraft),
     lowStock: lowStockText.trim() !== '' && lowStockThreshold === null ? '请填数字，留空表示不提醒' : null,
     lead:
       leadText.trim() !== '' && (!Number.isInteger(leadDays) || (leadDays ?? 0) < 0 || (leadDays ?? 0) > 365)
@@ -413,8 +387,8 @@ export function StockProductForm({
           expiryLeadDays: leadDays,
           note,
           packs,
-          // 「保质期」那一格填的（拍包装认出的也填在那一格）；新建时那一格没填、这一批按「生产日期+保质期」填了，用这一批的
-          shelfLife: withFirstBatch ? newProductShelfLife(fieldShelfLife, expiry.shelfLife) : fieldShelfLife,
+          // 新建：「这次入库」按「生产日期+保质期」填的，没用这种填法时用拍包装认出的；改资料：「保质期」那一格
+          shelfLife: withFirstBatch ? (validShelfLife(expiry.shelfLife) ?? labelScan?.shelfLife ?? null) : fieldShelfLife,
         },
         withFirstBatch && qty && qty > 0 && baseQty
           ? {
@@ -572,30 +546,31 @@ export function StockProductForm({
         </View>
         {/* 一件东西本身的规格；整箱几瓶在下面「包装规格」里设 */}
         <Field label="规格" value={spec} onChangeText={setSpec} placeholder="如 550ml" tag={specTag} />
-        {/* 填了以后入库默认按「生产日期+保质期」算到期日（标「按资料」）；拍包装认出的也填在这里，保存时记进物品资料 */}
-        <View style={formStyles.group}>
-          <NumberField
-            label="保质期"
-            value={shelfText}
-            onChangeText={editShelfText}
-            placeholder="可不填"
-            min={1}
-            max={9999}
-            buttons={false}
-            hint="填了以后，入库时默认按「生产日期+保质期」算到期日，也能拍喷码上的生产日期"
-            error={shown(errors.shelfLife)}
-            tag={shelfScanTag(!!labelScan, labelScan?.shelfLife ?? null, shelfDraft)}
-          />
-          <ChoiceChips
-            options={[
-              { value: 'day' as ShelfLifeUnit, label: '天' },
-              { value: 'month' as ShelfLifeUnit, label: '个月' },
-              { value: 'year' as ShelfLifeUnit, label: '年' },
-            ]}
-            value={shelfUnit}
-            onChange={editShelfUnit}
-          />
-        </View>
+        {/* 只在改资料时有：填了以后入库默认按「生产日期+保质期」算到期日（标「按资料」）。新建时在下面「这次入库」里填 */}
+        {!withFirstBatch ? (
+          <View style={formStyles.group}>
+            <NumberField
+              label="保质期"
+              value={shelfText}
+              onChangeText={setShelfText}
+              placeholder="可不填"
+              min={1}
+              max={9999}
+              buttons={false}
+              hint="填了以后，入库时默认按「生产日期+保质期」算到期日，也能拍喷码上的生产日期"
+              error={shown(errors.shelfLife)}
+            />
+            <ChoiceChips
+              options={[
+                { value: 'day' as ShelfLifeUnit, label: '天' },
+                { value: 'month' as ShelfLifeUnit, label: '个月' },
+                { value: 'year' as ShelfLifeUnit, label: '年' },
+              ]}
+              value={shelfUnit}
+              onChange={setShelfUnit}
+            />
+          </View>
+        ) : null}
         <View style={formStyles.group}>
           <Label>最小单位（库存按它算）</Label>
           <ChoiceChips options={unitOptions} value={unit} onChange={setUnit} />
@@ -729,14 +704,13 @@ export function StockProductForm({
               error={shown(errors.qty)}
             />
             <PriceFields draft={priceDraft} onChange={setPriceDraft} qty={qty} unit={effectiveEntryUnit} />
-            {/* 拍包装认出的日期按照片填；否则填了保质期就按「生产日期+保质期」带出（标「按资料」） */}
+            {/* 拍包装认出的日期、保质期按照片填 */}
             <ExpiryInput
-              key={`${kind}-${expiryFill?.key ?? 0}-${shelfKey}`}
+              key={`${kind}-${expiryFill?.key ?? 0}`}
               initialMode={kind === 'food' ? 'date' : 'none'}
-              fill={firstBatchExpiryFill(expiryFill?.fill ?? null, { ...shelfDraft, kind }, isLabelOcrAvailable())}
+              fill={expiryFill?.fill ?? null}
               allowNone
               onChange={setExpiry}
-              onEdit={() => setExpiryTouched(true)}
             />
             {shown(errors.expiry) ? <Text style={formStyles.error}>{errors.expiry}</Text> : null}
           </Card>
